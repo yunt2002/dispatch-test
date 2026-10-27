@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+/// VehicleMaster — 코드 하드코딩 금지, DB로 관리
+model VehicleType {
+  id                String   @id @default(cuid())
+  vehicleName       String
+  /// 톤수 (kg 환산 저장: 4.0t → 4000)
+  maxWeight         Float
+  maxPallet         Float?
+  baseCost          Float?
+  costPerKm         Float?
+  /// LOCAL | METROPOLITAN | EMERGENCY | ANY
+  primaryRegionType String   @default("ANY")
+  /// NORMAL | EMERGENCY
+  priorityType      String   @default("NORMAL")
+  boxPreferred      Boolean  @default(false)
+  description       String?
+  isActive          Boolean  @default(true)
+  isDummy           Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  preferredRoutes  Route[]         @relation("RoutePreferredVehicle")
+  preferredRegions RegionMaster[]  @relation("RegionPreferredVehicle")
+}
+
+/// 업체위치 → 지역유형 매핑 (코드에 도시 목록 하드코딩 금지)
+model RegionMaster {
+  id                     String   @id @default(cuid())
+  locationName           String   @unique
+  /// LOCAL | METROPOLITAN | EMERGENCY | UNKNOWN
+  regionType             String
+  preferredVehicleTypeId String?
+  notes                  String?
+  /// false = TODO 실무자 확인 필요
+  isConfirmed            Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  preferredVehicle VehicleType? @relation("RegionPreferredVehicle", fields: [preferredVehicleTypeId], references: [id], onDelete: SetNull)
+}
+
+/// 품목별 박스→PLT 환산 기준. 없으면 PLT 계산하지 않음(임의 나눗셈 금지).
+model ProductLoadingMaster {
+  id                  String   @id @default(cuid())
+  productCode         String   @unique
+  productName         String?
+  boxesPerPallet      Float?
+  unitsPerBox         Float?
+  specialLoadingRule  String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Route {
+  id                     String   @id @default(cuid())
+  routeCode              String   @unique
+  routeName              String
+  description            String?
+  estimatedDistance      Float?
+  estimatedTime          Int?
+  preferredVehicleTypeId String?
+  isActive               Boolean  @default(true)
+  isDummy                Boolean  @default(false)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  preferredVehicle VehicleType?     @relation("RoutePreferredVehicle", fields: [preferredVehicleTypeId], references: [id], onDelete: SetNull)
+  defaultCustomers Customer[]       @relation("CustomerDefaultRoute")
+  stops            RouteCustomer[]
+  shipments        Shipment[]
+  dispatchResults  DispatchResult[]
+}
+
+model Customer {
+  id                       String   @id @default(cuid())
+  customerCode             String   @unique
+  customerName             String
+  address                  String?
+  defaultRouteId           String?
+  allowedVehicleTypeIds    String   @default("[]")
+  restrictedVehicleTypeIds String   @default("[]")
+  specialConditions        String?
+  isActive                 Boolean  @default(true)
+  isDummy                  Boolean  @default(false)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  defaultRoute Route?           @relation("CustomerDefaultRoute", fields: [defaultRouteId], references: [id], onDelete: SetNull)
+  routeStops   RouteCustomer[]
+  shipments    Shipment[]
+}
+
+model RouteCustomer {
+  id         String @id @default(cuid())
+  routeId    String
+  customerId String
+  visitOrder Int
+
+  route    Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  @@unique([routeId, customerId])
+}
+
+model Product {
+  id                      String   @id @default(cuid())
+  productCode             String   @unique
+  productName             String
+  unitWeight              Float?
+  /// 엑셀 박스ㅊ 원값 보관. 의미 TODO.
+  piecesPerBox            Float?
+  specialLoadingCondition String?
+  isActive                Boolean  @default(true)
+  isDummy                 Boolean  @default(false)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  shipments Shipment[]
+}
+
+model Shipment {
+  id              String   @id @default(cuid())
+  deliveryDate    String
+  customerId      String
+  productId       String
+  quantity        Float
+  unitWeight      Float?
+  totalWeight     Float?
+  boxCount        Float?
+  piecesPerBox    Float?
+  palletCount     Float?
+  routeId         String?
+  actualLogistics String?
+  staff           String?
+  location        String?
+  regionType      String?
+  dueDate         String?
+  notes           String?
+  planSessionId   String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  customer    Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Restrict)
+  route       Route?       @relation(fields: [routeId], references: [id], onDelete: SetNull)
+  planSession PlanSession? @relation(fields: [planSessionId], references: [id], onDelete: SetNull)
+
+  @@index([deliveryDate])
+  @@index([planSessionId])
+}
+
+/// Excel 업로드 세션 (미리보기→분석 전 스테이징)
+model PlanSession {
+  id           String   @id @default(cuid())
+  fileName     String
+  sheetName    String
+  sheetsJson   String   @default("[]")
+  datesJson    String   @default("[]")
+  warningsJson String   @default("[]")
+  createdAt    DateTime @default(now())
+
+  shipments     Shipment[]
+  dispatchGroups DispatchGroup[]
+}
+
+/// 하루 복수 배차 그룹
+model DispatchGroup {
+  id                       String   @id @default(cuid())
+  dispatchDate             String
+  groupKey                 String
+  regionType               String
+  customerSummary          String   @default("")
+  totalBoxes               Float    @default(0)
+  totalPallets             Float?
+  shipmentIdsJson          String   @default("[]")
+  recommendedVehicleJson   String?
+  selectedVehicleJson      String?
+  actualLogisticsSummary   String?
+  recommendationReason     String?
+  warningsJson             String   @default("[]")
+  matchStatus              String?
+  manualOverride           Boolean  @default(false)
+  overrideReason           String?
+  planSessionId            String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  planSession PlanSession? @relation(fields: [planSessionId], references: [id], onDelete: SetNull)
+
+  @@index([dispatchDate])
+  @@index([planSessionId, dispatchDate])
+}
+
+model DispatchResult {
+  id                         String   @id @default(cuid())
+  dispatchDate               String
+  routeId                    String
+  totalWeight                Float
+  totalPallet                Float?
+  recommendedCombinationJson String
+  recommendedCost            Float?
+  selectedCombinationJson    String?
+  selectedCost               Float?
+  manualOverride             Boolean  @default(false)
+  overrideReason             String?
+  recommendationReason       String?
+  alternativesJson           String   @default("[]")
+  issuesJson                 String   @default("[]")
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  route Route @relation(fields: [routeId], references: [id], onDelete: Restrict)
+
+  @@unique([dispatchDate, routeId])
+}
+
+/// 일정 — 직접 등록이 원본. Excel은 처음 가져오기용.
+model ScheduleEntry {
+  id                     String   @id @default(cuid())
+  deliveryDate           String
+  locationName           String
+  regionType             String
+  customerName           String?
+  productCode            String?
+  productName            String?
+  quantity               Float?
+  /// 박스 수량 (선택)
+  boxCount               Float?
+  piecesPerBox           Float?
+  /// PLT 수량 (배차 기준, 우선)
+  palletCount            Float?
+  recommendedVehicleJson String?
+  selectedVehicleJson    String?
+  recommendationReason   String?
+  warningsJson           String   @default("[]")
+  /// 엑셀 물류 원값 또는 최종 차량명
+  logistics              String?
+  staff                  String?
+  /// PLANNED | CONFIRMED | DONE | CANCELLED
+  status                 String   @default("PLANNED")
+  /// MANUAL | EXCEL
+  source                 String   @default("MANUAL")
+  notes                  String?
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@index([deliveryDate])
+  @@index([status])
+  @@index([source])
+}
+
+model AppLog {
+  id             String   @id @default(cuid())
+  timestamp      DateTime @default(now())
+  userAction     String
+  routeCode      String?
+  inputWeight    Float?
+  recommendation String?
+  selectedResult String?
+  error          String?
+}
+
+model AppSetting {
+  key   String @id
+  value String
+}

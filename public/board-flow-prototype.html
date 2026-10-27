@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>네오마그네틱 · 보드형 동작 시안</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --ink: #22231f;
+      --muted: #7a7870;
+      --paper: #f3f1eb;
+      --surface: #fff;
+      --column: #e7e4dc;
+      --line: #d8d4ca;
+      --dark: #292a26;
+      --orange: #ed683a;
+      --orange-soft: #fff0e9;
+      --green: #2f7859;
+      --green-soft: #e7f2ec;
+      --blue: #326b91;
+      --blue-soft: #e7f0f5;
+    }
+    html, body { min-height: 100%; }
+    body { margin: 0; color: var(--ink); background: var(--paper); font-family: Pretendard, "Noto Sans KR", "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+    button, input, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid rgba(237,104,58,.25); outline-offset: 2px; }
+
+    .prototype-note { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 48px; padding: 9px 28px; color: #d6d8d3; background: #1e201d; border-bottom: 1px solid #373a34; font-size: 11px; }
+    .prototype-note b { color: #fff; }
+    .prototype-note div { display: flex; align-items: center; gap: 9px; }
+    .prototype-note button { padding: 7px 10px; color: #f1f2ef; background: transparent; border: 1px solid #555950; border-radius: 6px; font-size: 10px; }
+
+    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 19px 30px; background: rgba(243,241,235,.97); border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 13px; }
+    .brand-mark { width: 39px; height: 39px; display: grid; place-items: center; color: #fff; background: var(--dark); border-radius: 50%; font-family: Georgia, serif; font-weight: 800; }
+    .brand strong { display: block; font-size: 14px; }
+    .brand span { color: var(--muted); font-size: 10px; }
+    .top-actions { display: flex; align-items: center; gap: 8px; }
+    .date-pill, .ghost-btn, .primary-btn { min-height: 36px; padding: 0 13px; border-radius: 20px; font-size: 11px; font-weight: 750; }
+    .date-pill { display: flex; align-items: center; gap: 9px; background: var(--surface); border: 1px solid var(--line); }
+    .ghost-btn { color: #5f5e58; background: transparent; border: 1px solid var(--line); }
+    .primary-btn { color: #fff; background: var(--orange); border: 1px solid var(--orange); }
+
+    .guide { display: grid; grid-template-columns: auto repeat(4, 1fr); align-items: center; margin: 18px 30px 0; padding: 12px 15px; background: #fff; border: 1px solid var(--line); border-radius: 11px; }
+    .guide-label { padding-right: 20px; font-size: 10px; font-weight: 850; }
+    .guide-step { position: relative; display: flex; align-items: center; gap: 8px; color: #77766f; font-size: 10px; }
+    .guide-step:not(:last-child)::after { content: ""; position: absolute; right: 12px; width: calc(100% - 92px); height: 1px; background: #dedbd2; }
+    .guide-step i { width: 22px; height: 22px; display: grid; place-items: center; color: #fff; background: #8a8982; border-radius: 50%; font-style: normal; font-size: 9px; font-weight: 850; }
+    .guide-step.active { color: var(--orange); font-weight: 850; }
+    .guide-step.active i { background: var(--orange); }
+
+    main { padding: 22px 30px 34px; }
+    .intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin-bottom: 19px; }
+    .intro h1 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: 30px; font-weight: 600; letter-spacing: -.035em; }
+    .intro p { margin: 7px 0 0; color: var(--muted); font-size: 11px; }
+    .summary { display: flex; gap: 24px; }
+    .summary div { min-width: 56px; }
+    .summary span { display: block; color: #908e85; font-size: 9px; }
+    .summary strong { display: block; margin-top: 2px; font-family: Georgia, serif; font-size: 22px; }
+
+    .workspace { display: grid; grid-template-columns: minmax(0,1fr) 245px; gap: 13px; align-items: start; }
+    .board { display: grid; grid-template-columns: repeat(3, minmax(220px,1fr)); gap: 11px; align-items: start; }
+    .column { min-height: 460px; padding: 12px; background: var(--column); border-radius: 12px; }
+    .column-head { display: flex; align-items: center; justify-content: space-between; padding: 3px 3px 12px; }
+    .column-title { display: flex; align-items: center; gap: 7px; }
+    .column-title i { width: 7px; height: 7px; background: #aaa79f; border-radius: 50%; }
+    .column[data-status="review"] .column-title i { background: var(--orange); }
+    .column[data-status="planned"] .column-title i { background: var(--blue); }
+    .column[data-status="done"] .column-title i { background: var(--green); }
+    .column-title b { font-size: 11px; }
+    .column-title small { color: #8a877f; font-size: 9px; }
+    .count { min-width: 22px; height: 22px; display: grid; place-items: center; padding: 0 6px; color: #706e67; background: #f8f7f3; border-radius: 50%; font-size: 9px; }
+    .card-list { display: grid; gap: 8px; }
+    .empty { display: none; padding: 30px 16px; color: #918f87; border: 1px dashed #cac6bc; border-radius: 8px; text-align: center; font-size: 10px; line-height: 1.6; }
+    .card-list:empty + .empty { display: block; }
+    .job { padding: 13px; background: var(--surface); border: 1px solid #dcd8ce; border-radius: 9px; transition: transform .16s ease, opacity .16s ease; }
+    .job.new { animation: cardIn .28s ease-out; }
+    @keyframes cardIn { from { transform: translateY(-7px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .job-top { display: flex; justify-content: space-between; gap: 8px; }
+    .job-place { font-size: 14px; font-weight: 900; }
+    .region { margin-left: 4px; color: #89867e; font-size: 9px; font-weight: 500; }
+    .job-qty { white-space: nowrap; font-family: Georgia, serif; font-size: 15px; }
+    .client { margin-top: 7px; color: #55544f; font-size: 10px; font-weight: 700; }
+    .product { margin-top: 2px; color: #96938a; font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .recommend { display: grid; grid-template-columns: 27px minmax(0,1fr); align-items: center; gap: 8px; margin-top: 11px; padding-top: 10px; border-top: 1px solid #ece9e2; }
+    .truck { width: 27px; height: 27px; display: grid; place-items: center; color: #fff; background: var(--dark); border-radius: 50%; font-size: 9px; font-weight: 850; }
+    .recommend-text { min-width: 0; }
+    .recommend-text b { display: block; font-size: 10px; }
+    .recommend-text span { display: block; color: #8e8b82; font-size: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card-btn { grid-column: 1 / -1; width: 100%; margin-top: 3px; padding: 7px 8px; color: #d4562a; background: #fff8f4; border: 1px solid #f0cabc; border-radius: 5px; font-size: 8px; font-weight: 850; }
+    .planned .card-btn { color: #2f6384; background: #f1f7fa; border-color: #c8dce7; }
+    .done .job { opacity: .7; }
+    .done .card-btn { color: #4d6d5e; background: #f2f7f4; border-color: #cfddd5; }
+    .card-menu { display: none; }
+
+    .side { display: grid; gap: 11px; }
+    .vehicle-panel { padding: 16px; color: #fff; background: var(--dark); border-radius: 12px; }
+    .vehicle-panel h2, .notice h2 { margin: 0 0 11px; font-size: 11px; }
+    .vehicle-row { display: grid; grid-template-columns: 30px 1fr; gap: 9px; padding: 10px 0; border-top: 1px solid #42443e; }
+    .vehicle-row:first-of-type { border-top: 0; }
+    .vehicle-no { color: #f5b69e; font-family: Georgia, serif; font-size: 17px; }
+    .vehicle-row b { display: block; font-size: 9px; }
+    .vehicle-row span { color: #adafa9; font-size: 8px; }
+    .bar { height: 4px; margin-top: 6px; background: #4a4c46; border-radius: 5px; overflow: hidden; }
+    .bar i { display: block; height: 100%; background: var(--orange); transition: width .2s ease; }
+    .notice { padding: 15px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+    .notice-item { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid #ece9e2; }
+    .notice-item:first-of-type { border-top: 0; padding-top: 0; }
+    .notice-item i { width: 6px; height: 6px; margin-top: 4px; background: var(--orange); border-radius: 50%; flex: 0 0 auto; }
+    .notice-item b { display: block; font-size: 9px; }
+    .notice-item span { display: block; margin-top: 2px; color: #8a877f; font-size: 8px; line-height: 1.45; }
+    .data-note { padding: 12px 14px; color: #77756e; background: #ebe8e1; border-radius: 9px; font-size: 9px; line-height: 1.5; }
+
+    .overlay { position: fixed; z-index: 30; inset: 0; display: none; align-items: center; justify-content: center; padding: 22px; background: rgba(32,33,29,.58); }
+    .overlay.open { display: flex; }
+    .modal { width: min(520px, 100%); max-height: calc(100vh - 44px); overflow: auto; background: #fff; border-radius: 13px; }
+    .modal-head { display: flex; justify-content: space-between; gap: 15px; padding: 18px 20px; border-bottom: 1px solid #ebe8e1; }
+    .modal-head h2 { margin: 0; font-family: Georgia, serif; font-size: 21px; font-weight: 600; }
+    .modal-head p { margin: 4px 0 0; color: #858279; font-size: 9px; }
+    .close { width: 30px; height: 30px; color: #6e6c65; background: #f4f2ed; border: 0; border-radius: 50%; }
+    .modal-body { padding: 18px 20px 20px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+    .field { display: grid; gap: 5px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { color: #5f5d56; font-size: 9px; font-weight: 800; }
+    .field input, .field select { width: 100%; height: 39px; padding: 0 11px; color: #31322e; background: #fff; border: 1px solid #d9d5cb; border-radius: 6px; }
+    .qty-row { display: grid; grid-template-columns: 1fr 90px; gap: 6px; }
+    .sample-fill { margin-top: 12px; padding: 9px 11px; color: #74594e; background: #fff5f0; border: 1px solid #f1d7cc; border-radius: 6px; font-size: 9px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 18px; }
+    .modal-actions button { min-height: 36px; padding: 0 13px; border-radius: 6px; font-size: 10px; font-weight: 850; }
+    .cancel { color: #67655e; background: #fff; border: 1px solid #d8d4ca; }
+    .submit { color: #fff; background: var(--orange); border: 1px solid var(--orange); }
+    .recommend-box { padding: 15px; background: #f6f3ed; border-radius: 8px; }
+    .recommend-box small { display: block; color: #858279; font-size: 8px; letter-spacing: .05em; }
+    .recommend-choice { display: flex; align-items: center; gap: 11px; margin-top: 7px; }
+    .recommend-choice .truck { width: 35px; height: 35px; }
+    .recommend-choice b { display: block; font-size: 13px; }
+    .recommend-choice span { color: #7d7a72; font-size: 9px; }
+    .reason { margin: 12px 0 0; padding-top: 11px; color: #6f6d65; border-top: 1px solid #dedad1; font-size: 9px; line-height: 1.6; }
+    .vehicle-select { margin-top: 13px; }
+    .vehicle-select label { display: block; margin-bottom: 5px; color: #626059; font-size: 9px; font-weight: 800; }
+    .vehicle-select select { width: 100%; height: 39px; padding: 0 10px; border: 1px solid #d8d4ca; border-radius: 6px; }
+    .toast { position: fixed; z-index: 50; left: 50%; bottom: 24px; transform: translate(-50%, 12px); padding: 10px 14px; color: #fff; background: #262722; border-radius: 7px; opacity: 0; pointer-events: none; transition: .2s ease; font-size: 10px; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    @media (max-width: 1050px) {
+      .workspace { grid-template-columns: 1fr; }
+      .side { grid-template-columns: 1fr 1fr; }
+      .board { overflow-x: auto; grid-template-columns: repeat(3, 280px); }
+      .guide { grid-template-columns: auto 1fr 1fr; row-gap: 8px; }
+      .guide-step:nth-child(n+4) { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="prototype-note"><div><b>클릭 가능한 보드형 시안</b><span>실제 데이터는 저장되지 않으며 원본 시스템과 연결되지 않습니다.</span></div><button id="resetDemo">시안 초기화</button></div>
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark">N</div><div><strong>납품 흐름판</strong><span>네오마그네틱 · 당일 운영</span></div></div>
+    <div class="top-actions"><button class="ghost-btn">이 달 내보내기</button><div class="date-pill"><span>‹</span><b>2026년 10월 6일 · 화요일</b><span>›</span></div><button class="primary-btn" id="openRegister">+ 새 납품 등록</button></div>
+  </header>
+
+  <section class="guide" aria-label="업무 흐름">
+    <div class="guide-label">업무 흐름</div>
+    <div class="guide-step active" data-guide="1"><i>1</i><span>납품 등록</span></div>
+    <div class="guide-step" data-guide="2"><i>2</i><span>차량 추천 확인</span></div>
+    <div class="guide-step" data-guide="3"><i>3</i><span>배차 확정</span></div>
+    <div class="guide-step" data-guide="4"><i>4</i><span>납품 완료</span></div>
+  </section>
+
+  <main>
+    <div class="intro"><div><h1>오늘의 납품 흐름</h1><p>새 건을 등록하고, 추천 차량을 확인한 뒤, 처리 상태만 오른쪽으로 넘깁니다.</p></div><div class="summary"><div><span>전체</span><strong id="sumAll">4</strong></div><div><span>확정</span><strong id="sumPlanned">1</strong></div><div><span>완료</span><strong id="sumDone">1</strong></div></div></div>
+    <div class="workspace">
+      <section class="board" aria-label="납품 상태 보드">
+        <div class="column review" data-status="review"><div class="column-head"><div class="column-title"><i></i><div><b>추천 확인</b><small> · 담당자 승인 전</small></div></div><span class="count" data-count="review">2</span></div><div class="card-list" id="reviewList"></div><div class="empty">등록된 납품이 없습니다.<br>새 납품 등록을 눌러 시작하세요.</div></div>
+        <div class="column planned" data-status="planned"><div class="column-head"><div class="column-title"><i></i><div><b>배차 확정</b><small> · 오늘 출발 예정</small></div></div><span class="count" data-count="planned">1</span></div><div class="card-list" id="plannedList"></div><div class="empty">확정된 배차가 없습니다.</div></div>
+        <div class="column done" data-status="done"><div class="column-head"><div class="column-title"><i></i><div><b>납품 완료</b><small> · 처리 종료</small></div></div><span class="count" data-count="done">1</span></div><div class="card-list" id="doneList"></div><div class="empty">완료된 납품이 없습니다.</div></div>
+      </section>
+      <aside class="side">
+        <section class="vehicle-panel"><h2>차량 사용 현황</h2><div class="vehicle-row"><div class="vehicle-no">01</div><div><b>1호차 · 지방</b><span id="v1Text">2건 예정 · 최대 8 PLT</span><div class="bar"><i id="v1Bar" style="width:42%"></i></div></div></div><div class="vehicle-row"><div class="vehicle-no">02</div><div><b>2호차 · 수도권</b><span id="v2Text">1건 확정 · 1 PLT</span><div class="bar"><i id="v2Bar" style="width:30%"></i></div></div></div><div class="vehicle-row"><div class="vehicle-no">03</div><div><b>3호차 · 긴급</b><span>대기 중</span><div class="bar"><i style="width:5%"></i></div></div></div><div class="vehicle-row"><div class="vehicle-no">S</div><div><b>스타리아 · 소량</b><span>대기 중</span><div class="bar"><i style="width:5%"></i></div></div></div></section>
+        <section class="notice"><h2>오늘의 확인 사항</h2><div class="notice-item"><i></i><div><b>PLT 환산 정보 없음</b><span>박스 수량만 있는 건은 적재량을 현장에서 확인합니다.</span></div></div><div class="notice-item"><i style="background:#4382a6"></i><div><b>추천은 승인 전까지 제안</b><span>차량을 바꿔 확정할 수 있습니다.</span></div></div></section>
+        <div class="data-note">이 시안의 카드 이동은 화면에서만 동작합니다. 새로고침하면 예시 데이터로 돌아옵니다.</div>
+      </aside>
+    </div>
+  </main>
+
+  <div class="overlay" id="registerOverlay" role="dialog" aria-modal="true" aria-labelledby="registerTitle">
+    <div class="modal"><div class="modal-head"><div><h2 id="registerTitle">새 납품 등록</h2><p>지역과 수량은 필수입니다. 품명을 넣으면 PLT를 계산합니다.</p></div><button class="close" data-close="registerOverlay" aria-label="닫기">×</button></div><form class="modal-body" id="registerForm"><div class="form-grid"><div class="field"><label for="location">지역(위치) *</label><input id="location" name="location" required placeholder="예: 인천" /></div><div class="field"><label for="client">거래처</label><input id="client" name="client" placeholder="예: 만도브로제" /></div><div class="field"><label for="quantity">수량 *</label><div class="qty-row"><input id="quantity" name="quantity" type="number" min="1" required placeholder="64" /><select id="unit" name="unit"><option>박스</option><option>PLT</option></select></div></div><div class="field"><label for="product">품명</label><input id="product" name="product" placeholder="예: DIC SBW" /></div></div><button type="button" class="sample-fill" id="fillSample">예시 입력: 인천 · 64박스 · DIC SBW · 만도브로제</button><div class="modal-actions"><button type="button" class="cancel" data-close="registerOverlay">취소</button><button type="submit" class="submit">차량 추천 보기</button></div></form></div>
+  </div>
+
+  <div class="overlay" id="recommendOverlay" role="dialog" aria-modal="true" aria-labelledby="recommendTitle">
+    <div class="modal"><div class="modal-head"><div><h2 id="recommendTitle">추천 결과 확인</h2><p>자동 추천을 검토한 뒤 카드로 등록합니다.</p></div><button class="close" data-close="recommendOverlay" aria-label="닫기">×</button></div><div class="modal-body"><div class="recommend-box"><small>RECOMMENDED VEHICLE</small><div class="recommend-choice"><div class="truck" id="recommendBadge">2호</div><div><b id="recommendName">2호차 · 수도권</b><span id="recommendQty">64 박스 · 2 PLT 예상</span></div></div><p class="reason" id="recommendReason">등록 지역이 수도권이고, 제품 적재표 기준 2 PLT로 계산되어 2호차를 추천합니다.</p></div><div class="vehicle-select"><label for="recommendVehicle">다른 차량으로 변경 가능</label><select id="recommendVehicle"><option>1호차</option><option selected>2호차</option><option>3호차</option><option>스타리아</option></select></div><div class="modal-actions"><button type="button" class="cancel" id="backToForm">입력 수정</button><button type="button" class="submit" id="createCard">추천 확인 목록에 등록</button></div></div></div>
+  </div>
+
+  <div class="overlay" id="confirmOverlay" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="modal"><div class="modal-head"><div><h2 id="confirmTitle">배차 확정</h2><p id="confirmSubtitle">추천 차량을 검토하고 오늘 배차로 확정합니다.</p></div><button class="close" data-close="confirmOverlay" aria-label="닫기">×</button></div><div class="modal-body"><div class="recommend-box"><small>DELIVERY SUMMARY</small><div class="recommend-choice"><div class="truck" id="confirmBadge">1호</div><div><b id="confirmPlace">광주 · 비엠씨 광주공장</b><span id="confirmProduct">30 박스 · GEN4.0 45CC</span></div></div><p class="reason" id="confirmReason">지방 납품 기본 차량 후보입니다. PLT 환산 정보가 없어 적재량은 현장에서 확인합니다.</p></div><div class="vehicle-select"><label for="confirmVehicle">최종 배정 차량</label><select id="confirmVehicle"><option>1호차</option><option>2호차</option><option>3호차</option><option>스타리아</option></select></div><div class="modal-actions"><button type="button" class="cancel" data-close="confirmOverlay">취소</button><button type="button" class="submit" id="confirmDispatch">이 차량으로 배차 확정</button></div></div></div>
+  </div>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script>
+    const initialJobs = [
+      { id: 1, status: 'review', place: '광주', region: '지방', client: '비엠씨 광주공장', product: 'GEN4.0 45CC (Zn / Dy free)', quantity: 30, unit: '박스', plt: null, vehicle: '1호차', reason: '지방 납품 기본 차량 후보입니다. PLT 환산 정보가 없어 적재량은 현장에서 확인합니다.' },
+      { id: 2, status: 'review', place: '완주', region: '지방', client: '대정', product: 'RING MAGNET', quantity: 20, unit: '박스', plt: null, vehicle: '1호차', reason: '지방 납품 기본 차량 후보입니다. PLT 환산 정보가 없어 적재량은 현장에서 확인합니다.' },
+      { id: 3, status: 'planned', place: '평택', region: '수도권', client: '만도 평택공장', product: 'MPS 내수', quantity: 96, unit: '박스', plt: 1, vehicle: '2호차', reason: '수도권 납품이며 적재표 기준 1 PLT로 계산되었습니다.' },
+      { id: 4, status: 'done', place: '인천', region: '수도권', client: '만도브로제', product: 'DIC SBW', quantity: 64, unit: '박스', plt: 2, vehicle: '2호차', reason: '수도권 납품이며 적재표 기준 2 PLT로 계산되었습니다.' }
+    ];
+    let jobs = structuredClone(initialJobs);
+    let draft = null;
+    let activeId = null;
+    let nextId = 10;
+
+    const lists = { review: document.querySelector('#reviewList'), planned: document.querySelector('#plannedList'), done: document.querySelector('#doneList') };
+    const vehicleShort = (name) => name === '스타리아' ? 'S' : name.replace('차', '');
+    const qtyText = (job) => `${job.quantity} ${job.unit}${job.plt ? ` · ${job.plt} PLT` : ''}`;
+    const getRegion = (place) => ['인천','평택','서울','수원','화성','안산','성남'].some((name) => place.includes(name)) ? '수도권' : '지방';
+    const getRecommendation = (place) => getRegion(place) === '수도권' ? '2호차' : '1호차';
+    const estimatePlt = (product, quantity, unit) => {
+      if (unit === 'PLT') return quantity;
+      const text = product.toUpperCase();
+      if (text.includes('DIC') && text.includes('SBW')) return Math.ceil(quantity / 32);
+      if (text.includes('MPS')) return Math.ceil(quantity / 96);
+      if (text.includes('GEN2')) return Math.ceil(quantity / 40);
+      return null;
+    };
+    function render() {
+      Object.values(lists).forEach((list) => list.innerHTML = '');
+      jobs.forEach((job) => {
+        const article = document.createElement('article');
+        article.className = 'job';
+        article.dataset.id = job.id;
+        const label = job.status === 'review' ? '추천 검토' : job.status === 'planned' ? '완료 처리' : '완료 취소';
+        article.innerHTML = `<div class="job-top"><div class="job-place">${job.place}<span class="region">${job.region}</span></div><div class="job-qty">${job.quantity} ${job.unit}</div></div><div class="client">${job.client || '거래처 미입력'}</div><div class="product">${job.product || '품명 미입력'}${job.plt ? ` · ${job.plt} PLT` : ''}</div><div class="recommend"><div class="truck">${vehicleShort(job.vehicle)}</div><div class="recommend-text"><b>${job.vehicle} ${job.status === 'review' ? '추천' : '배정'}</b><span>${job.reason}</span></div><button class="card-btn" data-action="${job.status}">${label}</button><button class="card-menu" aria-label="더보기">···</button></div>`;
+        lists[job.status].append(article);
+      });
+      ['review','planned','done'].forEach((status) => document.querySelector(`[data-count="${status}"]`).textContent = jobs.filter((job) => job.status === status).length);
+      document.querySelector('#sumAll').textContent = jobs.length;
+      document.querySelector('#sumPlanned').textContent = jobs.filter((job) => job.status === 'planned').length;
+      document.querySelector('#sumDone').textContent = jobs.filter((job) => job.status === 'done').length;
+      const one = jobs.filter((job) => job.vehicle === '1호차' && job.status !== 'done').length;
+      const two = jobs.filter((job) => job.vehicle === '2호차' && job.status !== 'done');
+      document.querySelector('#v1Text').textContent = `${one}건 예정 · 최대 8 PLT`;
+      document.querySelector('#v1Bar').style.width = `${Math.min(88, 8 + one * 18)}%`;
+      document.querySelector('#v2Text').textContent = `${two.length}건 예정 · ${two.reduce((sum, job) => sum + (job.plt || 0), 0)} PLT`;
+      document.querySelector('#v2Bar').style.width = `${Math.min(88, 8 + two.length * 22)}%`;
+    }
+    function openOverlay(id) { document.querySelector(`#${id}`).classList.add('open'); }
+    function closeOverlay(id) { document.querySelector(`#${id}`).classList.remove('open'); }
+    function showToast(message) { const toast = document.querySelector('#toast'); toast.textContent = message; toast.classList.add('show'); window.setTimeout(() => toast.classList.remove('show'), 1800); }
+    function setGuide(step) { document.querySelectorAll('.guide-step').forEach((item) => item.classList.toggle('active', Number(item.dataset.guide) <= step)); }
+
+    document.querySelector('#openRegister').addEventListener('click', () => { setGuide(1); openOverlay('registerOverlay'); document.querySelector('#location').focus(); });
+    document.querySelectorAll('[data-close]').forEach((button) => button.addEventListener('click', () => closeOverlay(button.dataset.close)));
+    document.querySelectorAll('.overlay').forEach((overlay) => overlay.addEventListener('click', (event) => { if (event.target === overlay) closeOverlay(overlay.id); }));
+    document.querySelector('#fillSample').addEventListener('click', () => { document.querySelector('#location').value = '인천'; document.querySelector('#client').value = '만도브로제'; document.querySelector('#quantity').value = '64'; document.querySelector('#unit').value = '박스'; document.querySelector('#product').value = 'DIC SBW'; });
+    document.querySelector('#registerForm').addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(event.currentTarget);
+      const place = String(data.get('location')).trim();
+      const quantity = Number(data.get('quantity'));
+      const unit = String(data.get('unit'));
+      const product = String(data.get('product')).trim();
+      const vehicle = getRecommendation(place);
+      const region = getRegion(place);
+      const plt = estimatePlt(product, quantity, unit);
+      const reason = `${region} 납품 기본 차량이며${plt ? `, 제품 적재표 기준 ${plt} PLT로 계산되어` : ', PLT 정보가 없어 지역 기준으로'} ${vehicle}를 추천합니다.`;
+      draft = { id: nextId++, status: 'review', place, region, client: String(data.get('client')).trim(), product, quantity, unit, plt, vehicle, reason };
+      document.querySelector('#recommendBadge').textContent = vehicleShort(vehicle);
+      document.querySelector('#recommendName').textContent = `${vehicle} · ${region}`;
+      document.querySelector('#recommendQty').textContent = qtyText(draft);
+      document.querySelector('#recommendReason').textContent = reason;
+      document.querySelector('#recommendVehicle').value = vehicle;
+      closeOverlay('registerOverlay'); setGuide(2); openOverlay('recommendOverlay');
+    });
+    document.querySelector('#backToForm').addEventListener('click', () => { closeOverlay('recommendOverlay'); openOverlay('registerOverlay'); setGuide(1); });
+    document.querySelector('#createCard').addEventListener('click', () => {
+      if (!draft) return;
+      draft.vehicle = document.querySelector('#recommendVehicle').value;
+      jobs.unshift(draft); draft = null; render(); closeOverlay('recommendOverlay'); setGuide(2); showToast('추천 확인 목록에 등록했습니다.');
+      document.querySelector('#registerForm').reset();
+      const first = lists.review.firstElementChild; if (first) { first.classList.add('new'); first.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+    });
+    document.querySelector('.board').addEventListener('click', (event) => {
+      const button = event.target.closest('[data-action]'); if (!button) return;
+      const card = button.closest('.job'); activeId = Number(card.dataset.id); const job = jobs.find((item) => item.id === activeId); if (!job) return;
+      if (job.status === 'review') {
+        document.querySelector('#confirmBadge').textContent = vehicleShort(job.vehicle);
+        document.querySelector('#confirmPlace').textContent = `${job.place} · ${job.client || '거래처 미입력'}`;
+        document.querySelector('#confirmProduct').textContent = `${qtyText(job)} · ${job.product || '품명 미입력'}`;
+        document.querySelector('#confirmReason').textContent = job.reason;
+        document.querySelector('#confirmVehicle').value = job.vehicle;
+        setGuide(3); openOverlay('confirmOverlay');
+      } else if (job.status === 'planned') {
+        job.status = 'done'; render(); setGuide(4); showToast(`${job.place} 납품을 완료 처리했습니다.`);
+      } else {
+        job.status = 'planned'; render(); setGuide(3); showToast(`${job.place} 완료를 취소했습니다.`);
+      }
+    });
+    document.querySelector('#confirmDispatch').addEventListener('click', () => {
+      const job = jobs.find((item) => item.id === activeId); if (!job) return;
+      job.vehicle = document.querySelector('#confirmVehicle').value; job.status = 'planned';
+      closeOverlay('confirmOverlay'); render(); setGuide(3); showToast(`${job.vehicle}로 배차를 확정했습니다.`);
+    });
+    document.querySelector('#resetDemo').addEventListener('click', () => { jobs = structuredClone(initialJobs); draft = null; activeId = null; render(); setGuide(1); showToast('시안을 처음 상태로 되돌렸습니다.'); });
+    document.addEventListener('keydown', (event) => { if (event.key === 'Escape') document.querySelectorAll('.overlay.open').forEach((overlay) => closeOverlay(overlay.id)); });
+    render();
+  </script>
+</body>
+</html>
