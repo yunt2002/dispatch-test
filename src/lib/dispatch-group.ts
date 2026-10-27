@@ -1,4 +1,4 @@
-import type { VehicleType } from "@/generated/prisma";
+import type { VehicleType } from "@prisma/client";
 import {
   computePallets,
   type NormalizedShipment,

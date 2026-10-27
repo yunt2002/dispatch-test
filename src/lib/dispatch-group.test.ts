@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { VehicleType } from "@/generated/prisma";
+import type { VehicleType } from "@prisma/client";
 import { buildDispatchGroups, recommendForQuantity, vehicleCountForPallets } from "./dispatch-group";
 import type { NormalizedShipment } from "./delivery-excel";
 
