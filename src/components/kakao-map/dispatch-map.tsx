@@ -17,6 +17,7 @@ type Props = {
 export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<kakao.maps.Map | null>(null);
+  const mapsRef = useRef<typeof kakao.maps | null>(null);
   const overlaysRef = useRef<kakao.maps.Marker[]>([]);
   const polylinesRef = useRef<kakao.maps.Polyline[]>([]);
   const labelsRef = useRef<kakao.maps.CustomOverlay[]>([]);
@@ -38,6 +39,7 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
     [routes],
   );
 
+  // SDK·지도 인스턴스는 한 번만 만든다. 경로 재계산 때 다시 load 하지 않는다.
   useEffect(() => {
     if (!getKakaoMapAppKey()) {
       setStatus("no-key");
@@ -60,90 +62,15 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
           return;
         }
 
-        const center = markers[0]
-          ? new maps.LatLng(markers[0].lat, markers[0].lng)
-          : new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-
+        mapsRef.current = maps;
         if (!mapRef.current) {
           mapRef.current = new maps.Map(el, {
-            center,
-            level: markers.length > 1 ? 9 : 7,
+            center: new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng),
+            level: 7,
           });
         }
 
-        for (const marker of overlaysRef.current) marker.setMap(null);
-        overlaysRef.current = [];
-        for (const line of polylinesRef.current) line.setMap(null);
-        polylinesRef.current = [];
-        for (const label of labelsRef.current) label.setMap(null);
-        labelsRef.current = [];
-
-        const bounds = new maps.LatLngBounds();
-
-        for (const item of markers) {
-          const position = new maps.LatLng(item.lat, item.lng);
-          bounds.extend(position);
-          const marker = new maps.Marker({
-            position,
-            map: mapRef.current,
-            title: item.title,
-          });
-          const info = new maps.InfoWindow({
-            content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:nowrap;">
-              <strong>${escapeHtml(item.title)}</strong>
-              ${item.subtitle ? `<br/><span style="color:#666">${escapeHtml(item.subtitle)}</span>` : ""}
-            </div>`,
-          });
-          maps.event.addListener(marker, "click", () => {
-            info.open(mapRef.current!, marker);
-          });
-          overlaysRef.current.push(marker);
-        }
-
-        for (const route of routes) {
-          if (route.path.length < 2) continue;
-          const path = route.path.map((p) => new maps.LatLng(p.lat, p.lng));
-          for (const point of path) bounds.extend(point);
-
-          const line = new maps.Polyline({
-            path,
-            strokeWeight: 5,
-            strokeColor: route.color,
-            strokeOpacity: 0.85,
-            strokeStyle: "solid",
-            map: mapRef.current,
-          });
-          polylinesRef.current.push(line);
-
-          route.path.forEach((point, index) => {
-            if (!point.label) return;
-            const overlay = new maps.CustomOverlay({
-              position: new maps.LatLng(point.lat, point.lng),
-              content: `<div class="map-route-badge" style="background:${route.color}">${escapeHtml(point.label)}</div>`,
-              yAnchor: 2.1,
-              zIndex: 10 + index,
-              map: mapRef.current,
-            });
-            labelsRef.current.push(overlay);
-          });
-        }
-
-        const hasBoundsPoints = markers.length > 0 || routes.some((r) => r.path.length > 0);
-        if (hasBoundsPoints) {
-          try {
-            mapRef.current.setBounds(bounds);
-          } catch {
-            mapRef.current.setCenter(center);
-          }
-        }
-
-        requestAnimationFrame(() => {
-          mapRef.current?.relayout();
-          if (active) {
-            setStatus("ready");
-            setErrorMessage(null);
-          }
-        });
+        setStatus("ready");
       } catch (error) {
         if (!active) return;
         setStatus("error");
@@ -154,7 +81,90 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
     return () => {
       active = false;
     };
-  }, [markers, markersKey, routes, routesKey]);
+  }, []);
+
+  // 마커·경로만 갱신
+  useEffect(() => {
+    if (status !== "ready") return;
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map) return;
+
+    for (const marker of overlaysRef.current) marker.setMap(null);
+    overlaysRef.current = [];
+    for (const line of polylinesRef.current) line.setMap(null);
+    polylinesRef.current = [];
+    for (const label of labelsRef.current) label.setMap(null);
+    labelsRef.current = [];
+
+    const bounds = new maps.LatLngBounds();
+    const center = markers[0]
+      ? new maps.LatLng(markers[0].lat, markers[0].lng)
+      : new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+
+    for (const item of markers) {
+      const position = new maps.LatLng(item.lat, item.lng);
+      bounds.extend(position);
+      const marker = new maps.Marker({
+        position,
+        map,
+        title: item.title,
+      });
+      const info = new maps.InfoWindow({
+        content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:nowrap;">
+          <strong>${escapeHtml(item.title)}</strong>
+          ${item.subtitle ? `<br/><span style="color:#666">${escapeHtml(item.subtitle)}</span>` : ""}
+        </div>`,
+      });
+      maps.event.addListener(marker, "click", () => {
+        info.open(map, marker);
+      });
+      overlaysRef.current.push(marker);
+    }
+
+    for (const route of routes) {
+      if (route.path.length < 2) continue;
+      const path = route.path.map((p) => new maps.LatLng(p.lat, p.lng));
+      for (const point of path) bounds.extend(point);
+
+      const line = new maps.Polyline({
+        path,
+        strokeWeight: 5,
+        strokeColor: route.color,
+        strokeOpacity: 0.85,
+        strokeStyle: "solid",
+        map,
+      });
+      polylinesRef.current.push(line);
+
+      route.path.forEach((point, index) => {
+        if (!point.label) return;
+        const overlay = new maps.CustomOverlay({
+          position: new maps.LatLng(point.lat, point.lng),
+          content: `<div class="map-route-badge" style="background:${route.color}">${escapeHtml(point.label)}</div>`,
+          yAnchor: 2.1,
+          zIndex: 10 + index,
+          map,
+        });
+        labelsRef.current.push(overlay);
+      });
+    }
+
+    const hasBoundsPoints = markers.length > 0 || routes.some((r) => r.path.length > 0);
+    if (hasBoundsPoints) {
+      try {
+        map.setBounds(bounds);
+      } catch {
+        map.setCenter(center);
+      }
+    } else {
+      map.setCenter(center);
+    }
+
+    requestAnimationFrame(() => {
+      map.relayout();
+    });
+  }, [status, markers, markersKey, routes, routesKey]);
 
   if (status === "no-key") {
     return (
