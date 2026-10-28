@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && prisma db push && prisma db seed && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test src/engine/dispatch.test.ts src/lib/delivery-excel.test.ts src/lib/dispatch-group.test.ts src/lib/delivery-export.test.ts src/lib/customer-route.test.ts src/lib/product-loading.test.ts src/lib/route-master.test.ts",
@@ -16,12 +16,21 @@
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
+  "allowScripts": {
+    "@prisma/client": true,
+    "@prisma/engines": true,
+    "esbuild": true,
+    "prisma": true,
+    "unrs-resolver": true
+  },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "exceljs": "^4.4.0",
     "next": "16.3.5",
+    "prisma": "^6.19.3",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "tsx": "^4.23.13"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -30,9 +39,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.5",
-    "prisma": "^6.19.3",
     "tailwindcss": "^4",
-    "tsx": "^4.23.13",
     "typescript": "^5"
   }
 }

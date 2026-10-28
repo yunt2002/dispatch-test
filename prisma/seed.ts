@@ -68,6 +68,8 @@ async function main() {
       { key: "data_mode", value: "excel_first" },
       { key: "kg_per_pallet", value: "600" },
       { key: "kg_per_pallet_confirmed", value: "true" },
+      // Vercel 읽기 전용 FS에서 첫 요청 쓰기 스킵용
+      { key: "product_loading_version", value: "2026-10-28-v1" },
     ],
   });
 
