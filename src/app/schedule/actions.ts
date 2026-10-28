@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { matchDeliveryCustomer } from "@/lib/delivery-customers";
 import type { RegionLookup } from "@/lib/delivery-excel";
 import {
   loadingRateForPallets,
@@ -74,13 +73,14 @@ async function remainingPalletsByVehicle(deliveryDate: string) {
   return remaining;
 }
 
-/** 지역·수량 입력 → 즉시 추천 후 일정 등록 */
+/** 지역·수량 입력 → 추천(또는 수동 차량) 후 일정 등록 */
 export async function registerSchedule(formData: FormData) {
   const deliveryDate = text(formData, "deliveryDate");
   const locationName = text(formData, "locationName");
   const customerName = optionalText(formData, "customerName");
   const productName = optionalText(formData, "productName");
   const notes = optionalText(formData, "notes");
+  const vehicleTypeId = optionalText(formData, "vehicleTypeId");
   const qtyUnit = text(formData, "qtyUnit") === "plt" ? "plt" : "box";
   const quantity = parsePositive(optionalText(formData, "quantity") ?? undefined);
   const boxCount = qtyUnit === "box" ? quantity : null;
@@ -96,8 +96,7 @@ export async function registerSchedule(formData: FormData) {
     });
   }
 
-  const deliveryCustomer = matchDeliveryCustomer(customerName);
-  const resolvedLocation = locationName.trim() || deliveryCustomer?.locationHint || "";
+  const resolvedLocation = locationName.trim();
 
   const [vehicles, regions, settings, remainingByVehicleId] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
@@ -108,7 +107,7 @@ export async function registerSchedule(formData: FormData) {
 
   const result = recommendForQuantity({
     locationName: resolvedLocation,
-    customerName: customerName || deliveryCustomer?.name || null,
+    customerName,
     boxCount,
     palletCount,
     productName,
@@ -118,24 +117,46 @@ export async function registerSchedule(formData: FormData) {
     remainingByVehicleId,
   });
 
+  const storedPallet = qtyUnit === "plt" ? palletCount : result.palletCount;
+  const recommended = result.recommended;
+  let selected = recommended;
+  let manualVehicle = false;
+
+  if (vehicleTypeId) {
+    const picked = vehicles.find((vehicle) => vehicle.id === vehicleTypeId);
+    if (!picked) {
+      go({ date: deliveryDate, error: "선택한 차량을 확인하세요." });
+    }
+    const vehicleCount = vehicleCountForPallets(storedPallet, picked.maxPallet);
+    selected = {
+      vehicleTypeId: picked.id,
+      vehicleName: picked.vehicleName,
+      vehicleCount,
+      maxPallet: picked.maxPallet,
+      maxWeight: picked.maxWeight,
+      loadingRate: loadingRateForPallets(storedPallet, picked.maxPallet, vehicleCount),
+      primaryRegionType: picked.primaryRegionType,
+      boxPreferred: picked.boxPreferred,
+    };
+    manualVehicle = Boolean(
+      recommended && recommended.vehicleTypeId !== picked.id,
+    );
+  }
+
   await prisma.scheduleEntry.create({
     data: {
       deliveryDate,
       locationName: resolvedLocation,
       regionType: result.regionType,
-      customerName: customerName || deliveryCustomer?.name || null,
+      customerName,
       productName,
       boxCount,
-      palletCount: qtyUnit === "plt" ? palletCount : result.palletCount,
-      recommendedVehicleJson: result.recommended
-        ? JSON.stringify(result.recommended)
-        : null,
-      selectedVehicleJson: result.recommended
-        ? JSON.stringify(result.recommended)
-        : null,
+      palletCount: storedPallet,
+      recommendedVehicleJson: recommended ? JSON.stringify(recommended) : null,
+      selectedVehicleJson: selected ? JSON.stringify(selected) : null,
       recommendationReason: result.reasonLines.join("\n"),
       warningsJson: JSON.stringify(result.warnings),
-      logistics: result.recommended?.vehicleName ?? null,
+      logistics: selected?.vehicleName ?? null,
       notes,
       status: "PLANNED",
     },
@@ -145,19 +166,22 @@ export async function registerSchedule(formData: FormData) {
     data: {
       userAction: "schedule_register",
       routeCode: deliveryDate,
-      recommendation: result.recommended
-        ? `${result.recommended.vehicleName}×${result.recommended.vehicleCount}`
+      recommendation: recommended
+        ? `${recommended.vehicleName}×${recommended.vehicleCount}`
         : "없음",
+      selectedResult: selected
+        ? `${selected.vehicleName}×${selected.vehicleCount}${manualVehicle ? " (수동)" : ""}`
+        : null,
     },
   });
 
   revalidatePath("/");
-  const vehicleLabel = result.recommended
-    ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
-    : "추천 없음";
+  const vehicleLabel = selected
+    ? `${selected.vehicleName}${selected.vehicleCount > 1 ? ` ×${selected.vehicleCount}` : ""}${manualVehicle ? " (수동)" : ""}`
+    : "차량 없음";
   go({
     date: deliveryDate,
-    ok: `등록 · 추천 ${vehicleLabel}`,
+    ok: `등록 · ${vehicleLabel}`,
   });
 }
 

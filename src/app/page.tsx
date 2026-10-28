@@ -173,7 +173,14 @@ export default async function HomePage({
           <a className="dispatch-secondary-button" href={`/map?date=${encodeURIComponent(date)}`}>경로 · 지도</a>
           <a className="dispatch-secondary-button" href={`/api/schedule/export?date=${date}`}>이 달 내보내기</a>
           <a className="dispatch-secondary-button" href="/api/schedule/export?scope=all">전체 내보내기</a>
-          <ScheduleRegisterDialog date={date} regions={regions} />
+          <ScheduleRegisterDialog
+            date={date}
+            regions={regions}
+            vehicles={vehicles.map((vehicle) => ({
+              id: vehicle.id,
+              vehicleName: vehicle.vehicleName,
+            }))}
+          />
         </div>
       </header>
 
