@@ -99,8 +99,8 @@ export async function registerSchedule(formData: FormData) {
 
   if (!locationName || !customerName) {
     const defaults = resolveDefaultsFromProduct(productName);
-    if (!locationName) locationName = defaults.locationName ?? undefined;
-    if (!customerName) customerName = defaults.customerName ?? undefined;
+    if (!locationName) locationName = defaults.locationName;
+    if (!customerName) customerName = defaults.customerName;
   }
 
   if (!locationName) {
