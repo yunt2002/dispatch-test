@@ -35,7 +35,14 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
   });
 }
 
+function mapsApiReady(): boolean {
+  return typeof window.kakao?.maps?.Map === "function" && typeof window.kakao.maps.LatLng === "function";
+}
+
+/** autoload=false 이면 maps.load 콜백은 한 번만 온다. 다시 호출하면 끝나지 않는다. */
 function waitForKakaoMaps(): Promise<typeof kakao.maps> {
+  if (mapsApiReady()) return Promise.resolve(window.kakao.maps);
+
   return new Promise((resolve, reject) => {
     if (!window.kakao?.maps?.load) {
       reject(new Error("카카오맵 SDK가 초기화되지 않았습니다. JavaScript 키·웹 도메인을 확인하세요."));
@@ -43,7 +50,7 @@ function waitForKakaoMaps(): Promise<typeof kakao.maps> {
     }
     try {
       window.kakao.maps.load(() => {
-        if (!window.kakao?.maps) {
+        if (!mapsApiReady()) {
           reject(new Error("카카오맵 SDK 로드 실패"));
           return;
         }
@@ -65,15 +72,11 @@ export function loadKakaoMaps(): Promise<typeof kakao.maps> {
     return Promise.reject(new Error("NEXT_PUBLIC_KAKAO_MAP_KEY 가 없습니다."));
   }
 
-  if (window.kakao?.maps) {
-    return withTimeout(
-      waitForKakaoMaps(),
-      LOAD_TIMEOUT_MS,
-      "카카오맵 초기화가 지연됩니다. NEXT_PUBLIC_KAKAO_MAP_KEY가 JavaScript 키인지, 카카오 디벨로퍼스에 localhost 도메인이 등록됐는지 확인하세요.",
-    );
-  }
-
   if (loadPromise) return loadPromise;
+  if (mapsApiReady()) {
+    loadPromise = Promise.resolve(window.kakao.maps);
+    return loadPromise;
+  }
 
   loadPromise = withTimeout(
     new Promise<typeof kakao.maps>((resolve, reject) => {
