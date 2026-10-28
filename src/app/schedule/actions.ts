@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { matchDeliveryCustomer } from "@/lib/delivery-customers";
 import type { RegionLookup } from "@/lib/delivery-excel";
 import {
   loadingRateForPallets,
@@ -42,7 +43,7 @@ async function loadRegions(): Promise<RegionLookup> {
   );
 }
 
-/** 당일 차량별 잔여 PLT (한도 − 배정 합). 낱개(PLT 없음)는 합산에 안 넣음. */
+/** 당일 차량별 잔여 PLT (한도 − 배정 합). PLT 없고 박스만 있으면 1칸으로 본다. */
 async function remainingPalletsByVehicle(deliveryDate: string) {
   const [vehicles, entries] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
@@ -55,11 +56,15 @@ async function remainingPalletsByVehicle(deliveryDate: string) {
     const selected =
       parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null) ??
       parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
-    if (!selected || entry.palletCount == null) continue;
-    used.set(
-      selected.vehicleTypeId,
-      (used.get(selected.vehicleTypeId) ?? 0) + entry.palletCount,
-    );
+    if (!selected) continue;
+    const units =
+      entry.palletCount != null && entry.palletCount > 0
+        ? entry.palletCount
+        : entry.boxCount != null && entry.boxCount > 0
+          ? 1
+          : 0;
+    if (units <= 0) continue;
+    used.set(selected.vehicleTypeId, (used.get(selected.vehicleTypeId) ?? 0) + units);
   }
   const remaining: Record<string, number> = {};
   for (const vehicle of vehicles) {
@@ -91,6 +96,9 @@ export async function registerSchedule(formData: FormData) {
     });
   }
 
+  const deliveryCustomer = matchDeliveryCustomer(customerName);
+  const resolvedLocation = locationName.trim() || deliveryCustomer?.locationHint || "";
+
   const [vehicles, regions, settings, remainingByVehicleId] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
     loadRegions(),
@@ -99,8 +107,8 @@ export async function registerSchedule(formData: FormData) {
   ]);
 
   const result = recommendForQuantity({
-    locationName,
-    customerName,
+    locationName: resolvedLocation,
+    customerName: customerName || deliveryCustomer?.name || null,
     boxCount,
     palletCount,
     productName,
@@ -113,9 +121,9 @@ export async function registerSchedule(formData: FormData) {
   await prisma.scheduleEntry.create({
     data: {
       deliveryDate,
-      locationName: locationName.trim(),
+      locationName: resolvedLocation,
       regionType: result.regionType,
-      customerName,
+      customerName: customerName || deliveryCustomer?.name || null,
       productName,
       boxCount,
       palletCount: qtyUnit === "plt" ? palletCount : result.palletCount,

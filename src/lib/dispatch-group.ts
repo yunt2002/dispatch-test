@@ -397,11 +397,18 @@ export function recommendForQuantity(input: {
   if (zone) {
     reasonLines.push(`권역 ${zone.label} · ${zone.notes}`);
   }
+  if (family) {
+    reasonLines.push(
+      `품명(ERP) ${family.familyName} · ${family.boxType}` +
+        (family.boxesPerPallet != null ? ` · ${family.boxesPerPallet}박스/PLT` : " · 낱개"),
+    );
+  }
 
+  const effectiveKg = family?.kgPerPallet ?? kgPerPallet;
   let totalWeight = 0;
-  if (palletKnown && kgPerPallet) {
-    totalWeight = (totalPallets as number) * kgPerPallet;
-    reasonLines.push(`PLT ${(totalPallets as number).toFixed(1)} · ${kgPerPallet}kg/PLT`);
+  if (palletKnown && effectiveKg) {
+    totalWeight = (totalPallets as number) * effectiveKg;
+    reasonLines.push(`PLT ${(totalPallets as number).toFixed(1)} · ${effectiveKg}kg/PLT`);
   }
 
   const drafts = buildDispatchGroups({
@@ -440,11 +447,33 @@ export function recommendForQuantity(input: {
   const regionPreferredId = input.regions.get(location)?.preferredVehicleTypeId ?? null;
   const preferredId = zonePreferredId ?? regionPreferredId;
 
-  function pickVehicle(preferId: string | null): VehicleType | null {
-    const candidates = activeVehicles.filter((vehicle) => {
-      if (regionType === "EMERGENCY") {
-        return vehicle.priorityType === "EMERGENCY" || vehicle.primaryRegionType === "EMERGENCY";
-      }
+  /**
+   * 1·2호(권역 선호) 잔여가 부족하면 다른 일반차 → 긴급(3호·스타리아) 순으로 넘긴다.
+   * remainingByVehicleId 가 없으면 기존처럼 권역 선호만 본다.
+   */
+  function pickVehicle(preferId: string | null, needPallets: number): {
+    vehicle: VehicleType | null;
+    overflowFrom: string | null;
+  } {
+    const remOf = (id: string) => {
+      if (!input.remainingByVehicleId) return Number.POSITIVE_INFINITY;
+      return input.remainingByVehicleId[id] ?? 0;
+    };
+    // 박스만 있고 PLT 미환산이면 자리 1칸으로 본다
+    const need = needPallets > 0 ? needPallets : 1;
+
+    const isEmergency = (vehicle: VehicleType) =>
+      vehicle.priorityType === "EMERGENCY" || vehicle.primaryRegionType === "EMERGENCY";
+
+    /** 한 대 잔여·한도로 이번 수요를 받을 수 있는지 */
+    const fitsOneTrip = (vehicle: VehicleType) => {
+      const rem = remOf(vehicle.id);
+      if (!Number.isFinite(rem)) return true;
+      const cap = vehicle.maxPallet != null && vehicle.maxPallet > 0 ? vehicle.maxPallet : Infinity;
+      return rem >= need && need <= cap;
+    };
+
+    const regionMatched = (vehicle: VehicleType) => {
       if (preferId && vehicle.id === preferId) return true;
       if (zone?.vehiclePolicy === "LOCAL_1HO") {
         return vehicle.primaryRegionType === "LOCAL" || vehicle.primaryRegionType === "ANY";
@@ -452,52 +481,96 @@ export function recommendForQuantity(input: {
       if (zone?.vehiclePolicy === "METRO_2HO") {
         return vehicle.primaryRegionType === "METROPOLITAN" || vehicle.primaryRegionType === "ANY";
       }
-      if (zone?.vehiclePolicy === "FLEX") {
-        return vehicle.priorityType === "NORMAL";
-      }
+      if (zone?.vehiclePolicy === "FLEX") return vehicle.priorityType === "NORMAL";
       if (regionType === "LOCAL") {
-        return (
-          vehicle.primaryRegionType === "LOCAL" ||
-          vehicle.primaryRegionType === "ANY" ||
-          vehicle.id === preferId
-        );
+        return vehicle.primaryRegionType === "LOCAL" || vehicle.primaryRegionType === "ANY";
       }
       if (regionType === "METROPOLITAN") {
-        return (
-          vehicle.primaryRegionType === "METROPOLITAN" ||
-          vehicle.primaryRegionType === "ANY" ||
-          vehicle.id === preferId
-        );
+        return vehicle.primaryRegionType === "METROPOLITAN" || vehicle.primaryRegionType === "ANY";
       }
-      return true;
-    });
-    const pool = candidates.length
-      ? candidates
-      : activeVehicles.filter((v) => v.priorityType === "NORMAL");
-    const ranked = [...pool].sort((a, b) => {
-      if (preferId) {
-        const ap = a.id === preferId ? 0 : 1;
-        const bp = b.id === preferId ? 0 : 1;
-        if (ap !== bp) return ap - bp;
-      }
-      if (input.remainingByVehicleId) {
-        const ar = input.remainingByVehicleId[a.id] ?? 0;
-        const br = input.remainingByVehicleId[b.id] ?? 0;
+      if (regionType === "EMERGENCY") return isEmergency(vehicle);
+      return vehicle.priorityType === "NORMAL";
+    };
+
+    const sortByRemainThenPrefer = (list: VehicleType[]) =>
+      [...list].sort((a, b) => {
+        if (preferId) {
+          const ap = a.id === preferId ? 0 : 1;
+          const bp = b.id === preferId ? 0 : 1;
+          if (ap !== bp) return ap - bp;
+        }
+        const ar = remOf(a.id);
+        const br = remOf(b.id);
         if (ar !== br) return br - ar;
-      }
-      if (regionType !== "UNKNOWN") {
-        const aMatch = a.primaryRegionType === regionType ? 0 : 1;
-        const bMatch = b.primaryRegionType === regionType ? 0 : 1;
-        if (aMatch !== bMatch) return aMatch - bMatch;
-      }
-      return (a.maxPallet ?? 0) - (b.maxPallet ?? 0);
-    });
-    return ranked[0] ?? null;
+        return (b.maxPallet ?? 0) - (a.maxPallet ?? 0);
+      });
+
+    const preferred = preferId
+      ? activeVehicles.find((vehicle) => vehicle.id === preferId) ?? null
+      : null;
+    const emergencyVehicles = activeVehicles.filter(isEmergency);
+
+    if (regionType === "EMERGENCY") {
+      const emergency = sortByRemainThenPrefer(emergencyVehicles.filter(fitsOneTrip));
+      return {
+        vehicle: emergency[0] ?? sortByRemainThenPrefer(emergencyVehicles)[0] ?? null,
+        overflowFrom: null,
+      };
+    }
+
+    // 1) 권역 선호·같은 권역 일반차 (한 대 잔여로 수용)
+    const primaryPool = sortByRemainThenPrefer(
+      activeVehicles.filter((v) => !isEmergency(v) && regionMatched(v) && fitsOneTrip(v)),
+    );
+    if (primaryPool.length) {
+      return { vehicle: primaryPool[0], overflowFrom: null };
+    }
+
+    // 2) 다른 일반차
+    const otherNormal = sortByRemainThenPrefer(
+      activeVehicles.filter((v) => v.priorityType === "NORMAL" && !regionMatched(v) && fitsOneTrip(v)),
+    );
+    if (otherNormal.length) {
+      return {
+        vehicle: otherNormal[0],
+        overflowFrom: preferred?.vehicleName ?? null,
+      };
+    }
+
+    // 3) 긴급차 (3호·스타리아) — 수요가 긴급 잔여로 들어갈 때만
+    const emergencyFit = sortByRemainThenPrefer(emergencyVehicles.filter(fitsOneTrip));
+    if (emergencyFit.length) {
+      return {
+        vehicle: emergencyFit[0],
+        overflowFrom: preferred?.vehicleName ?? "1·2호",
+      };
+    }
+
+    // 4) 선호차에 아직 자리가 있으면 복수 대(큰 건)로 그 차에 배정
+    if (preferred && remOf(preferred.id) > 0) {
+      return { vehicle: preferred, overflowFrom: null };
+    }
+
+    // 5) 1·2호가 꽉 찼으면 긴급으로 넘김 (긴급 한도를 조금 넘더라도)
+    const emergencyAny = sortByRemainThenPrefer(emergencyVehicles);
+    if (emergencyAny.length) {
+      return {
+        vehicle: emergencyAny[0],
+        overflowFrom: preferred?.vehicleName ?? "1·2호",
+      };
+    }
+
+    if (preferred) return { vehicle: preferred, overflowFrom: null };
+    const fallback = sortByRemainThenPrefer(
+      activeVehicles.filter((v) => regionMatched(v) || v.priorityType === "NORMAL"),
+    );
+    return { vehicle: fallback[0] ?? activeVehicles[0] ?? null, overflowFrom: null };
   }
 
   // PLT를 직접 넘긴 경우·권역 보정
   if (palletKnown) {
-    const pick = pickVehicle(preferredId);
+    const pallets = totalPallets as number;
+    const { vehicle: pick, overflowFrom } = pickVehicle(preferredId, pallets);
     if (!pick) {
       return {
         regionType,
@@ -508,17 +581,22 @@ export function recommendForQuantity(input: {
       };
     }
 
-    const pallets = totalPallets as number;
-    const vehicleCount = vehicleCountForPallets(pallets, pick.maxPallet);
+    const rem = input.remainingByVehicleId?.[pick.id];
+    const fitsInOne =
+      pick.maxPallet != null && pick.maxPallet > 0
+        ? pallets <= pick.maxPallet && (rem == null || rem >= pallets)
+        : true;
+    const vehicleCount = fitsInOne ? 1 : vehicleCountForPallets(pallets, pick.maxPallet);
     const loadingRate = loadingRateForPallets(pallets, pick.maxPallet, vehicleCount);
     const reasons = [...reasonLines];
+    if (overflowFrom) {
+      reasons.push(`${overflowFrom} 잔여 부족 → ${pick.vehicleName}으로 넘김`);
+      warnings.push(`${overflowFrom} 적재 한도 초과분 · ${pick.vehicleName} 배정`);
+    }
     if (pick.maxPallet && pick.maxPallet > 0) {
       reasons.push(`${regionTypeLabelLocal(regionType)} · ${pallets} PLT`);
       reasons.push(`${pick.vehicleName} 한도 ${pick.maxPallet} PLT → ${vehicleCount}대`);
-      if (input.remainingByVehicleId?.[pick.id] != null) {
-        const rem = input.remainingByVehicleId[pick.id];
-        reasons.push(`잔여 적재 ${rem} PLT (등록 전)`);
-      }
+      if (rem != null) reasons.push(`잔여 적재 ${rem} PLT (등록 전)`);
     } else {
       reasons.push(`${regionTypeLabelLocal(regionType)} · ${pallets} PLT`);
       reasons.push(`${pick.vehicleName} (PLT 한도 미설정)`);
@@ -549,21 +627,35 @@ export function recommendForQuantity(input: {
   }
 
   const draft = drafts[0];
-  // 권역 선호 차량이 있으면 draft 추천을 덮어쓴다 (박스만 있을 때)
-  if (preferredId && draft?.recommended && draft.recommended.vehicleTypeId !== preferredId) {
-    const pick = activeVehicles.find((v) => v.id === preferredId);
-    if (pick) {
+  const draftNeed =
+    draft?.totalPallets != null && draft.totalPallets > 0 ? draft.totalPallets : 1;
+  const { vehicle: overflowPick, overflowFrom } = pickVehicle(preferredId, draftNeed);
+  if (overflowPick && draft) {
+    const shouldReplace =
+      !draft.recommended ||
+      draft.recommended.vehicleTypeId !== overflowPick.id ||
+      Boolean(overflowFrom);
+    if (shouldReplace) {
       draft.recommended = {
-        vehicleTypeId: pick.id,
-        vehicleName: pick.vehicleName,
+        vehicleTypeId: overflowPick.id,
+        vehicleName: overflowPick.vehicleName,
         vehicleCount: 1,
-        maxPallet: pick.maxPallet,
-        maxWeight: pick.maxWeight,
+        maxPallet: overflowPick.maxPallet,
+        maxWeight: overflowPick.maxWeight,
         loadingRate: null,
-        primaryRegionType: pick.primaryRegionType,
-        boxPreferred: pick.boxPreferred,
+        primaryRegionType: overflowPick.primaryRegionType,
+        boxPreferred: overflowPick.boxPreferred,
       };
-      draft.reasonLines = [...reasonLines, ...draft.reasonLines, `권역 선호 ${pick.vehicleName}`];
+      draft.reasonLines = [
+        ...reasonLines,
+        ...draft.reasonLines,
+        overflowFrom
+          ? `${overflowFrom} 잔여 부족 → ${overflowPick.vehicleName}`
+          : `권역·잔여 기준 ${overflowPick.vehicleName}`,
+      ];
+      if (overflowFrom) {
+        warnings.push(`${overflowFrom} 적재 한도 초과분 · ${overflowPick.vehicleName} 배정`);
+      }
     }
   }
   if (zone?.vehiclePolicy === "FLEX") {

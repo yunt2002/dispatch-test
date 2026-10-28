@@ -11,7 +11,9 @@
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
-    "postinstall": "node scripts/prisma-generate.mjs"
+    "postinstall": "node scripts/prisma-generate.mjs",
+    "solver:install": "py -m pip install -r solver/requirements.txt",
+    "solver:dev": "echo OR-Tools paused — Kakao directions only && exit 0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -30,6 +32,7 @@
     "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "tsx": "^4.23.13"
   },
   "devDependencies": {

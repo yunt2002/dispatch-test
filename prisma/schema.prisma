@@ -3,7 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  // Vercel 배포용: Neon 등 Postgres. 로컬도 같은 DATABASE_URL 사용.
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 

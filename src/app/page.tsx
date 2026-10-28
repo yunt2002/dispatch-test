@@ -9,6 +9,7 @@ import { geocodingStatus } from "@/lib/geocoding";
 import { reasonOneLine, regionTypeLabel } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
 import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
+import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { matchRouteZone } from "@/lib/route-master";
 
@@ -56,6 +57,7 @@ export default async function HomePage({
   );
   const today = todayISO();
   const date = params.date || (knownDates.includes(today) ? today : knownDates[0]) || today;
+  await rebalanceDayFleet(date);
   const entries = await loadEntries(date);
 
   const reviewEntries = entries.filter((entry) => entry.status === "PLANNED");
@@ -73,8 +75,17 @@ export default async function HomePage({
       .map((entry) => ({ entry, selected: selectedVehicle(entry) }))
       .filter(({ selected }) => selected?.vehicleTypeId === vehicle.id);
     const pallets = assigned.reduce((sum, { entry }) => sum + (entry.palletCount ?? 0), 0);
+    const maxTripCount = assigned.reduce(
+      (max, { selected }) => Math.max(max, selected?.vehicleCount ?? 1),
+      1,
+    );
     const maxPallet = vehicle.maxPallet ?? 0;
-    const remaining = Math.max(0, maxPallet - pallets);
+    const neededTrucks =
+      maxPallet > 0 && pallets > 0
+        ? Math.max(maxTripCount, Math.ceil(pallets / maxPallet))
+        : maxTripCount;
+    const capacity = maxPallet > 0 ? maxPallet * neededTrucks : 0;
+    const remaining = Math.max(0, (maxPallet || 0) - pallets);
     const kg = pallets * settings.kgPerPallet;
     return {
       id: vehicle.id,
@@ -83,6 +94,8 @@ export default async function HomePage({
       count: assigned.length,
       pallets,
       maxPallet,
+      capacity,
+      neededTrucks,
       remaining,
       kg,
     };
@@ -157,6 +170,7 @@ export default async function HomePage({
           <p>추천 차량을 확인하고, 처리 상태를 오른쪽으로 넘기면 됩니다.</p>
         </div>
         <div className="dispatch-head-actions">
+          <a className="dispatch-secondary-button" href={`/map?date=${encodeURIComponent(date)}`}>경로 · 지도</a>
           <a className="dispatch-secondary-button" href={`/api/schedule/export?date=${date}`}>이 달 내보내기</a>
           <a className="dispatch-secondary-button" href="/api/schedule/export?scope=all">전체 내보내기</a>
           <ScheduleRegisterDialog date={date} regions={regions} />
@@ -217,9 +231,11 @@ export default async function HomePage({
             </p>
             {vehicleUsage.map((vehicle, index) => {
               const maxPallet = vehicle.maxPallet ?? 0;
-              const load = maxPallet > 0
-                ? Math.min(100, Math.round((vehicle.pallets / maxPallet) * 100))
+              const denom = vehicle.capacity > 0 ? vehicle.capacity : maxPallet;
+              const load = denom > 0
+                ? Math.min(100, Math.round((vehicle.pallets / denom) * 100))
                 : 0;
+              const overOneTruck = maxPallet > 0 && vehicle.pallets > maxPallet;
               return (
                 <div className="dispatch-vehicle-usage" key={vehicle.id}>
                   <span>{String(index + 1).padStart(2, "0")}</span>
@@ -229,6 +245,8 @@ export default async function HomePage({
                       {vehicle.count
                         ? `${vehicle.count}건 · ${formatNumber(vehicle.pallets)}/${formatNumber(maxPallet)} PLT`
                         : `0/${formatNumber(maxPallet)} PLT`}
+                      {vehicle.neededTrucks > 1 ? ` · ${vehicle.neededTrucks}대` : ""}
+                      {overOneTruck ? " · 복수 대 필요" : ""}
                       {" · "}
                       잔여 <b>{formatNumber(vehicle.remaining)}</b>
                       {vehicle.pallets > 0

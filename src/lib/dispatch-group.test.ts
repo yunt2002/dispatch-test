@@ -125,6 +125,36 @@ describe("recommendForQuantity", () => {
     assert.equal(result.recommended?.vehicleCount, 1);
     assert.ok(result.reasonLines.some((line) => line.includes("28박스/PLT")));
   });
+
+  it("overflows to emergency when 1호 remaining is full", () => {
+    const result = recommendForQuantity({
+      locationName: "울주",
+      palletCount: 2,
+      vehicles: [
+        vehicle({ id: "v1", vehicleName: "1호차", primaryRegionType: "LOCAL", maxPallet: 8 }),
+        vehicle({
+          id: "v3",
+          vehicleName: "3호차",
+          primaryRegionType: "EMERGENCY",
+          priorityType: "EMERGENCY",
+          maxPallet: 2,
+          maxWeight: 2500,
+        }),
+        vehicle({
+          id: "staria",
+          vehicleName: "스타리아",
+          primaryRegionType: "EMERGENCY",
+          priorityType: "EMERGENCY",
+          maxPallet: 1,
+          maxWeight: 1000,
+        }),
+      ],
+      regions: new Map([["울주", { regionType: "LOCAL", preferredVehicleTypeId: "v1" }]]),
+      remainingByVehicleId: { v1: 0, v3: 2, staria: 1 },
+    });
+    assert.equal(result.recommended?.vehicleName, "3호차");
+    assert.ok(result.reasonLines.some((line) => line.includes("잔여 부족")));
+  });
 });
 
 describe("vehicleCountForPallets", () => {

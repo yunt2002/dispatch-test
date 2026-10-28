@@ -1,8 +1,11 @@
 /**
  * 주소 → 위경도 (Geocoding) + 거리 산출 골격.
- * 실제 API 호출은 KAKAO_REST_API_KEY 또는 NAVER 키가 있을 때만 동작한다.
+ * REST 키(KAKAO_REST_API_KEY)는 서버에서만 사용한다. 지도 표시용 JS 키는
+ * NEXT_PUBLIC_KAKAO_MAP_KEY 로 클라이언트 SDK에만 쓴다.
  * 키 없으면 null을 반환하고, 배차 추천은 권역·PLT로 계속 동작한다.
  */
+
+import "server-only";
 
 export type GeoPoint = { lat: number; lng: number; provider: "kakao" | "naver" | "manual" };
 
@@ -78,18 +81,27 @@ export function geocodingStatus(): {
   ready: boolean;
   provider: string | null;
   message: string;
+  mapJsReady: boolean;
 } {
-  if (envKey("KAKAO_REST_API_KEY", "KAKAO_MAP_REST_KEY")) {
+  const restReady = Boolean(envKey("KAKAO_REST_API_KEY", "KAKAO_MAP_REST_KEY"));
+  const mapJsReady = Boolean(process.env.NEXT_PUBLIC_KAKAO_MAP_KEY?.trim());
+
+  if (restReady) {
     return {
       ready: true,
       provider: "kakao",
-      message: "카카오 Geocoding 사용 가능",
+      mapJsReady,
+      message: mapJsReady
+        ? "카카오 Geocoding·지도 SDK 사용 가능"
+        : "Geocoding 가능 · 지도 표시는 NEXT_PUBLIC_KAKAO_MAP_KEY 필요",
     };
   }
   return {
     ready: false,
     provider: null,
-    message:
-      "지도 API 키 없음 — 권역·PLT 기준으로 배차. 거리/통행료는 KAKAO_REST_API_KEY 설정 후 연동",
+    mapJsReady,
+    message: mapJsReady
+      ? "지도 SDK 키만 있음 — 마커 좌표는 KAKAO_REST_API_KEY(서버) 설정 후 표시"
+      : "지도 API 키 없음 — 권역·PLT 기준으로 배차. JS키·REST키 설정 후 연동",
   };
 }

@@ -3,13 +3,22 @@
 import { useRouter } from "next/navigation";
 import { formatSheetDate } from "@/lib/format";
 
-export function DateSwitcher({ dates, value }: { dates: string[]; value: string }) {
+export function DateSwitcher({
+  dates,
+  value,
+  basePath = "/",
+}: {
+  dates: string[];
+  value: string;
+  basePath?: string;
+}) {
   const router = useRouter();
   const options = dates.includes(value) ? dates : [value, ...dates];
 
   function go(next: string) {
     if (!next) return;
-    router.replace(`/?date=${encodeURIComponent(next)}`, { scroll: false });
+    const path = basePath.endsWith("/") && basePath !== "/" ? basePath.slice(0, -1) : basePath;
+    router.replace(`${path}?date=${encodeURIComponent(next)}`, { scroll: false });
   }
 
   return (

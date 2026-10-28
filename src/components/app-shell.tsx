@@ -4,7 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-const DAILY = [{ href: "/", label: "일정 · 배차", match: (p: string) => p === "/" }];
+const DAILY = [
+  { href: "/", label: "일정 · 배차", match: (p: string) => p === "/" },
+  { href: "/map", label: "경로 · 지도", match: (p: string) => p.startsWith("/map") },
+];
 
 const SETTINGS = [
   { href: "/plan", label: "처음 가져오기", match: (p: string) => p.startsWith("/plan") },
