@@ -5,7 +5,7 @@ import {
   matchDeliveryCustomer,
   resolveCustomerAddress,
 } from "@/lib/delivery-customers";
-import { geocodeAddress } from "@/lib/geocoding";
+import { geocodeAddresses } from "@/lib/geocoding";
 import { prisma } from "@/lib/prisma";
 
 type EntryLike = {
@@ -33,20 +33,7 @@ export async function buildDispatchMapMarkers(
       .map((c) => [c.customerName.trim(), c.address!.trim()] as const),
   );
 
-  const queryCache = new Map<string, Awaited<ReturnType<typeof geocodeAddress>>>();
-
-  async function resolve(query: string) {
-    const key = query.trim();
-    if (!key) return null;
-    if (queryCache.has(key)) return queryCache.get(key) ?? null;
-    const point = await geocodeAddress(key);
-    queryCache.set(key, point);
-    return point;
-  }
-
-  const markers: DispatchMapMarker[] = [];
-
-  for (const entry of entries) {
+  const plans = entries.map((entry) => {
     const customerName = entry.customerName?.trim() || "";
     const locationName = entry.locationName?.trim() || "";
     const rootCustomer = matchDeliveryCustomer(customerName);
@@ -54,7 +41,6 @@ export async function buildDispatchMapMarkers(
     const dbAddress = customerName ? addressByName.get(customerName) : undefined;
     const customerAddress = rootAddress || dbAddress;
     const locationHint = rootCustomer?.locationHint || locationName;
-
     const queries = [
       customerAddress,
       customerName && locationHint ? `${locationHint} ${customerName}` : "",
@@ -62,13 +48,23 @@ export async function buildDispatchMapMarkers(
       locationName,
       customerName,
     ].filter((q): q is string => Boolean(q && q.trim()));
+    return { entry, customerName, locationName, rootCustomer, customerAddress, locationHint, queries };
+  });
 
-    let point = null;
-    for (const query of queries) {
-      point = await resolve(query);
-      if (point) break;
+  const points = await geocodeAddresses(plans.flatMap((plan) => plan.queries));
+  const markers: DispatchMapMarker[] = [];
+
+  for (const plan of plans) {
+    let point: { lat: number; lng: number } | null = null;
+    for (const query of plan.queries) {
+      const hit = points.get(query.trim().replace(/\s+/g, " "));
+      if (hit) {
+        point = hit;
+        break;
+      }
     }
     if (!point) continue;
+    const { entry, customerName, locationName, rootCustomer, customerAddress, locationHint } = plan;
 
     markers.push({
       id: entry.id,

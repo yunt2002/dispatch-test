@@ -275,3 +275,13 @@ model AppSetting {
   key   String @id
   value String
 }
+
+/// 주소 검색어 → 좌표. 카카오 Geocoding 반복 호출을 줄인다.
+model GeocodeCache {
+  query     String   @id
+  lat       Float?
+  lng       Float?
+  /// false = 카카오가 결과 없음으로 응답 (재호출 안 함)
+  found     Boolean
+  updatedAt DateTime @updatedAt
+}

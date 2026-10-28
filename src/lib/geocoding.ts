@@ -7,6 +7,8 @@
 
 import "server-only";
 
+import { prisma } from "@/lib/prisma";
+
 export type GeoPoint = { lat: number; lng: number; provider: "kakao" | "naver" | "manual" };
 
 export type DistanceEstimate = {
@@ -49,32 +51,119 @@ export function estimateRoundTrip(a: GeoPoint, b: GeoPoint): DistanceEstimate {
   };
 }
 
-export async function geocodeAddress(address: string): Promise<GeoPoint | null> {
-  const trimmed = address.trim();
-  if (!trimmed) return null;
+function cacheKey(address: string): string {
+  return address.trim().replace(/\s+/g, " ");
+}
 
-  const kakaoKey = envKey("KAKAO_REST_API_KEY", "KAKAO_MAP_REST_KEY");
-  if (kakaoKey) {
-    try {
-      const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(trimmed)}`;
-      const res = await fetch(url, {
-        headers: { Authorization: `KakaoAK ${kakaoKey}` },
-        next: { revalidate: 86400 },
-      });
-      if (!res.ok) return null;
-      const data = (await res.json()) as {
-        documents?: { x: string; y: string }[];
-      };
-      const doc = data.documents?.[0];
-      if (!doc) return null;
-      return { lat: Number(doc.y), lng: Number(doc.x), provider: "kakao" };
-    } catch {
-      return null;
+const GEOCODE_CONCURRENCY = 6;
+
+async function mapPool<T>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<void>,
+): Promise<void> {
+  if (!items.length) return;
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const index = next;
+      next += 1;
+      await fn(items[index]);
     }
   }
+  const workers = Math.min(limit, items.length);
+  await Promise.all(Array.from({ length: workers }, () => worker()));
+}
 
-  // 네이버 등은 키·엔드포인트 확정 후 추가. 현재는 스텁.
-  return null;
+/** 성공·무결과만 캐시. 네트워크/HTTP 오류는 캐시하지 않는다. */
+async function fetchKakaoPoint(
+  query: string,
+  kakaoKey: string,
+): Promise<{ cache: true; point: GeoPoint | null } | { cache: false }> {
+  try {
+    const url = `https://dapi.kakao.com/v2/local/search/address.json?query=${encodeURIComponent(query)}`;
+    const res = await fetch(url, {
+      headers: { Authorization: `KakaoAK ${kakaoKey}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return { cache: false };
+    const data = (await res.json()) as {
+      documents?: { x: string; y: string }[];
+    };
+    const doc = data.documents?.[0];
+    if (!doc) return { cache: true, point: null };
+    const lat = Number(doc.y);
+    const lng = Number(doc.x);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { cache: true, point: null };
+    return { cache: true, point: { lat, lng, provider: "kakao" } };
+  } catch {
+    return { cache: false };
+  }
+}
+
+/**
+ * 여러 주소를 DB 캐시 우선으로 변환한다.
+ * 캐시에 없는 항목만 카카오에 병렬(최대 6) 조회한다.
+ */
+export async function geocodeAddresses(
+  addresses: string[],
+): Promise<Map<string, GeoPoint | null>> {
+  const keys = [...new Set(addresses.map(cacheKey).filter(Boolean))];
+  const out = new Map<string, GeoPoint | null>();
+  if (!keys.length) return out;
+
+  const cached = await prisma.geocodeCache.findMany({
+    where: { query: { in: keys } },
+  });
+  const known = new Set<string>();
+  for (const row of cached) {
+    known.add(row.query);
+    out.set(
+      row.query,
+      row.found && row.lat != null && row.lng != null
+        ? { lat: row.lat, lng: row.lng, provider: "kakao" }
+        : null,
+    );
+  }
+
+  const missing = keys.filter((key) => !known.has(key));
+  const kakaoKey = envKey("KAKAO_REST_API_KEY", "KAKAO_MAP_REST_KEY");
+  if (!kakaoKey) {
+    for (const key of missing) out.set(key, null);
+    return out;
+  }
+
+  await mapPool(missing, GEOCODE_CONCURRENCY, async (query) => {
+    const result = await fetchKakaoPoint(query, kakaoKey);
+    if (!result.cache) {
+      out.set(query, null);
+      return;
+    }
+    out.set(query, result.point);
+    await prisma.geocodeCache.upsert({
+      where: { query },
+      create: {
+        query,
+        lat: result.point?.lat ?? null,
+        lng: result.point?.lng ?? null,
+        found: Boolean(result.point),
+      },
+      update: {
+        lat: result.point?.lat ?? null,
+        lng: result.point?.lng ?? null,
+        found: Boolean(result.point),
+      },
+    });
+  });
+
+  return out;
+}
+
+export async function geocodeAddress(address: string): Promise<GeoPoint | null> {
+  const key = cacheKey(address);
+  if (!key) return null;
+  const points = await geocodeAddresses([key]);
+  return points.get(key) ?? null;
 }
 
 export function geocodingStatus(): {

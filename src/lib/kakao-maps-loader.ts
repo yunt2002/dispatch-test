@@ -13,6 +13,12 @@ export function getKakaoMapAppKey(): string | null {
   return key || null;
 }
 
+export function kakaoMapScriptUrl(): string | null {
+  const key = getKakaoMapAppKey();
+  if (!key) return null;
+  return `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false`;
+}
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error(message)), ms);
@@ -107,7 +113,7 @@ export function loadKakaoMaps(): Promise<typeof kakao.maps> {
       const script = document.createElement("script");
       script.id = SCRIPT_ID;
       script.async = true;
-      script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&autoload=false`;
+      script.src = kakaoMapScriptUrl() ?? "";
       script.onload = () => {
         script.dataset.loaded = "1";
         onScriptReady();
