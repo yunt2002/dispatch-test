@@ -12,6 +12,7 @@ import {
 import { optionalText, text } from "@/lib/form";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { getDispatchSettings } from "@/lib/settings";
 
 function go(params: Record<string, string | undefined>): never {
@@ -76,8 +77,8 @@ async function remainingPalletsByVehicle(deliveryDate: string) {
 /** 지역·수량 입력 → 추천(또는 수동 차량) 후 일정 등록 */
 export async function registerSchedule(formData: FormData) {
   const deliveryDate = text(formData, "deliveryDate");
-  const locationName = text(formData, "locationName");
-  const customerName = optionalText(formData, "customerName");
+  let locationName = optionalText(formData, "locationName");
+  let customerName = optionalText(formData, "customerName");
   const productName = optionalText(formData, "productName");
   const notes = optionalText(formData, "notes");
   const vehicleTypeId = optionalText(formData, "vehicleTypeId");
@@ -86,12 +87,25 @@ export async function registerSchedule(formData: FormData) {
   const boxCount = qtyUnit === "box" ? quantity : null;
   const palletCount = qtyUnit === "plt" ? quantity : null;
 
-  if (!deliveryDate || !locationName) {
-    go({ error: "납품일과 지역(위치)은 필수입니다.", date: deliveryDate });
+  if (!deliveryDate) {
+    go({ error: "납품일은 필수입니다." });
   }
   if (quantity == null) {
     go({
       error: "수량을 입력하세요.",
+      date: deliveryDate,
+    });
+  }
+
+  if (!locationName || !customerName) {
+    const defaults = resolveDefaultsFromProduct(productName);
+    if (!locationName) locationName = defaults.locationName ?? undefined;
+    if (!customerName) customerName = defaults.customerName ?? undefined;
+  }
+
+  if (!locationName) {
+    go({
+      error: "지역을 선택하거나, 품명을 골라 자동 추천을 쓰세요.",
       date: deliveryDate,
     });
   }
@@ -148,7 +162,7 @@ export async function registerSchedule(formData: FormData) {
       deliveryDate,
       locationName: resolvedLocation,
       regionType: result.regionType,
-      customerName,
+      customerName: customerName ?? null,
       productName,
       boxCount,
       palletCount: storedPallet,
