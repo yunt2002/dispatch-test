@@ -67,7 +67,7 @@ function callMapsLoadOnce(): Promise<typeof kakao.maps> {
 function injectScript(appKey: string): Promise<void> {
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
   if (existing) {
-    if (window.kakao?.maps?.load) return Promise.resolve();
+    if (typeof window.kakao?.maps?.load === "function") return Promise.resolve();
     if (existing.dataset.loaded === "1") {
       return Promise.reject(
         new Error("카카오맵 스크립트는 있으나 SDK 객체가 없습니다. JavaScript 키를 확인하세요."),
