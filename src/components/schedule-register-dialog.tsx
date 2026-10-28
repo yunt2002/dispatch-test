@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { registerSchedule } from "@/app/schedule/actions";
 import { DELIVERY_CUSTOMERS } from "@/lib/delivery-customers";
-import { listErpProductNames } from "@/lib/product-loading";
+import {
+  listErpProductNames,
+  resolveDefaultsFromProduct,
+} from "@/lib/product-loading";
 
 export function ScheduleRegisterDialog({
   date,
@@ -15,6 +18,10 @@ export function ScheduleRegisterDialog({
   vehicles: { id: string; vehicleName: string }[];
 }) {
   const [open, setOpen] = useState(false);
+  const [productName, setProductName] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [locationName, setLocationName] = useState("");
+  const [suggestNote, setSuggestNote] = useState<string | null>(null);
 
   const erpNames = useMemo(() => listErpProductNames(), []);
   const customerNames = useMemo(
@@ -31,13 +38,38 @@ export function ScheduleRegisterDialog({
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open]);
 
+  function resetFields() {
+    setProductName("");
+    setCustomerName("");
+    setLocationName("");
+    setSuggestNote(null);
+  }
+
+  function openDialog() {
+    resetFields();
+    setOpen(true);
+  }
+
+  /** 품명 → 거래처·지역 자동 추천 (사용자가 언제든 수정 가능) */
+  function onProductChange(name: string) {
+    setProductName(name);
+    const defaults = resolveDefaultsFromProduct(name);
+    if (!defaults.customerName && !defaults.locationName) {
+      setSuggestNote(null);
+      return;
+    }
+    if (defaults.customerName) setCustomerName(defaults.customerName);
+    if (defaults.locationName) setLocationName(defaults.locationName);
+    setSuggestNote(
+      defaults.note
+        ? `자동 추천: ${defaults.note} · 다르면 직접 바꾸세요`
+        : "자동 추천이 채워졌습니다 · 다르면 직접 바꾸세요",
+    );
+  }
+
   return (
     <>
-      <button
-        className="dispatch-primary-button"
-        onClick={() => setOpen(true)}
-        type="button"
-      >
+      <button className="dispatch-primary-button" onClick={openDialog} type="button">
         <span aria-hidden="true">＋</span> 새 납품 등록
       </button>
       {open ? (
@@ -57,7 +89,7 @@ export function ScheduleRegisterDialog({
             <div className="dispatch-modal-head">
               <div>
                 <h2 id="schedule-register-title">새 납품 등록</h2>
-                <p>품명·지역·거래처·차량은 각각 선택합니다. 차량을 비우면 자동 추천합니다.</p>
+                <p>품명을 고르면 거래처·지역이 추천됩니다. 틀리면 바꾸면 됩니다.</p>
               </div>
               <button
                 aria-label="닫기"
@@ -89,7 +121,9 @@ export function ScheduleRegisterDialog({
                     id="productName"
                     list="erp-product-names"
                     name="productName"
+                    onChange={(event) => onProductChange(event.target.value)}
                     placeholder="제품 정리 ERP 명"
+                    value={productName}
                   />
                   <datalist id="erp-product-names">
                     {erpNames.map((name) => (
@@ -126,8 +160,15 @@ export function ScheduleRegisterDialog({
                     id="locationName"
                     list="register-location-options"
                     name="locationName"
+                    onChange={(event) => {
+                      setLocationName(event.target.value);
+                      setSuggestNote((prev) =>
+                        prev ? "자동 추천을 수정했습니다" : prev,
+                      );
+                    }}
                     placeholder="예: 인천, 평택, 부산항"
                     required
+                    value={locationName}
                   />
                   <datalist id="register-location-options">
                     {regions.map((region) => (
@@ -142,7 +183,14 @@ export function ScheduleRegisterDialog({
                     id="customerName"
                     list="delivery-customer-names"
                     name="customerName"
+                    onChange={(event) => {
+                      setCustomerName(event.target.value);
+                      setSuggestNote((prev) =>
+                        prev ? "자동 추천을 수정했습니다" : prev,
+                      );
+                    }}
                     placeholder="납품 root 고객사"
+                    value={customerName}
                   />
                   <datalist id="delivery-customer-names">
                     {customerNames.map((name) => (
@@ -168,8 +216,8 @@ export function ScheduleRegisterDialog({
                 </div>
               </div>
               <p className="dispatch-form-note">
-                품명·지역·거래처 목록은 각각 고릅니다. 차량을 직접 고르면 그 차로 등록되고, 비우면
-                권역·잔여 PLT로 추천합니다.
+                {suggestNote ??
+                  "품명을 고르면 거래처·지역이 채워집니다. 차량은 비우면 자동 추천입니다."}
               </p>
               <div className="dispatch-modal-actions">
                 <button
