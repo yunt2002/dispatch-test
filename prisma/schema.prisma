@@ -250,6 +250,8 @@ model ScheduleEntry {
   /// MANUAL | EXCEL
   source                 String   @default("MANUAL")
   notes                  String?
+  /// 같은 날·같은 차량 안 방문 순서 (수동 조정). null이면 createdAt 순
+  visitOrder             Int?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 

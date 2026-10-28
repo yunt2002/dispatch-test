@@ -60,7 +60,7 @@ function haversineKm(
 /**
  * 보드 차량 배정 + 일정 등록 순서를 유지한 채
  * 카카오 자동차 길찾기로 도로 거리·시간·폴리라인을 구한다.
- * (OR-Tools 솔버 없음 — 순서 커스터마이징 UI는 이후 추가)
+ * (OR-Tools 없음 — 방문 순서는 visitOrder / ▲▼ 수동 조정)
  */
 export async function solveRoutesForDate(date: string): Promise<RouteSolveResult> {
   const [entries, vehicles] = await Promise.all([
@@ -69,7 +69,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
         deliveryDate: date,
         status: { in: ["PLANNED", "CONFIRMED"] },
       },
-      orderBy: [{ createdAt: "asc" }, { locationName: "asc" }],
+      orderBy: [{ visitOrder: "asc" }, { createdAt: "asc" }, { locationName: "asc" }],
     }),
     prisma.vehicleType.findMany({
       where: { isActive: true },
@@ -88,6 +88,8 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
     demand: number;
     title: string;
     vehicleId: string | null;
+    visitOrder: number | null;
+    createdAt: Date;
   };
 
   const stops: Stop[] = entries
@@ -104,6 +106,8 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
         demand,
         title: marker.title,
         vehicleId: assigned?.vehicleTypeId ?? null,
+        visitOrder: entry.visitOrder ?? null,
+        createdAt: entry.createdAt,
       };
     })
     .filter((s): s is Stop => Boolean(s));
@@ -129,6 +133,17 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
     const list = grouped.get(stop.vehicleId) ?? [];
     list.push(stop);
     grouped.set(stop.vehicleId, list);
+  }
+
+  for (const list of grouped.values()) {
+    list.sort((a, b) => {
+      const ao = a.visitOrder;
+      const bo = b.visitOrder;
+      if (ao != null && bo != null && ao !== bo) return ao - bo;
+      if (ao != null && bo == null) return -1;
+      if (ao == null && bo != null) return 1;
+      return a.createdAt.getTime() - b.createdAt.getTime();
+    });
   }
 
   const depot = { lat: DEFAULT_DEPOT.lat, lng: DEFAULT_DEPOT.lng };
@@ -189,7 +204,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
     depot: DEFAULT_DEPOT,
     note: ok
       ? usedKakao
-        ? "보드 차량 배정·등록 순서를 유지하고, 카카오 도로 길찾기로 거리·시간을 계산했습니다. (순서는 이후 화면에서 바꿀 수 있게 할 예정)"
+        ? "저장된 방문 순서(또는 등록 순)로 카카오 도로 길찾기를 계산했습니다. ▲▼로 순서를 바꾼 뒤 적용하세요."
         : "카카오 길찾기 실패로 직선 근사를 사용했습니다. REST API 키·쿼터를 확인하세요."
       : "배정된 차량이 있는 납품지가 없습니다.",
     matrixNote: usedKakao

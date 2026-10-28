@@ -157,6 +157,12 @@ export async function registerSchedule(formData: FormData) {
     );
   }
 
+  const maxVisit = await prisma.scheduleEntry.aggregate({
+    where: { deliveryDate },
+    _max: { visitOrder: true },
+  });
+  const visitOrder = (maxVisit._max.visitOrder ?? -1) + 1;
+
   await prisma.scheduleEntry.create({
     data: {
       deliveryDate,
@@ -173,6 +179,7 @@ export async function registerSchedule(formData: FormData) {
       logistics: selected?.vehicleName ?? null,
       notes,
       status: "PLANNED",
+      visitOrder,
     },
   });
 

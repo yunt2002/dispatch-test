@@ -36,25 +36,43 @@ type Props = {
   onResult?: (result: RouteSolveResult) => void;
 };
 
+function moveIndex(ids: string[], from: number, to: number): string[] {
+  if (to < 0 || to >= ids.length || from === to) return ids;
+  const next = [...ids];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
 export function RouteSolvePanel({ date, result: controlledResult, onResult }: Props) {
   const [loading, setLoading] = useState(false);
+  const [savingVehicleId, setSavingVehicleId] = useState<string | null>(null);
+  const [orderError, setOrderError] = useState<string | null>(null);
   const [localResult, setLocalResult] = useState<RouteSolveResult | null>(null);
   const result = controlledResult !== undefined ? controlledResult : localResult;
 
+  function publish(data: RouteSolveResult) {
+    if (!data.depot) data.depot = FALLBACK_DEPOT;
+    setLocalResult(data);
+    onResult?.(data);
+  }
+
+  async function fetchSolve(): Promise<RouteSolveResult> {
+    const res = await fetch("/api/route/solve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ date }),
+    });
+    return (await res.json()) as RouteSolveResult;
+  }
+
   async function runSolve() {
     setLoading(true);
+    setOrderError(null);
     try {
-      const res = await fetch("/api/route/solve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date }),
-      });
-      const data = (await res.json()) as RouteSolveResult;
-      if (!data.depot) data.depot = FALLBACK_DEPOT;
-      setLocalResult(data);
-      onResult?.(data);
+      publish(await fetchSolve());
     } catch (error) {
-      const failed: RouteSolveResult = {
+      publish({
         ok: false,
         solverReachable: false,
         depot: FALLBACK_DEPOT,
@@ -62,13 +80,80 @@ export function RouteSolvePanel({ date, result: controlledResult, onResult }: Pr
         routes: [],
         unassigned: [],
         error: error instanceof Error ? error.message : String(error),
-      };
-      setLocalResult(failed);
-      onResult?.(failed);
+      });
     } finally {
       setLoading(false);
     }
   }
+
+  async function applyOrder(vehicleId: string, stopIds: string[]) {
+    if (!result) return;
+    setSavingVehicleId(vehicleId);
+    setOrderError(null);
+
+    const route = result.routes.find((item) => item.vehicleId === vehicleId);
+    if (!route) {
+      setSavingVehicleId(null);
+      return;
+    }
+
+    const titleById = new Map(
+      route.stopIds.map((id, index) => [id, route.titles[index] ?? id]),
+    );
+    const optimistic: RouteSolveResult = {
+      ...result,
+      routes: result.routes.map((item) =>
+        item.vehicleId === vehicleId
+          ? {
+              ...item,
+              stopIds,
+              titles: stopIds.map((id) => titleById.get(id) ?? id),
+            }
+          : item,
+      ),
+    };
+    publish(optimistic);
+
+    try {
+      const saveRes = await fetch("/api/route/order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, vehicleId, stopIds }),
+      });
+      const saveData = (await saveRes.json()) as { ok?: boolean; error?: string };
+      if (!saveRes.ok || !saveData.ok) {
+        setOrderError(saveData.error ?? "순서 저장에 실패했습니다.");
+        try {
+          publish(await fetchSolve());
+        } catch {
+          /* keep optimistic list if refresh fails */
+        }
+        return;
+      }
+
+      publish(await fetchSolve());
+    } catch (error) {
+      setOrderError(error instanceof Error ? error.message : String(error));
+      try {
+        publish(await fetchSolve());
+      } catch {
+        /* keep optimistic list if refresh fails */
+      }
+    } finally {
+      setSavingVehicleId(null);
+    }
+  }
+
+  function onMove(vehicleId: string, from: number, direction: -1 | 1) {
+    if (!result || savingVehicleId || loading) return;
+    const route = result.routes.find((item) => item.vehicleId === vehicleId);
+    if (!route || route.stopIds.length < 2) return;
+    const next = moveIndex(route.stopIds, from, from + direction);
+    if (next === route.stopIds) return;
+    void applyOrder(vehicleId, next);
+  }
+
+  const busy = loading || Boolean(savingVehicleId);
 
   return (
     <section className="dispatch-route-panel" aria-label="경로 제안">
@@ -76,20 +161,21 @@ export function RouteSolvePanel({ date, result: controlledResult, onResult }: Pr
         <h2>경로 (카카오 길찾기)</h2>
         <button
           className="dispatch-secondary-button"
-          disabled={loading}
-          onClick={runSolve}
+          disabled={busy}
+          onClick={() => void runSolve()}
           type="button"
         >
-          {loading ? "계산 중…" : "경로 계산"}
+          {loading && !savingVehicleId ? "계산 중…" : "경로 계산"}
         </button>
       </div>
       <p className="dispatch-side-meta">
-        보드 차량 배정·등록 순서 유지 · 카카오 도로 거리/시간 (순서 편집은 예정)
+        같은 차량 안 방문 순서를 ▲▼로 바꾸면 저장되고, 카카오 도로 경로를 다시 그립니다.
       </p>
 
       {!result ? (
         <p className="dispatch-route-hint">
-          버튼을 누르면 카카오 길찾기로 차량별 도로 경로가 그려집니다. 별도 솔버는 필요 없습니다.
+          버튼을 누르면 카카오 길찾기로 차량별 도로 경로가 그려집니다. 순서는 나중에 ▲▼로
+          조정할 수 있습니다.
         </p>
       ) : null}
 
@@ -104,6 +190,10 @@ export function RouteSolvePanel({ date, result: controlledResult, onResult }: Pr
           {result.error && !result.solverReachable ? (
             <p className="dispatch-route-note-warn">{result.error}</p>
           ) : null}
+          {orderError ? <p className="dispatch-route-note-warn">{orderError}</p> : null}
+          {savingVehicleId ? (
+            <p className="dispatch-route-meta">순서 저장 · 경로 다시 계산 중…</p>
+          ) : null}
 
           {result.routes.map((route) => (
             <div className="dispatch-route-card" key={route.vehicleId}>
@@ -114,10 +204,34 @@ export function RouteSolvePanel({ date, result: controlledResult, onResult }: Pr
                   {route.totalTimeMin}분
                 </span>
               </strong>
-              <ol>
+              <ol className="dispatch-route-stops">
                 {route.titles.map((title, index) => (
                   <li key={`${route.vehicleId}-${route.stopIds[index]}`}>
-                    {index + 1}. {title}
+                    <span className="dispatch-route-stop-label">
+                      {index + 1}. {title}
+                    </span>
+                    {route.stopIds.length > 1 ? (
+                      <span className="dispatch-route-stop-actions">
+                        <button
+                          aria-label="위로"
+                          className="dispatch-route-order-btn"
+                          disabled={busy || index === 0}
+                          onClick={() => onMove(route.vehicleId, index, -1)}
+                          type="button"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          aria-label="아래로"
+                          className="dispatch-route-order-btn"
+                          disabled={busy || index === route.stopIds.length - 1}
+                          onClick={() => onMove(route.vehicleId, index, 1)}
+                          type="button"
+                        >
+                          ▼
+                        </button>
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ol>
