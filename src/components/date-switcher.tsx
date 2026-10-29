@@ -22,31 +22,33 @@ export function DateSwitcher({
   }
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3">
-      <label htmlFor="list-date" className="text-sm font-bold">
+    <div className="date-switcher">
+      <label className="date-switcher-label" htmlFor="list-date">
         납품일
       </label>
-      {dates.length ? (
-        <select
-          id="list-date"
-          className="select max-w-[220px]"
+      <div className="date-switcher-controls">
+        {dates.length ? (
+          <select
+            id="list-date"
+            className="select date-switcher-select"
+            value={value}
+            onChange={(event) => go(event.target.value)}
+          >
+            {options.map((item) => (
+              <option key={item} value={item}>
+                {formatSheetDate(item)}
+              </option>
+            ))}
+          </select>
+        ) : null}
+        <input
+          aria-label="다른 날짜"
+          className="input date-switcher-input"
+          type="date"
           value={value}
           onChange={(event) => go(event.target.value)}
-        >
-          {options.map((item) => (
-            <option key={item} value={item}>
-              {formatSheetDate(item)}
-            </option>
-          ))}
-        </select>
-      ) : null}
-      <input
-        aria-label="다른 날짜"
-        className="input max-w-[180px]"
-        type="date"
-        value={value}
-        onChange={(event) => go(event.target.value)}
-      />
+        />
+      </div>
     </div>
   );
 }

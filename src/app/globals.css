@@ -649,9 +649,44 @@ body {
   margin: 14px 0;
 }
 
-.dispatch-control-row > div:first-child {
+.dispatch-control-row > .date-switcher {
   flex: 1;
   margin-bottom: 0;
+}
+
+.date-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+}
+
+.date-switcher-label {
+  flex-shrink: 0;
+  color: #64625c;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.date-switcher-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.date-switcher-select,
+.date-switcher-input {
+  min-height: 38px;
+  max-width: 220px;
+  border-color: var(--dispatch-line);
+  border-radius: 18px;
+  font-size: 13px;
+}
+
+.date-switcher-input {
+  max-width: 180px;
 }
 
 .dispatch-control-row label {
@@ -1959,8 +1994,32 @@ body {
     gap: 10px;
   }
 
-  .dispatch-control-row > div:first-child {
+  .dispatch-control-row > .date-switcher {
     width: 100%;
+  }
+
+  .date-switcher {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .date-switcher-controls {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    width: 100%;
+  }
+
+  .date-switcher-controls:has(.date-switcher-select:only-child),
+  .date-switcher-controls:has(.date-switcher-input:only-child) {
+    grid-template-columns: 1fr;
+  }
+
+  .date-switcher-select,
+  .date-switcher-input {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
   }
 
   .dispatch-summary {
