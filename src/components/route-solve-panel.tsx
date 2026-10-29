@@ -12,11 +12,15 @@ import {
 import type { RoutePriorityId } from "@/lib/route-priority";
 import { sameOrder, suggestVisitOrder } from "@/lib/visit-order-suggest";
 import { defaultFuelEconomy } from "@/lib/vehicle-fuel-economy";
+import { estimateArrivalTimes } from "@/lib/route-arrivals";
 
 export type RouteSolveResult = {
   ok: boolean;
   note: string;
   tripMode: "oneway" | "roundtrip";
+  savedAt?: string;
+  stale?: boolean;
+  snapshotError?: boolean;
   matrixNote?: string;
   depot: { lat: number; lng: number; title: string };
   routes: {
@@ -26,6 +30,7 @@ export type RouteSolveResult = {
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
+    stopDurationsSec?: number[] | null;
     tollWon: number | null;
     carType: number;
     load: number;
@@ -46,6 +51,7 @@ type RouteAlternativeOption = {
   hint: string;
   distanceKm: number;
   durationMin: number;
+  legDurationsSec: number[] | null;
   tollWon: number | null;
   path: { lat: number; lng: number }[];
 };
@@ -78,7 +84,8 @@ export function RouteSolvePanel({
   onResult,
 }: Props) {
   const [loading, setLoading] = useState(false);
-  const [tripMode, setTripMode] = useState<"oneway" | "roundtrip">("roundtrip");
+  const [tripMode, setTripMode] = useState<"oneway" | "roundtrip">(controlledResult?.tripMode ?? "roundtrip");
+  const [departures, setDepartures] = useState<Record<string, string>>({});
   const [dieselPrice, setDieselPrice] = useState("");
   const [marketPrice, setMarketPrice] = useState<{ price: number; date: string } | null>(null);
   const [priceStatus, setPriceStatus] = useState("오피넷 경유 가격 조회 중…");
@@ -254,6 +261,7 @@ export function RouteSolvePanel({
     );
     const optimistic: RouteSolveResult = {
       ...baseResult,
+      stale: true,
       routes: baseResult.routes.map((item) =>
         item.vehicleId === vehicleId
           ? {
@@ -264,8 +272,6 @@ export function RouteSolvePanel({
           : item,
       ),
     };
-    publish(optimistic);
-
     try {
       const saveRes = await fetch("/api/route/order", {
         method: "POST",
@@ -275,28 +281,14 @@ export function RouteSolvePanel({
       const saveData = (await saveRes.json()) as { ok?: boolean; error?: string };
       if (!saveRes.ok || !saveData.ok) {
         setOrderError(saveData.error ?? "순서 저장에 실패했습니다.");
-        try {
-          const refreshed = await fetchSolve();
-          publish(refreshed);
-          return refreshed;
-        } catch {
-          return optimistic;
-        }
+        return baseResult;
       }
 
-      if (opts?.skipSolve) return optimistic;
-      const refreshed = await fetchSolve();
-      publish(refreshed);
-      return refreshed;
+      if (!opts?.skipSolve) publish(optimistic);
+      return optimistic;
     } catch (error) {
       setOrderError(error instanceof Error ? error.message : String(error));
-      try {
-        const refreshed = await fetchSolve();
-        publish(refreshed);
-        return refreshed;
-      } catch {
-        return optimistic;
-      }
+      return baseResult;
     } finally {
       setSavingVehicleId(null);
     }
@@ -319,13 +311,7 @@ export function RouteSolvePanel({
       if (next) working = next;
       changed += 1;
     }
-    if (changed > 0) {
-      try {
-        publish(await fetchSolve());
-      } catch {
-        /* optimistic already published */
-      }
-    }
+    if (changed > 0) publish(working);
     return changed;
   }
 
@@ -355,7 +341,7 @@ export function RouteSolvePanel({
   }
 
   function onSuggestOrder(vehicleId: string) {
-    if (!result || busy) return;
+    if (!result || busy || result.stale || result.tripMode !== tripMode) return;
     const route = result.routes.find((item) => item.vehicleId === vehicleId);
     if (!route || route.stopIds.length < 2) return;
 
@@ -386,7 +372,7 @@ export function RouteSolvePanel({
   }
 
   async function onOpenAlternatives(vehicleId: string) {
-    if (!result || busy) return;
+    if (!result || busy || result.stale || result.tripMode !== tripMode) return;
     if (altVehicleId === vehicleId) {
       setAltVehicleId(null);
       return;
@@ -428,8 +414,9 @@ export function RouteSolvePanel({
     }
   }
 
-  function onApplyAlternative(vehicleId: string, option: RouteAlternativeOption) {
+  async function onApplyAlternative(vehicleId: string, option: RouteAlternativeOption) {
     if (!result) return;
+    setAltLoadingId(vehicleId);
     const next: RouteSolveResult = {
       ...result,
       routes: result.routes.map((route) =>
@@ -438,6 +425,7 @@ export function RouteSolvePanel({
               ...route,
               totalDistanceKm: option.distanceKm,
               totalTimeMin: option.durationMin,
+              stopDurationsSec: option.legDurationsSec?.slice(0, route.stopIds.length) ?? null,
               tollWon: option.tollWon,
               path: option.path.map((point, index) =>
                 index === 0 ? { ...point, label: "출" } : point,
@@ -449,7 +437,22 @@ export function RouteSolvePanel({
       ),
       note: `${result.note.split(" · ")[0]} · ${option.label} 경로 적용`,
     };
-    publish(next);
+    try {
+      const response = await fetch("/api/route/snapshot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, vehicleId, option }),
+      });
+      if (!response.ok) {
+        setAltError("선택한 경로를 저장하지 못했습니다. 일정을 확인하고 경로를 다시 계산하세요.");
+        return;
+      }
+      publish(next);
+    } catch {
+      setAltError("선택한 경로를 저장하지 못했습니다. 다시 시도하세요.");
+      return;
+    } finally {
+      setAltLoadingId(null);
+    }
     setAltVehicleId(null);
   }
 
@@ -527,7 +530,8 @@ export function RouteSolvePanel({
           <select className="dispatch-select" value={tripMode} disabled={busy} onChange={(event) => {
             const mode = event.target.value === "oneway" ? "oneway" : "roundtrip";
             setTripMode(mode);
-            if (result) void runSolve(mode);
+            setAltVehicleId(null);
+            setAltOptionsByVehicle({});
           }}>
             <option value="oneway">편도</option>
             <option value="roundtrip">왕복</option>
@@ -539,12 +543,11 @@ export function RouteSolvePanel({
           onClick={() => void runSolve()}
           type="button"
         >
-          {loading && !savingVehicleId ? "계산 중…" : "경로 계산"}
+          {loading && !savingVehicleId ? "계산 중…" : result ? "경로 새로고침" : "경로 계산"}
         </button>
       </div>
       <p className="dispatch-side-meta">
-        「제약 해석」하면 해당 호차 순서를 바로 바꾸고 경로를 다시 계산합니다. 최종은 드래그로
-        고칠 수 있습니다.
+        방문 순서나 운행 구간을 바꾼 뒤에는 경로 새로고침을 눌러 갱신하세요.
       </p>
 
       {!result ? (
@@ -562,6 +565,9 @@ export function RouteSolvePanel({
           {result.matrixNote ? (
             <p className="dispatch-route-meta">{result.matrixNote}</p>
           ) : null}
+          {result.savedAt ? <p className="dispatch-route-meta">마지막 경로 조회: {new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</p> : null}
+          {result.snapshotError ? <p className="dispatch-route-note-warn">경로 저장에 실패했습니다. 화면을 떠나면 결과가 사라질 수 있습니다.</p> : null}
+          {result.stale || result.tripMode !== tripMode ? <p className="dispatch-route-note-warn">일정 또는 선택한 조건이 바뀌었습니다. 표시된 경로는 이전 결과입니다. 경로 새로고침을 눌러 갱신하세요.</p> : null}
           {result.error && !result.solverReachable ? (
             <p className="dispatch-route-note-warn">{result.error}</p>
           ) : null}
@@ -579,7 +585,7 @@ export function RouteSolvePanel({
             <div className="dispatch-route-constraint-actions">
               <button
                 className="dispatch-route-suggest-btn"
-                disabled={busy || !constraintText.trim()}
+                disabled={busy || Boolean(result.stale) || result.tripMode !== tripMode || !constraintText.trim()}
                 onClick={() => void onParseConstraints()}
                 type="button"
               >
@@ -614,7 +620,7 @@ export function RouteSolvePanel({
           {orderError ? <p className="dispatch-route-note-warn">{orderError}</p> : null}
           {altError ? <p className="dispatch-route-note-warn">{altError}</p> : null}
           {savingVehicleId ? (
-            <p className="dispatch-route-meta">순서 저장 · 경로 다시 계산 중…</p>
+            <p className="dispatch-route-meta">방문 순서 저장 중…</p>
           ) : null}
 
           <label className="route-fuel-price">경유 가격 (원/L)
@@ -626,6 +632,8 @@ export function RouteSolvePanel({
           {result.routes.map((route) => {
             const defaultEfficiency = defaultFuelEconomy(route.vehicleName);
             const efficiency = efficiencies[route.vehicleId] ?? String(defaultEfficiency?.kmPerLiter ?? "");
+            const departure = departures[route.vehicleId] ?? "";
+            const arrivals = estimateArrivalTimes(departure, route.stopDurationsSec, route.stopIds.length);
             return (
             <div className="dispatch-route-card" key={route.vehicleId}>
               <div className="dispatch-route-card-head">
@@ -641,7 +649,7 @@ export function RouteSolvePanel({
                   {route.stopIds.length > 1 ? (
                     <button
                       className="dispatch-route-suggest-btn"
-                      disabled={busy}
+                      disabled={busy || Boolean(result.stale) || result.tripMode !== tripMode}
                       onClick={() => onSuggestOrder(route.vehicleId)}
                       type="button"
                     >
@@ -650,7 +658,7 @@ export function RouteSolvePanel({
                   ) : null}
                   <button
                     className="dispatch-route-suggest-btn"
-                    disabled={busy || altLoadingId === route.vehicleId}
+                    disabled={busy || Boolean(result.stale) || result.tripMode !== tripMode || altLoadingId === route.vehicleId}
                     onClick={() => void onOpenAlternatives(route.vehicleId)}
                     type="button"
                   >
@@ -670,6 +678,11 @@ export function RouteSolvePanel({
                 {defaultEfficiency && efficiencies[route.vehicleId] === undefined ? <small>{defaultEfficiency.note}</small> : null}
                 <span>예상 경유비: <b>{Number(effectiveDieselPrice) > 0 && Number(efficiency) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiency) * Number(effectiveDieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
               </div>
+              <div className="route-arrival">
+                <label>출발시간 <input className="dispatch-input" type="time" value={departure} onChange={(event) => setDepartures((prev) => ({ ...prev, [route.vehicleId]: event.target.value }))} /></label>
+                <p className="dispatch-route-meta">조회 시점 교통 기준 · 하차·대기시간 미포함 · 출발시간은 화면을 나가면 초기화</p>
+                {departure && !route.stopDurationsSec ? <p className="dispatch-route-note-warn">구간별 이동시간이 없습니다. 경로를 새로고침하세요.</p> : null}
+              </div>
               {altVehicleId === route.vehicleId ? (
                 <div className="dispatch-route-alts">
                   <p className="dispatch-route-alts-title">경로 우선순위</p>
@@ -685,7 +698,7 @@ export function RouteSolvePanel({
                         className={`dispatch-route-alt-btn${selected ? " is-selected" : ""}`}
                         disabled={busy}
                         key={option.priority}
-                        onClick={() => onApplyAlternative(route.vehicleId, option)}
+                        onClick={() => void onApplyAlternative(route.vehicleId, option)}
                         type="button"
                       >
                         <span className="dispatch-route-alt-label">
@@ -702,7 +715,7 @@ export function RouteSolvePanel({
               ) : null}
               <ol className="dispatch-route-stops">
                 {route.titles.map((title, index) => {
-                  const canDrag = route.stopIds.length > 1 && !busy;
+                  const canDrag = route.stopIds.length > 1 && !busy && !result.stale && result.tripMode === tripMode;
                   const isDragging =
                     dragFrom?.vehicleId === route.vehicleId && dragFrom.index === index;
                   const isOver =
@@ -767,7 +780,7 @@ export function RouteSolvePanel({
                             </span>
                           ) : null}
                           <span className="dispatch-route-stop-label">
-                            {index + 1}. {title}
+                            {index + 1}. {title}{departure ? ` · 예상 도착 ${result.stale || result.tripMode !== tripMode ? "경로 새로고침 필요" : arrivals[index] ?? "확인 불가"}` : ""}
                           </span>
                         </>
                       )}

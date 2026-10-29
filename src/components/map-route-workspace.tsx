@@ -11,10 +11,11 @@ type Props = {
   date: string;
   markers: DispatchMapMarker[];
   boardHref: string;
+  initialResult: RouteSolveResult | null;
 };
 
-export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
-  const [result, setResult] = useState<RouteSolveResult | null>(null);
+export function MapRouteWorkspace({ date, markers, boardHref, initialResult }: Props) {
+  const [result, setResult] = useState<RouteSolveResult | null>(initialResult);
   const [mapExpanded, setMapExpanded] = useState(false);
 
   const routes: DispatchMapRoute[] = useMemo(() => {
@@ -48,7 +49,7 @@ export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
           label: String(stopIndex + 1),
         });
       });
-      path.push({ lat: result.depot.lat, lng: result.depot.lng });
+      if (result.tripMode !== "oneway") path.push({ lat: result.depot.lat, lng: result.depot.lng });
 
       return {
         vehicleId: route.vehicleId,
@@ -78,7 +79,7 @@ export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
           result={result}
         />
         <section className="dispatch-export-note">
-          카카오 길찾기만 사용합니다(OR-Tools 없음). 추천 순서·드래그로 같은 차량 안 순서를 저장합니다.
+          추천 순서·드래그로 같은 차량 안 순서를 저장합니다. 변경 후 경로 새로고침을 눌러 갱신하세요.
           실패 시 직선 근사로 폴백합니다. 일정은 <a href={boardHref}>일정 · 배차</a>에서
           등록·확정합니다.
         </section>

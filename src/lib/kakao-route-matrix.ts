@@ -177,6 +177,7 @@ export type DrivingRouteResult = {
   path: { lat: number; lng: number }[];
   distanceKm: number;
   durationMin: number;
+  legDurationsSec: number[] | null;
   tollWon: number | null;
   apiCalls: number;
   provider: "kakao" | "haversine";
@@ -192,6 +193,7 @@ async function fetchOneDirectionsSegment(
   path: { lat: number; lng: number }[];
   distanceM: number;
   durationSec: number;
+  legDurationsSec: number[] | null;
   tollWon: number | null;
 } | null> {
   if (points.length < 2) return null;
@@ -226,7 +228,7 @@ async function fetchOneDirectionsSegment(
     routes?: {
       result_code?: number;
       summary?: { distance: number; duration: number; fare?: { toll?: number } };
-      sections?: { roads?: { vertexes?: number[] }[] }[];
+      sections?: { duration?: number; roads?: { vertexes?: number[] }[] }[];
     }[];
   };
   const route = data.routes?.[0];
@@ -245,6 +247,8 @@ async function fetchOneDirectionsSegment(
     path,
     distanceM: route.summary?.distance ?? 0,
     durationSec: route.summary?.duration ?? 0,
+    legDurationsSec: route.sections?.length === points.length - 1 && route.sections.every((section) => typeof section.duration === "number" && Number.isFinite(section.duration) && section.duration >= 0)
+      ? route.sections.map((section) => section.duration!) : null,
     tollWon: route.summary?.fare?.toll ?? null,
   };
 }
@@ -268,6 +272,7 @@ export async function fetchKakaoDrivingRoute(
   let durationSec = 0;
   let apiCalls = 0;
   let tollWon: number | null = null;
+  let legDurationsSec: number[] | null = [];
 
   let start = 0;
   while (start < points.length - 1) {
@@ -286,6 +291,8 @@ export async function fetchKakaoDrivingRoute(
       }
       distanceM += seg.distanceM;
       durationSec += seg.durationSec;
+      if (legDurationsSec && seg.legDurationsSec) legDurationsSec.push(...seg.legDurationsSec);
+      else legDurationsSec = null;
       // 구간을 나눠 호출하면 동일 고속도로 요금이 중복될 수 있다.
       if (apiCalls === 1) tollWon = seg.tollWon;
       else tollWon = null;
@@ -301,6 +308,7 @@ export async function fetchKakaoDrivingRoute(
     path,
     distanceKm: Math.round((distanceM / 1000) * 10) / 10,
     durationMin: Math.max(1, Math.round(durationSec / 60)),
+    legDurationsSec,
     tollWon,
     apiCalls,
     provider: "kakao",

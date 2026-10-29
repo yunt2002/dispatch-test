@@ -9,6 +9,7 @@ export type RouteAlternativeOption = {
   hint: string;
   distanceKm: number;
   durationMin: number;
+  legDurationsSec: number[] | null;
   tollWon: number | null;
   path: { lat: number; lng: number }[];
 };
@@ -35,6 +36,7 @@ export async function fetchRouteAlternatives(
         hint: item.hint,
         distanceKm: road.distanceKm,
         durationMin: road.durationMin,
+        legDurationsSec: road.legDurationsSec,
         tollWon: road.tollWon,
         path: road.path,
       };

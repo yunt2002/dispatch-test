@@ -4,6 +4,7 @@ import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
 import { formatSheetDate, todayISO } from "@/lib/format";
 import { geocodingStatus } from "@/lib/geocoding";
 import { prisma } from "@/lib/prisma";
+import { readRouteSnapshot, routeInputSignature } from "@/lib/route-snapshot";
 
 export default async function MapRoutePage({
   searchParams,
@@ -32,6 +33,8 @@ export default async function MapRoutePage({
   const mapMarkers = await buildDispatchMapMarkers(activeEntries);
   const geo = geocodingStatus();
   const boardHref = `/?date=${encodeURIComponent(date)}`;
+  const [snapshot, signature] = await Promise.all([readRouteSnapshot(date), routeInputSignature(date)]);
+  const initialResult = snapshot ? { ...snapshot.result, savedAt: snapshot.savedAt, stale: snapshot.signature !== signature } : null;
 
   return (
     <div className="dispatch-page map-page">
@@ -62,7 +65,7 @@ export default async function MapRoutePage({
 
       <p className="map-page-geo">{geo.message}</p>
 
-      <MapRouteWorkspace boardHref={boardHref} date={date} markers={mapMarkers} />
+      <MapRouteWorkspace key={date} boardHref={boardHref} date={date} markers={mapMarkers} initialResult={initialResult} />
     </div>
   );
 }

@@ -20,6 +20,7 @@ export type RouteSolveResult = {
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
+    stopDurationsSec?: number[] | null;
     tollWon: number | null;
     carType: number;
     load: number;
@@ -198,6 +199,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
           titles,
           totalDistanceKm: road.distanceKm,
           totalTimeMin: road.durationMin,
+          stopDurationsSec: road.legDurationsSec?.slice(0, stopIds.length) ?? null,
           tollWon: road.tollWon,
           carType,
           load: Math.round(load * 10) / 10,
@@ -219,6 +221,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
         titles,
         totalDistanceKm: km,
         totalTimeMin: Math.max(1, Math.round((km / 40) * 60)),
+        stopDurationsSec: null,
         tollWon: null,
         carType,
         load: Math.round(load * 10) / 10,
