@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 export type RouteSolveResult = {
   ok: boolean;
   note: string;
+  tripMode: "oneway" | "roundtrip";
   matrixNote?: string;
   depot: { lat: number; lng: number; title: string };
   routes: {
@@ -66,7 +67,7 @@ function haversineKm(
  * 카카오 자동차 길찾기로 도로 거리·시간·폴리라인을 구한다.
  * (OR-Tools 없음 — 방문 순서는 visitOrder / 드래그 수동 조정)
  */
-export async function solveRoutesForDate(date: string): Promise<RouteSolveResult> {
+export async function solveRoutesForDate(date: string, tripMode: "oneway" | "roundtrip" = "roundtrip"): Promise<RouteSolveResult> {
   const [entries, vehicles] = await Promise.all([
     prisma.scheduleEntry.findMany({
       where: {
@@ -130,6 +131,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
   if (!stops.length) {
     return {
       ok: false,
+      tripMode,
       solverReachable: true,
       depot: DEFAULT_DEPOT,
       note: unassignedDetails.length
@@ -181,7 +183,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
       const stopIds = groupStops.map((s) => s.id);
       const titles = groupStops.map((s) => s.title);
 
-      const points = [depot, ...groupStops.map((s) => ({ lat: s.lat, lng: s.lng })), depot];
+      const points = [depot, ...groupStops.map((s) => ({ lat: s.lat, lng: s.lng })), ...(tripMode === "roundtrip" ? [depot] : [])];
       // 카카오 차종은 축·윤폭·윤거 기준이므로 톤수는 잠정 분류다.
       const carType = vehicle.maxWeight >= 2500 ? 2 : 1;
       const road = await fetchKakaoDrivingRoute(points, "RECOMMEND", carType);
@@ -233,6 +235,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
       : "";
   return {
     ok,
+    tripMode,
     solverReachable: true,
     depot: DEFAULT_DEPOT,
     note: ok

@@ -16,6 +16,7 @@ import { defaultFuelEconomy } from "@/lib/vehicle-fuel-economy";
 export type RouteSolveResult = {
   ok: boolean;
   note: string;
+  tripMode: "oneway" | "roundtrip";
   matrixNote?: string;
   depot: { lat: number; lng: number; title: string };
   routes: {
@@ -77,6 +78,7 @@ export function RouteSolvePanel({
   onResult,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [tripMode, setTripMode] = useState<"oneway" | "roundtrip">("roundtrip");
   const [dieselPrice, setDieselPrice] = useState("");
   const [marketPrice, setMarketPrice] = useState<{ price: number; date: string } | null>(null);
   const [priceStatus, setPriceStatus] = useState("오피넷 경유 가격 조회 중…");
@@ -144,26 +146,27 @@ export function RouteSolvePanel({
     onResult?.(data);
   }
 
-  async function fetchSolve(): Promise<RouteSolveResult> {
+  async function fetchSolve(mode = tripMode): Promise<RouteSolveResult> {
     const res = await fetch("/api/route/solve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date }),
+      body: JSON.stringify({ date, tripMode: mode }),
     });
     return (await res.json()) as RouteSolveResult;
   }
 
-  async function runSolve() {
+  async function runSolve(mode = tripMode) {
     setLoading(true);
     setOrderError(null);
     setAltVehicleId(null);
     setAltOptionsByVehicle({});
     setAltError(null);
     try {
-      publish(await fetchSolve());
+      publish(await fetchSolve(mode));
     } catch (error) {
       publish({
         ok: false,
+        tripMode: mode,
         solverReachable: false,
         depot: FALLBACK_DEPOT,
         note: "요청 실패",
@@ -378,7 +381,7 @@ export function RouteSolvePanel({
     return [
       { lat: depot.lat, lng: depot.lng },
       ...stops.map((stop) => ({ lat: stop.lat, lng: stop.lng })),
-      { lat: depot.lat, lng: depot.lng },
+      ...(result?.tripMode === "oneway" ? [] : [{ lat: depot.lat, lng: depot.lng }]),
     ];
   }
 
@@ -520,6 +523,16 @@ export function RouteSolvePanel({
     <section className="dispatch-route-panel" aria-label="경로 제안">
       <div className="dispatch-route-head">
         <h2>경로 (카카오 길찾기)</h2>
+        <label>운행 구간{" "}
+          <select className="dispatch-select" value={tripMode} disabled={busy} onChange={(event) => {
+            const mode = event.target.value === "oneway" ? "oneway" : "roundtrip";
+            setTripMode(mode);
+            if (result) void runSolve(mode);
+          }}>
+            <option value="oneway">편도</option>
+            <option value="roundtrip">왕복</option>
+          </select>
+        </label>
         <button
           className="dispatch-secondary-button"
           disabled={busy}
@@ -608,7 +621,7 @@ export function RouteSolvePanel({
             <input className="dispatch-input" type="number" min="0" step="0.01" value={effectiveDieselPrice} onChange={(e) => { setManualPrice(true); setDieselPrice(e.target.value); }} placeholder="주유 가격 입력" />
           </label>
           <p className="dispatch-route-meta">{manualPrice ? "직접 입력한 경유 가격" : priceStatus}{manualPrice && marketPrice ? <button type="button" className="dispatch-route-suggest-btn" onClick={() => setManualPrice(false)}>전국 평균 적용</button> : null}</p>
-          <p className="dispatch-route-meta">왕복 경로 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 실제 주유 가격과 연비는 다를 수 있습니다.</p>
+          <p className="dispatch-route-meta">{result.tripMode === "oneway" ? "편도: 회사 → 마지막 납품지" : "왕복: 회사 → 납품지 → 회사"} 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 실제 주유 가격과 연비는 다를 수 있습니다.</p>
 
           {result.routes.map((route) => {
             const defaultEfficiency = defaultFuelEconomy(route.vehicleName);
