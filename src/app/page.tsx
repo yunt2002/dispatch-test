@@ -10,6 +10,8 @@ import { importLatestExcelIfNeeded } from "@/lib/import-schedule";
 import { geocodingStatus } from "@/lib/geocoding";
 import { reasonOneLine, regionTypeLabel } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
+import { computeShipmentWeightKg } from "@/lib/pallet-weight";
+import { matchProductLoading } from "@/lib/product-loading";
 import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
 import { getDispatchSettings } from "@/lib/settings";
 import { matchRouteZone } from "@/lib/route-master";
@@ -88,7 +90,17 @@ export default async function HomePage({
         : maxTripCount;
     const capacity = maxPallet > 0 ? maxPallet * neededTrucks : 0;
     const remaining = Math.max(0, capacity - pallets);
-    const kg = pallets * settings.kgPerPallet;
+    const kg = assigned.reduce((sum, { entry }) => {
+      const family = matchProductLoading(entry.productCode, entry.productName);
+      const weight = computeShipmentWeightKg({
+        boxCount: entry.boxCount,
+        palletCount: entry.palletCount,
+        boxWeightG: family?.boxWeightG,
+        kgPerPallet: family?.kgPerPallet,
+        fallbackKgPerPallet: settings.kgPerPallet,
+      });
+      return sum + (weight.kg ?? 0);
+    }, 0);
     return {
       id: vehicle.id,
       name: vehicle.vehicleName,
@@ -241,7 +253,7 @@ export default async function HomePage({
           <section className="dispatch-vehicle-panel">
             <h2>잔여 PLT · 차량</h2>
             <p className="dispatch-side-meta">
-              박스·PLT 함께 표시 · 기준 {settings.kgPerPallet}kg/PLT · 1·2호 최대 8 PLT
+              중량은 BOX별·시트 PLT 기준 · 미매칭 시 {settings.kgPerPallet}kg/PLT · 1·2호 최대 8 PLT
             </p>
             {vehicleUsage.map((vehicle, index) => {
               const maxPallet = vehicle.maxPallet ?? 0;
@@ -263,9 +275,7 @@ export default async function HomePage({
                       {overOneTruck ? " · 복수 대 필요" : ""}
                       {" · "}
                       잔여 <b>{formatNumber(vehicle.remaining)}</b> PLT
-                      {vehicle.pallets > 0
-                        ? ` · 약 ${formatNumber(vehicle.kg)}kg`
-                        : ""}
+                      {vehicle.kg > 0 ? ` · ${formatNumber(vehicle.kg)}kg` : ""}
                     </small>
                     <div className="dispatch-loadbar"><i style={{ width: `${Math.max(5, load)}%` }} /></div>
                   </div>
