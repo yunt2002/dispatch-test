@@ -1,6 +1,7 @@
 import { DateSwitcher } from "@/components/date-switcher";
 import { ScheduleEntryCard } from "@/components/schedule-entry-card";
 import { ScheduleRegisterDialog } from "@/components/schedule-register-dialog";
+import { ScheduleSelectionRoot } from "@/components/schedule-selection";
 import { ErrorText, SuccessText } from "@/components/ui";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { formatNumber, formatSheetDate, parseJson, todayISO } from "@/lib/format";
@@ -74,6 +75,7 @@ export default async function HomePage({
       .map((entry) => ({ entry, selected: selectedVehicle(entry) }))
       .filter(({ selected }) => selected?.vehicleTypeId === vehicle.id);
     const pallets = assigned.reduce((sum, { entry }) => sum + (entry.palletCount ?? 0), 0);
+    const boxes = assigned.reduce((sum, { entry }) => sum + (entry.boxCount ?? 0), 0);
     const maxTripCount = assigned.reduce(
       (max, { selected }) => Math.max(max, selected?.vehicleCount ?? 1),
       1,
@@ -91,6 +93,7 @@ export default async function HomePage({
       name: vehicle.vehicleName,
       region: regionTypeLabel(vehicle.primaryRegionType),
       count: assigned.length,
+      boxes,
       pallets,
       maxPallet,
       capacity,
@@ -208,6 +211,7 @@ export default async function HomePage({
       </datalist>
 
       <div className="dispatch-workspace">
+        <ScheduleSelectionRoot date={date} entryIds={entries.map((entry) => entry.id)}>
         <section className="dispatch-board" aria-label={`${formatSheetDate(date)} 배차 보드`}>
           <section className="dispatch-column dispatch-column-review">
             <div className="dispatch-column-head"><div><i /><strong>추천 확인</strong><span>담당자 승인 전</span></div><b>{reviewEntries.length}</b></div>
@@ -228,12 +232,13 @@ export default async function HomePage({
             </div>
           </section>
         </section>
+        </ScheduleSelectionRoot>
 
         <aside className="dispatch-side">
           <section className="dispatch-vehicle-panel">
             <h2>잔여 PLT · 차량</h2>
             <p className="dispatch-side-meta">
-              기준 {settings.kgPerPallet}kg/PLT · 1·2호 최대 8 PLT
+              박스·PLT 함께 표시 · 기준 {settings.kgPerPallet}kg/PLT · 1·2호 최대 8 PLT
             </p>
             {vehicleUsage.map((vehicle, index) => {
               const maxPallet = vehicle.maxPallet ?? 0;
@@ -249,12 +254,12 @@ export default async function HomePage({
                     <strong>{vehicle.name} · {vehicle.region}</strong>
                     <small>
                       {vehicle.count
-                        ? `${vehicle.count}건 · ${formatNumber(vehicle.pallets)}/${formatNumber(maxPallet)} PLT`
-                        : `0/${formatNumber(maxPallet)} PLT`}
+                        ? `${vehicle.count}건 · 박스 ${formatNumber(vehicle.boxes)} · ${formatNumber(vehicle.pallets)}/${formatNumber(maxPallet)} PLT`
+                        : `박스 0 · 0/${formatNumber(maxPallet)} PLT`}
                       {vehicle.neededTrucks > 1 ? ` · ${vehicle.neededTrucks}대` : ""}
                       {overOneTruck ? " · 복수 대 필요" : ""}
                       {" · "}
-                      잔여 <b>{formatNumber(vehicle.remaining)}</b>
+                      잔여 <b>{formatNumber(vehicle.remaining)}</b> PLT
                       {vehicle.pallets > 0
                         ? ` · 약 ${formatNumber(vehicle.kg)}kg`
                         : ""}

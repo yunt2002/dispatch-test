@@ -217,3 +217,22 @@ export function resolveCustomerAddress(customerName?: string | null): string | n
   const hit = matchDeliveryCustomer(customerName);
   return hit?.address?.trim() || null;
 }
+
+/** 거래처 → 지역(위치). RegionMaster 목록이 있으면 그중으로 맞춘다. */
+export function resolveLocationFromCustomer(
+  customerName?: string | null,
+  regionNames: string[] = [],
+): string | null {
+  const hit = matchDeliveryCustomer(customerName);
+  const hint = hit?.locationHint?.trim();
+  if (!hint) return null;
+  if (!regionNames.length) return hint;
+
+  const exact = regionNames.find((name) => name === hint);
+  if (exact) return exact;
+
+  const fuzzy = regionNames.find(
+    (name) => name.includes(hint) || hint.includes(name),
+  );
+  return fuzzy ?? hint;
+}

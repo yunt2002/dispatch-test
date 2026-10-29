@@ -126,6 +126,25 @@ describe("recommendForQuantity", () => {
     assert.ok(result.reasonLines.some((line) => line.includes("28박스/PLT")));
   });
 
+  it("uses BOX별 중량 for partial loads and ceils PLT for space", () => {
+    // HFP 3.2: 60박스/PLT · 5620g/박스. 50박스 → 적재 1PLT, 중량 50×5.62=281kg
+    const result = recommendForQuantity({
+      locationName: "평택",
+      boxCount: 50,
+      productName: "HFP 3.2 FE ROTOR ASSY (8호 금형)",
+      kgPerPallet: 600,
+      vehicles: [
+        vehicle({ id: "v2", vehicleName: "2호차", primaryRegionType: "METROPOLITAN", maxPallet: 8 }),
+      ],
+      regions: new Map([["평택", { regionType: "METROPOLITAN", preferredVehicleTypeId: "v2" }]]),
+    });
+    assert.equal(result.palletCount, 1);
+    assert.ok(
+      result.reasonLines.some((line) => line.includes("281kg") && line.includes("50박스")),
+      result.reasonLines.join(" | "),
+    );
+  });
+
   it("overflows to emergency when 1호 remaining is full", () => {
     const result = recommendForQuantity({
       locationName: "울주",

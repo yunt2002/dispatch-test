@@ -7,6 +7,7 @@ import {
   type RegionLookup,
 } from "@/lib/delivery-excel";
 import { matchProductLoading } from "@/lib/product-loading";
+import { computeShipmentWeightKg } from "@/lib/pallet-weight";
 import {
   matchRouteZone,
   preferredVehicleIdForZone,
@@ -126,7 +127,8 @@ export function buildDispatchGroups(input: {
 
     for (const { row } of bucket.rows) {
       totalBoxes += row.boxCount ?? 0;
-      totalWeight += row.totalWeight ?? 0;
+      const rowHasWeight = row.totalWeight != null && row.totalWeight > 0;
+      if (rowHasWeight) totalWeight += row.totalWeight as number;
       const master = input.loadingByProduct.get(row.productCode);
       const family = matchProductLoading(row.productCode, row.productName);
       const boxesPerPallet = master?.boxesPerPallet ?? family?.boxesPerPallet ?? null;
@@ -135,7 +137,7 @@ export function buildDispatchGroups(input: {
           `${family.familyName} · ${family.boxType} · 입수 ${family.boxesPerPallet}박스/PLT`,
         );
       } else if (family && family.boxesPerPallet == null) {
-        warnings.push(`${family.familyName}: 낱개 적재 — PLT 환산 없음`);
+        warnings.push(`${family.familyName}: 낱개 적재 — PLT 환산 없음 · 자리 1칸으로 배정`);
       }
       const { pallets, source, warning } = computePallets({
         boxCount: row.boxCount,
@@ -143,6 +145,16 @@ export function buildDispatchGroups(input: {
         totalWeight: row.totalWeight,
         kgPerPallet,
       });
+      if (!rowHasWeight) {
+        const derived = computeShipmentWeightKg({
+          boxCount: row.boxCount,
+          palletCount: pallets,
+          boxWeightG: family?.boxWeightG,
+          kgPerPallet: family?.kgPerPallet,
+          fallbackKgPerPallet: kgPerPallet,
+        });
+        if (derived.kg != null) totalWeight += derived.kg;
+      }
       if (pallets == null) {
         palletKnown = false;
         missingLoading += 1;
@@ -383,12 +395,12 @@ export function recommendForQuantity(input: {
   const boxCount = input.boxCount != null && input.boxCount > 0 ? input.boxCount : 0;
   let totalPallets =
     input.palletCount != null && input.palletCount > 0 ? input.palletCount : null;
-  const palletKnown = totalPallets != null;
+  let palletKnown = totalPallets != null;
   const warnings: string[] = [];
   const reasonLines: string[] = [];
   const family = matchProductLoading(input.productCode, input.productName);
   if (family?.boxesPerPallet == null && family) {
-    warnings.push(`${family.familyName}: 낱개 박스 — PLT 환산 없음 · 별도 보관`);
+    warnings.push(`${family.familyName}: 낱개 박스 — PLT 환산 없음 · 별도 보관 · 자리 1칸`);
   }
   const zone = matchRouteZone({
     locationName: location,
@@ -404,11 +416,28 @@ export function recommendForQuantity(input: {
     );
   }
 
-  const effectiveKg = family?.kgPerPallet ?? kgPerPallet;
-  let totalWeight = 0;
-  if (palletKnown && effectiveKg) {
-    totalWeight = (totalPallets as number) * effectiveKg;
-    reasonLines.push(`PLT ${(totalPallets as number).toFixed(1)} · ${effectiveKg}kg/PLT`);
+  // 박스 → PLT는 ceil (적재 자리). 중량은 BOX별 중량(g) × 박스수가 우선.
+  if (!palletKnown && boxCount > 0 && family?.boxesPerPallet != null && family.boxesPerPallet > 0) {
+    totalPallets = Math.ceil(boxCount / family.boxesPerPallet);
+    palletKnown = true;
+  }
+  const weightCalc = computeShipmentWeightKg({
+    boxCount: boxCount > 0 ? boxCount : null,
+    palletCount: totalPallets,
+    boxWeightG: family?.boxWeightG,
+    kgPerPallet: family?.kgPerPallet,
+    fallbackKgPerPallet: kgPerPallet,
+  });
+  const totalWeight = weightCalc.kg ?? 0;
+  if (weightCalc.detail) {
+    reasonLines.push(
+      weightCalc.source === "boxes"
+        ? `중량 ${weightCalc.detail}`
+        : weightCalc.detail,
+    );
+  }
+  if (totalPallets != null && totalPallets > 0 && weightCalc.source === "boxes") {
+    reasonLines.push(`적재 ${totalPallets} PLT (박스÷입수 ceil)`);
   }
 
   const drafts = buildDispatchGroups({

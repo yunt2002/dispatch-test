@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   changeScheduleVehicle,
   confirmSchedule,
@@ -12,6 +12,11 @@ import {
 import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { ConfirmSubmit } from "@/components/confirm-submit";
 import type { ScheduleVehicleOption } from "@/components/schedule-entry-row";
+import { ScheduleSelectCheckbox } from "@/components/schedule-selection";
+import {
+  DELIVERY_CUSTOMERS,
+  resolveLocationFromCustomer,
+} from "@/lib/delivery-customers";
 
 export function ScheduleEntryCard({
   id,
@@ -55,6 +60,12 @@ export function ScheduleEntryCard({
   vehicles: ScheduleVehicleOption[];
 }) {
   const [editing, setEditing] = useState(false);
+  const [editCustomer, setEditCustomer] = useState(customerName ?? "");
+  const [editLocation, setEditLocation] = useState(locationName);
+  const customerOptions = useMemo(
+    () => DELIVERY_CUSTOMERS.map((c) => c.name),
+    [],
+  );
   const done = status === "DONE";
   const confirmed = status === "CONFIRMED";
   const changed = Boolean(
@@ -75,23 +86,36 @@ export function ScheduleEntryCard({
           <input type="hidden" name="date" value={date} />
           <div className="dispatch-edit-grid">
             <div className="dispatch-field">
-              <label htmlFor={`location-${id}`}>지역</label>
-              <input
-                className="dispatch-input"
-                defaultValue={locationName}
-                id={`location-${id}`}
-                list="location-options"
-                name="locationName"
-                required
-              />
-            </div>
-            <div className="dispatch-field">
               <label htmlFor={`customer-${id}`}>거래처</label>
               <input
                 className="dispatch-input"
-                defaultValue={customerName ?? ""}
                 id={`customer-${id}`}
+                list={`customer-options-${id}`}
                 name="customerName"
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setEditCustomer(next);
+                  const mapped = resolveLocationFromCustomer(next);
+                  if (mapped) setEditLocation(mapped);
+                }}
+                value={editCustomer}
+              />
+              <datalist id={`customer-options-${id}`}>
+                {customerOptions.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </div>
+            <div className="dispatch-field">
+              <label htmlFor={`location-${id}`}>지역</label>
+              <input
+                className="dispatch-input"
+                id={`location-${id}`}
+                list="location-options"
+                name="locationName"
+                onChange={(event) => setEditLocation(event.target.value)}
+                required
+                value={editLocation}
               />
             </div>
             <div className="dispatch-field dispatch-field-wide">
@@ -137,11 +161,14 @@ export function ScheduleEntryCard({
   }
 
   return (
-    <article className={`dispatch-job ${done ? "dispatch-job-done" : ""}`}>
+    <article className={`dispatch-job${done ? " dispatch-job-done" : ""}`}>
       <div className="dispatch-job-top">
-        <div>
-          <strong>{locationName}</strong>
-          <span>{regionTypeLabel}</span>
+        <div className="dispatch-job-top-main">
+          <ScheduleSelectCheckbox id={id} />
+          <div>
+            <strong>{locationName}</strong>
+            <span>{regionTypeLabel}</span>
+          </div>
         </div>
         <b>{qtyLabel}</b>
       </div>
@@ -187,7 +214,11 @@ export function ScheduleEntryCard({
         {!done ? (
           <button
             className="dispatch-secondary-button dispatch-card-action"
-            onClick={() => setEditing(true)}
+            onClick={() => {
+              setEditCustomer(customerName ?? "");
+              setEditLocation(locationName);
+              setEditing(true);
+            }}
             type="button"
           >
             수정

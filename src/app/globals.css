@@ -862,6 +862,59 @@ body {
   font-size: 13px;
 }
 
+.dispatch-board-stack {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dispatch-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  background: #f7f5f0;
+  border: 1px solid #e2ddd2;
+  border-radius: 9px;
+}
+
+.dispatch-bulk-bar-left,
+.dispatch-bulk-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.dispatch-bulk-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f3d39;
+  cursor: pointer;
+}
+
+.dispatch-bulk-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2f5d50;
+}
+
+.dispatch-bulk-count {
+  color: #7a776f;
+  font-size: 12px;
+}
+
+.dispatch-bulk-bar-actions .dispatch-delete-button:disabled,
+.dispatch-bulk-bar-actions .dispatch-secondary-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .dispatch-job {
   min-width: 0;
   padding: 13px;
@@ -869,6 +922,32 @@ body {
   background: #fff;
   border: 1px solid #dcd8ce;
   border-radius: 9px;
+}
+
+.dispatch-job-top-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.dispatch-job-check {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  margin-top: 3px;
+  cursor: pointer;
+}
+
+.dispatch-job-check input {
+  width: 15px;
+  height: 15px;
+  accent-color: #2f5d50;
+}
+
+.dispatch-job:has(.dispatch-job-check.is-checked) {
+  border-color: #9bb8ae;
+  background: #f4f8f6;
 }
 
 .dispatch-job-done {

@@ -12,6 +12,7 @@ import {
 import { optionalText, text } from "@/lib/form";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { resolveLocationFromCustomer } from "@/lib/delivery-customers";
 import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
@@ -104,9 +105,14 @@ export async function registerSchedule(formData: FormData) {
     if (!customerName) customerName = defaults.customerName;
   }
 
+  // 거래처만 고른 경우 locationHint → 지역 보정
+  if (!locationName && customerName) {
+    locationName = resolveLocationFromCustomer(customerName);
+  }
+
   if (!locationName) {
     go({
-      error: "지역을 선택하거나, 품명을 골라 자동 추천을 쓰세요.",
+      error: "지역을 선택하거나, 거래처·품명으로 자동 매핑을 쓰세요.",
       date: deliveryDate,
     });
   }
@@ -304,19 +310,30 @@ export async function updateSchedule(formData: FormData) {
   }
 
   if (!locationChanged && !qtyChanged && !productChanged) {
+    const mappedLocation = resolveLocationFromCustomer(customerName);
     await prisma.scheduleEntry.update({
       where: { id },
-      data: { customerName },
+      data: {
+        customerName,
+        ...(mappedLocation ? { locationName: mappedLocation } : {}),
+      },
     });
     await prisma.appLog.create({
       data: {
         userAction: "schedule_update",
         routeCode: date,
-        selectedResult: customerName,
+        selectedResult: mappedLocation
+          ? `${customerName} → ${mappedLocation}`
+          : customerName,
       },
     });
     revalidatePath("/");
-    go({ date, ok: "거래처를 수정했습니다." });
+    go({
+      date,
+      ok: mappedLocation
+        ? `거래처·지역(${mappedLocation})을 수정했습니다.`
+        : "거래처를 수정했습니다.",
+    });
   }
 
   const deliveryDate = entry.deliveryDate;
@@ -435,4 +452,57 @@ export async function deleteSchedule(formData: FormData) {
   if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go({ date, ok: "삭제했습니다." });
+}
+
+/** 선택 삭제 또는 해당 납품일 전체 삭제 */
+export async function deleteSchedules(formData: FormData) {
+  const date = optionalText(formData, "date") ?? undefined;
+  const scope = text(formData, "scope") === "day" ? "day" : "selected";
+
+  if (scope === "day") {
+    if (!date) {
+      go({ error: "납품일이 없어 전체 삭제할 수 없습니다." });
+    }
+    const result = await prisma.scheduleEntry.deleteMany({
+      where: { deliveryDate: date, status: { not: "CANCELLED" } },
+    });
+    await rebalanceDayFleet(date);
+    revalidatePath("/");
+    go({
+      date,
+      ok: result.count
+        ? `${result.count}건을 모두 삭제했습니다.`
+        : "삭제할 일정이 없습니다.",
+    });
+  }
+
+  const ids = formData
+    .getAll("ids")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  if (!ids.length) {
+    go({ date, error: "삭제할 항목을 선택하세요." });
+  }
+
+  const entries = await prisma.scheduleEntry.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, deliveryDate: true },
+  });
+  if (!entries.length) {
+    go({ date, error: "삭제할 일정을 찾지 못했습니다." });
+  }
+
+  await prisma.scheduleEntry.deleteMany({
+    where: { id: { in: entries.map((entry) => entry.id) } },
+  });
+
+  const dates = [...new Set(entries.map((entry) => entry.deliveryDate))];
+  for (const deliveryDate of dates) {
+    await rebalanceDayFleet(deliveryDate);
+  }
+  revalidatePath("/");
+  go({
+    date: date ?? dates[0],
+    ok: `${entries.length}건을 삭제했습니다.`,
+  });
 }
