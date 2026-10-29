@@ -5,8 +5,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 const DAILY = [
-  { href: "/", label: "일정 · 배차", match: (p: string) => p === "/" },
   { href: "/help", label: "사용설명서", match: (p: string) => p.startsWith("/help") },
+  { href: "/", label: "일정 · 배차", match: (p: string) => p === "/" },
   { href: "/map", label: "경로 · 지도", match: (p: string) => p.startsWith("/map") },
 ];
 
