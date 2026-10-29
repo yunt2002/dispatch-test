@@ -86,22 +86,24 @@ export async function registerSchedule(formData: FormData) {
   const deliveryDate = text(formData, "deliveryDate");
   let locationName = optionalText(formData, "locationName");
   let customerName = optionalText(formData, "customerName");
-  const productName = optionalText(formData, "productName");
+  const productNames = formData.getAll("productName").map((value) => String(value).trim() || null);
+  const quantities = formData.getAll("quantity").map((value) => parsePositive(String(value)));
+  const qtyUnits = formData.getAll("qtyUnit").map((value) => String(value));
+  const productName = productNames[0] ?? null;
   const notes = optionalText(formData, "notes");
   const vehicleTypeId = optionalText(formData, "vehicleTypeId");
-  const qtyUnit = text(formData, "qtyUnit") === "plt" ? "plt" : "box";
-  const quantity = parsePositive(optionalText(formData, "quantity") ?? undefined);
-  const boxCount = qtyUnit === "box" ? quantity : null;
-  const palletCount = qtyUnit === "plt" ? quantity : null;
 
   if (!deliveryDate) {
     go({ error: "납품일은 필수입니다." });
   }
-  if (quantity == null) {
+  if (!productNames.length || productNames.length !== quantities.length || quantities.length !== qtyUnits.length || quantities.some((quantity) => quantity == null) || qtyUnits.some((unit) => unit !== "box" && unit !== "plt")) {
     go({
-      error: "수량을 입력하세요.",
+      error: "모든 품목의 수량과 단위를 확인하세요.",
       date: deliveryDate,
     });
+  }
+  if (productNames.length > 1 && productNames.some((name) => !name)) {
+    go({ date: deliveryDate, error: "여러 품목을 등록할 때는 각 품명을 입력하세요." });
   }
 
   if (!locationName || !customerName) {
@@ -113,6 +115,10 @@ export async function registerSchedule(formData: FormData) {
   // 거래처만 고른 경우 locationHint → 지역 보정
   if (!locationName && customerName) {
     locationName = resolveLocationFromCustomer(customerName);
+  }
+
+  if (productNames.length > 1 && !customerName) {
+    go({ date: deliveryDate, error: "여러 품목을 등록할 거래처를 선택하세요." });
   }
 
   if (!locationName) {
@@ -131,12 +137,22 @@ export async function registerSchedule(formData: FormData) {
     remainingPalletsByVehicle(deliveryDate),
   ]);
 
+  const maxVisit = await prisma.scheduleEntry.aggregate({
+    where: { deliveryDate },
+    _max: { visitOrder: true },
+  });
+  const firstVisitOrder = (maxVisit._max.visitOrder ?? -1) + 1;
+  const rows = productNames.map((itemName, index) => {
+  const qtyUnit = qtyUnits[index];
+  const quantity = quantities[index]!;
+  const boxCount = qtyUnit === "box" ? quantity : null;
+  const palletCount = qtyUnit === "plt" ? quantity : null;
   const result = recommendForQuantity({
     locationName: resolvedLocation,
     customerName,
     boxCount,
     palletCount,
-    productName,
+    productName: itemName,
     vehicles,
     regions,
     kgPerPallet: settings.kgPerPallet,
@@ -169,19 +185,16 @@ export async function registerSchedule(formData: FormData) {
     );
   }
 
-  const maxVisit = await prisma.scheduleEntry.aggregate({
-    where: { deliveryDate },
-    _max: { visitOrder: true },
-  });
-  const visitOrder = (maxVisit._max.visitOrder ?? -1) + 1;
-
-  await prisma.scheduleEntry.create({
-    data: {
+  if (selected) {
+    const used = capacityUnits(storedPallet, boxCount);
+    remainingByVehicleId[selected.vehicleTypeId] = Math.max(0, (remainingByVehicleId[selected.vehicleTypeId] ?? 0) - used);
+  }
+  return { data: {
       deliveryDate,
       locationName: resolvedLocation,
       regionType: result.regionType,
       customerName: customerName ?? null,
-      productName,
+      productName: itemName,
       boxCount,
       palletCount: storedPallet,
       recommendedVehicleJson: recommended ? JSON.stringify(recommended) : null,
@@ -191,12 +204,13 @@ export async function registerSchedule(formData: FormData) {
       logistics: selected?.vehicleName ?? null,
       notes,
       status: "PLANNED",
-      visitOrder,
-    },
+      visitOrder: firstVisitOrder + index,
+    }, recommended, selected, manualVehicle };
   });
 
-  await prisma.appLog.create({
-    data: {
+  await prisma.$transaction([
+    prisma.scheduleEntry.createMany({ data: rows.map((row) => row.data) }),
+    ...rows.map(({ recommended, selected, manualVehicle }) => prisma.appLog.create({ data: {
       userAction: "schedule_register",
       routeCode: deliveryDate,
       recommendation: recommended
@@ -205,17 +219,18 @@ export async function registerSchedule(formData: FormData) {
       selectedResult: selected
         ? `${selected.vehicleName}×${selected.vehicleCount}${manualVehicle ? " (수동)" : ""}`
         : null,
-    },
-  });
+    } })),
+  ]);
 
   revalidatePath("/");
   await rebalanceDayFleet(deliveryDate);
+  const { selected, manualVehicle } = rows[0];
   const vehicleLabel = selected
     ? `${selected.vehicleName}${selected.vehicleCount > 1 ? ` ×${selected.vehicleCount}` : ""}${manualVehicle ? " (수동)" : ""}`
     : "차량 없음";
   go({
     date: deliveryDate,
-    ok: `등록 · ${vehicleLabel}`,
+    ok: rows.length > 1 ? `${rows.length}개 품목 등록 · 차량을 확인하세요` : `등록 · ${vehicleLabel}`,
   });
 }
 

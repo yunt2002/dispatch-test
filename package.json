@@ -7,7 +7,7 @@
     "build": "node scripts/build.mjs",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test src/engine/dispatch.test.ts src/lib/delivery-excel.test.ts src/lib/dispatch-group.test.ts src/lib/delivery-export.test.ts src/lib/customer-route.test.ts src/lib/product-loading.test.ts src/lib/pallet-weight.test.ts src/lib/route-master.test.ts src/lib/visit-order-suggest.test.ts src/lib/route-constraints.test.ts",
+    "test": "tsx --test src/engine/dispatch.test.ts src/lib/delivery-excel.test.ts src/lib/dispatch-group.test.ts src/lib/delivery-export.test.ts src/lib/customer-route.test.ts src/lib/product-loading.test.ts src/lib/pallet-weight.test.ts src/lib/vehicle-weight-summary.test.ts src/lib/route-master.test.ts src/lib/visit-order-suggest.test.ts src/lib/route-constraints.test.ts",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",

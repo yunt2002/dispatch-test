@@ -16,6 +16,7 @@ import { matchProductLoading } from "@/lib/product-loading";
 import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
 import { getDispatchSettings } from "@/lib/settings";
 import { matchRouteZone } from "@/lib/route-master";
+import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -91,7 +92,7 @@ export default async function HomePage({
         : maxTripCount;
     const capacity = maxPallet > 0 ? maxPallet * neededTrucks : 0;
     const remaining = Math.max(0, capacity - pallets);
-    const kg = assigned.reduce((sum, { entry }) => {
+    const weights = assigned.map(({ entry }) => {
       const family = matchProductLoading(entry.productCode, entry.productName);
       const weight = computeShipmentWeightKg({
         boxCount: entry.boxCount,
@@ -100,8 +101,9 @@ export default async function HomePage({
         kgPerPallet: family?.kgPerPallet,
         fallbackKgPerPallet: settings.kgPerPallet,
       });
-      return sum + (weight.kg ?? 0);
-    }, 0);
+      return weight;
+    });
+    const weight = summarizeVehicleWeight(weights, vehicle.maxWeight);
     return {
       id: vehicle.id,
       name: vehicle.vehicleName,
@@ -113,7 +115,7 @@ export default async function HomePage({
       capacity,
       neededTrucks,
       remaining,
-      kg,
+      weight,
     };
   });
 
@@ -276,8 +278,14 @@ export default async function HomePage({
                       {overOneTruck ? " · 복수 대 필요" : ""}
                       {" · "}
                       잔여 <b>{formatNumber(vehicle.remaining)}</b> PLT
-                      {vehicle.kg > 0 ? ` · ${formatNumber(vehicle.kg)}kg` : ""}
                     </small>
+                    <p className={`dispatch-weight${vehicle.weight.overSingleVehicle ? " dispatch-weight-alert" : ""}`}>
+                      {vehicle.weight.unknownCount > 0 ? "확인된 중량" : "중량 합계"} {formatNumber(vehicle.weight.kg)}kg / 1대 기준 {vehicle.weight.maxWeight == null ? "미설정" : `${formatNumber(vehicle.weight.maxWeight)}kg`}
+                      {vehicle.weight.unknownCount > 0 ? ` · ${vehicle.weight.unknownCount}건 미확인` : ""}
+                      {vehicle.weight.estimatedCount > 0 ? ` · ${vehicle.weight.estimatedCount}건 추정` : ""}
+                    </p>
+                    {vehicle.weight.overSingleVehicle ? <p className="dispatch-weight-warning">합계가 1대 기준을 초과합니다 · 운행별 분할 확인</p> : null}
+                    {vehicle.weight.unknownCount > 0 && !vehicle.weight.overSingleVehicle ? <p className="dispatch-weight-warning">미확인 중량이 있어 초과 여부를 확정할 수 없습니다.</p> : null}
                     <div className="dispatch-loadbar"><i style={{ width: `${Math.max(5, load)}%` }} /></div>
                   </div>
                 </div>

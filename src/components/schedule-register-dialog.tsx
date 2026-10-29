@@ -22,6 +22,8 @@ export function ScheduleRegisterDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [productName, setProductName] = useState("");
+  const [extraProducts, setExtraProducts] = useState<number[]>([]);
+  const [nextProductId, setNextProductId] = useState(1);
   const [customerName, setCustomerName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [suggestNote, setSuggestNote] = useState<string | null>(null);
@@ -52,6 +54,8 @@ export function ScheduleRegisterDialog({
 
   function resetFields() {
     setProductName("");
+    setExtraProducts([]);
+    setNextProductId(1);
     setCustomerName("");
     setLocationName("");
     setSuggestNote(null);
@@ -182,6 +186,7 @@ export function ScheduleRegisterDialog({
                     name="productName"
                     onChange={(event) => onProductChange(event.target.value)}
                     placeholder="제품 정리 ERP 명"
+                    required={extraProducts.length > 0}
                     value={productName}
                   />
                   <datalist id="erp-product-names">
@@ -267,6 +272,26 @@ export function ScheduleRegisterDialog({
                   </select>
                 </div>
               </div>
+              {extraProducts.map((productId, index) => (
+                <div className="dispatch-form-grid" key={productId}>
+                  <div className="dispatch-field">
+                    <label htmlFor={`productName-${productId}`}>추가 품명 {index + 2} *</label>
+                    <input className="dispatch-input" id={`productName-${productId}`} list="erp-product-names" name="productName" placeholder="제품 정리 ERP 명" required />
+                  </div>
+                  <div className="dispatch-field">
+                    <label htmlFor={`quantity-${productId}`}>수량 *</label>
+                    <div className="dispatch-quantity-row">
+                      <input className="dispatch-input" id={`quantity-${productId}`} inputMode="decimal" name="quantity" placeholder="예: 64" required />
+                      <select className="dispatch-select" defaultValue="box" name="qtyUnit" aria-label={`추가 품목 ${index + 2} 수량 단위`}>
+                        <option value="box">박스</option><option value="plt">PLT</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button className="dispatch-secondary-button" type="button" onClick={() => setExtraProducts((items) => items.filter((id) => id !== productId))}>품목 삭제</button>
+                </div>
+              ))}
+              <button className="dispatch-secondary-button" type="button" onClick={() => { setExtraProducts((items) => [...items, nextProductId]); setNextProductId((id) => id + 1); }}>+ 품목 추가</button>
+              {extraProducts.length > 0 ? <p className="dispatch-form-note">같은 거래처·지역으로 품목별 일정이 각각 등록됩니다. 함께 운행하려면 등록 후 합차를 확인하세요.</p> : null}
               <p className="dispatch-form-note">
                 {suggestNote ??
                   "거래처를 고르면 지역이 매핑됩니다. 비워 두면 품명 기준으로도 추천합니다."}
