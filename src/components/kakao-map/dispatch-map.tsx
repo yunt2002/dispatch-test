@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { DispatchMapMarker, DispatchMapRoute } from "@/components/kakao-map/types";
-import { getKakaoMapAppKey, loadKakaoMaps } from "@/lib/kakao-maps-loader";
+import {
+  getKakaoMapAppKey,
+  loadKakaoMaps,
+  resetKakaoMapsLoader,
+} from "@/lib/kakao-maps-loader";
 
 import { DEFAULT_DEPOT } from "@/lib/depot";
 
@@ -28,8 +32,12 @@ export function DispatchMap({
   const overlaysRef = useRef<kakao.maps.Marker[]>([]);
   const polylinesRef = useRef<kakao.maps.Polyline[]>([]);
   const labelsRef = useRef<kakao.maps.CustomOverlay[]>([]);
+  const mapsRef = useRef<typeof kakao.maps | null>(null);
+  const autoRetryDoneRef = useRef(false);
+
   const [status, setStatus] = useState<"loading" | "ready" | "no-key" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
 
   const markersKey = useMemo(
     () => markers.map((m) => `${m.id}:${m.lat}:${m.lng}`).join("|"),
@@ -46,6 +54,17 @@ export function DispatchMap({
     [routes],
   );
 
+  function retryLoad(manual = false) {
+    if (manual) autoRetryDoneRef.current = false;
+    resetKakaoMapsLoader();
+    mapsRef.current = null;
+    mapRef.current = null;
+    setStatus("loading");
+    setErrorMessage(null);
+    setRetryToken((n) => n + 1);
+  }
+
+  // SDK + 지도 인스턴스 로드 (마커와 분리 — 데이터 바뀔 때마다 재로드하지 않음)
   useEffect(() => {
     if (!getKakaoMapAppKey()) {
       setStatus("no-key");
@@ -61,108 +80,129 @@ export function DispatchMap({
         const maps = await loadKakaoMaps();
         if (!active) return;
 
-        const el = containerRef.current;
+        // 컨테이너가 아직 안 붙었으면 한 프레임 대기
+        let el = containerRef.current;
+        if (!el) {
+          await new Promise<void>((r) => requestAnimationFrame(() => r()));
+          el = containerRef.current;
+        }
         if (!el) {
           setStatus("error");
           setErrorMessage("지도 컨테이너를 찾을 수 없습니다.");
           return;
         }
 
-        const center = markers[0]
-          ? new maps.LatLng(markers[0].lat, markers[0].lng)
-          : new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-
-        if (!mapRef.current) {
-          mapRef.current = new maps.Map(el, {
-            center,
-            level: markers.length > 1 ? 9 : 7,
-          });
-        }
-
-        for (const marker of overlaysRef.current) marker.setMap(null);
+        mapsRef.current = maps;
+        el.innerHTML = "";
+        const center = new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+        mapRef.current = new maps.Map(el, { center, level: 7 });
         overlaysRef.current = [];
-        for (const line of polylinesRef.current) line.setMap(null);
         polylinesRef.current = [];
-        for (const label of labelsRef.current) label.setMap(null);
         labelsRef.current = [];
-
-        const bounds = new maps.LatLngBounds();
-
-        for (const item of markers) {
-          const position = new maps.LatLng(item.lat, item.lng);
-          bounds.extend(position);
-          const marker = new maps.Marker({
-            position,
-            map: mapRef.current,
-            title: item.title,
-          });
-          const info = new maps.InfoWindow({
-            content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:nowrap;">
-              <strong>${escapeHtml(item.title)}</strong>
-              ${item.subtitle ? `<br/><span style="color:#666">${escapeHtml(item.subtitle)}</span>` : ""}
-            </div>`,
-          });
-          maps.event.addListener(marker, "click", () => {
-            info.open(mapRef.current!, marker);
-          });
-          overlaysRef.current.push(marker);
-        }
-
-        for (const route of routes) {
-          if (route.path.length < 2) continue;
-          const path = route.path.map((p) => new maps.LatLng(p.lat, p.lng));
-          for (const point of path) bounds.extend(point);
-
-          const line = new maps.Polyline({
-            path,
-            strokeWeight: 5,
-            strokeColor: route.color,
-            strokeOpacity: 0.85,
-            strokeStyle: "solid",
-            map: mapRef.current,
-          });
-          polylinesRef.current.push(line);
-
-          route.path.forEach((point, index) => {
-            if (!point.label) return;
-            const overlay = new maps.CustomOverlay({
-              position: new maps.LatLng(point.lat, point.lng),
-              content: `<div class="map-route-badge" style="background:${route.color}">${escapeHtml(point.label)}</div>`,
-              yAnchor: 2.1,
-              zIndex: 10 + index,
-              map: mapRef.current,
-            });
-            labelsRef.current.push(overlay);
-          });
-        }
-
-        const hasBoundsPoints = markers.length > 0 || routes.some((r) => r.path.length > 0);
-        if (hasBoundsPoints) {
-          try {
-            mapRef.current.setBounds(bounds);
-          } catch {
-            mapRef.current.setCenter(center);
-          }
-        }
-
-        requestAnimationFrame(() => {
-          mapRef.current?.relayout();
-          if (active) {
-            setStatus("ready");
-            setErrorMessage(null);
-          }
-        });
+        setStatus("ready");
+        setErrorMessage(null);
+        autoRetryDoneRef.current = false;
       } catch (error) {
         if (!active) return;
+        const message = error instanceof Error ? error.message : "지도 로드 실패";
         setStatus("error");
-        setErrorMessage(error instanceof Error ? error.message : "지도 로드 실패");
+        setErrorMessage(message);
+
+        // 한 번만 자동 재시도 (일시적 네트워크/SDK 지연)
+        if (!autoRetryDoneRef.current) {
+          autoRetryDoneRef.current = true;
+          window.setTimeout(() => {
+            if (active) retryLoad(false);
+          }, 1200);
+        }
       }
     })();
 
     return () => {
       active = false;
     };
-  }, [markers, markersKey, routes, routesKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryToken만으로 재로드
+  }, [retryToken]);
+
+  // 마커·경로 갱신
+  useEffect(() => {
+    const maps = mapsRef.current;
+    const map = mapRef.current;
+    if (!maps || !map || status !== "ready") return;
+
+    for (const marker of overlaysRef.current) marker.setMap(null);
+    overlaysRef.current = [];
+    for (const line of polylinesRef.current) line.setMap(null);
+    polylinesRef.current = [];
+    for (const label of labelsRef.current) label.setMap(null);
+    labelsRef.current = [];
+
+    const bounds = new maps.LatLngBounds();
+    const center = markers[0]
+      ? new maps.LatLng(markers[0].lat, markers[0].lng)
+      : new maps.LatLng(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+
+    for (const item of markers) {
+      const position = new maps.LatLng(item.lat, item.lng);
+      bounds.extend(position);
+      const marker = new maps.Marker({
+        position,
+        map,
+        title: item.title,
+      });
+      const info = new maps.InfoWindow({
+        content: `<div style="padding:6px 10px;font-size:12px;line-height:1.4;white-space:nowrap;">
+          <strong>${escapeHtml(item.title)}</strong>
+          ${item.subtitle ? `<br/><span style="color:#666">${escapeHtml(item.subtitle)}</span>` : ""}
+        </div>`,
+      });
+      maps.event.addListener(marker, "click", () => {
+        info.open(map, marker);
+      });
+      overlaysRef.current.push(marker);
+    }
+
+    for (const route of routes) {
+      if (route.path.length < 2) continue;
+      const path = route.path.map((p) => new maps.LatLng(p.lat, p.lng));
+      for (const point of path) bounds.extend(point);
+
+      const line = new maps.Polyline({
+        path,
+        strokeWeight: 5,
+        strokeColor: route.color,
+        strokeOpacity: 0.85,
+        strokeStyle: "solid",
+        map,
+      });
+      polylinesRef.current.push(line);
+
+      route.path.forEach((point, index) => {
+        if (!point.label) return;
+        const overlay = new maps.CustomOverlay({
+          position: new maps.LatLng(point.lat, point.lng),
+          content: `<div class="map-route-badge" style="background:${route.color}">${escapeHtml(point.label)}</div>`,
+          yAnchor: 2.1,
+          zIndex: 10 + index,
+          map,
+        });
+        labelsRef.current.push(overlay);
+      });
+    }
+
+    const hasBoundsPoints = markers.length > 0 || routes.some((r) => r.path.length > 0);
+    if (hasBoundsPoints) {
+      try {
+        map.setBounds(bounds);
+      } catch {
+        map.setCenter(center);
+      }
+    } else {
+      map.setCenter(center);
+    }
+
+    requestAnimationFrame(() => map.relayout());
+  }, [status, markers, markersKey, routes, routesKey]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -221,7 +261,17 @@ export function DispatchMap({
         ) : null}
       </div>
       {status === "error" ? (
-        <p className="dispatch-map-placeholder">{errorMessage}</p>
+        <div className="dispatch-map-placeholder">
+          <p>{errorMessage}</p>
+          <button
+            className="dispatch-map-expand-btn"
+            onClick={() => retryLoad(true)}
+            type="button"
+            style={{ marginTop: 8 }}
+          >
+            다시 시도
+          </button>
+        </div>
       ) : null}
       {status === "loading" ? (
         <p className="dispatch-map-placeholder">지도 불러오는 중…</p>
