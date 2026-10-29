@@ -255,7 +255,7 @@ export default async function HomePage({
           <section className="dispatch-vehicle-panel">
             <h2>잔여 PLT · 차량</h2>
             <p className="dispatch-side-meta">
-              중량은 BOX별·시트 PLT 기준 · 미매칭 시 {settings.kgPerPallet}kg/PLT · 1·2호 최대 8 PLT
+              중량은 BOX별·시트 PLT 기준 · 1·2호 최대 8 PLT
             </p>
             {vehicleUsage.map((vehicle, index) => {
               const maxPallet = vehicle.maxPallet ?? 0;
