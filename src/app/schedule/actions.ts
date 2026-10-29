@@ -13,6 +13,7 @@ import { optionalText, text } from "@/lib/form";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { resolveDefaultsFromProduct } from "@/lib/product-loading";
+import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 
 function go(params: Record<string, string | undefined>): never {
@@ -197,6 +198,7 @@ export async function registerSchedule(formData: FormData) {
   });
 
   revalidatePath("/");
+  await rebalanceDayFleet(deliveryDate);
   const vehicleLabel = selected
     ? `${selected.vehicleName}${selected.vehicleCount > 1 ? ` ×${selected.vehicleCount}` : ""}${manualVehicle ? " (수동)" : ""}`
     : "차량 없음";
@@ -252,6 +254,7 @@ export async function changeScheduleVehicle(formData: FormData) {
     },
   });
 
+  await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   const countLabel = vehicleCount > 1 ? ` ×${vehicleCount}` : "";
   go({ date, ok: `${vehicle.vehicleName}${countLabel}로 바꿨습니다.` });
@@ -364,6 +367,7 @@ export async function updateSchedule(formData: FormData) {
     },
   });
 
+  await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   const vehicleLabel = result.recommended
     ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
@@ -374,10 +378,12 @@ export async function updateSchedule(formData: FormData) {
 export async function markScheduleDone(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   await prisma.scheduleEntry.update({
     where: { id },
     data: { status: "DONE" },
   });
+  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go({ date, ok: "완료 처리했습니다." });
 }
@@ -411,10 +417,12 @@ export async function confirmSchedule(formData: FormData) {
 export async function reopenSchedule(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   await prisma.scheduleEntry.update({
     where: { id },
     data: { status: "CONFIRMED" },
   });
+  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go({ date, ok: "완료를 취소했습니다." });
 }
@@ -422,7 +430,9 @@ export async function reopenSchedule(formData: FormData) {
 export async function deleteSchedule(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   await prisma.scheduleEntry.delete({ where: { id } });
+  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go({ date, ok: "삭제했습니다." });
 }

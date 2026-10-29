@@ -9,7 +9,6 @@ import { geocodingStatus } from "@/lib/geocoding";
 import { reasonOneLine, regionTypeLabel } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
 import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
-import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { matchRouteZone } from "@/lib/route-master";
 
@@ -35,8 +34,9 @@ export default async function HomePage({
   searchParams: Promise<{ date?: string; error?: string; ok?: string }>;
 }) {
   const params = await searchParams;
-  await importLatestExcelIfNeeded();
-  await applyProductLoadingIfNeeded();
+
+  // 마이그레이션성 작업은 병렬. 잔여 재배정(rebalance)은 일정 변경 액션에서만 돌린다.
+  await Promise.all([importLatestExcelIfNeeded(), applyProductLoadingIfNeeded()]);
 
   const [regions, scheduleDates, vehicles, settings] = await Promise.all([
     prisma.regionMaster.findMany({ orderBy: { locationName: "asc" } }),
@@ -57,7 +57,6 @@ export default async function HomePage({
   );
   const today = todayISO();
   const date = params.date || (knownDates.includes(today) ? today : knownDates[0]) || today;
-  await rebalanceDayFleet(date);
   const entries = await loadEntries(date);
 
   const reviewEntries = entries.filter((entry) => entry.status === "PLANNED");

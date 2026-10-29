@@ -43,7 +43,8 @@ npx prisma db push
 npx tsx prisma/seed.ts
 ```
 
-Vercel 빌드(`npm run build`)도 같은 URL로 `db push` + `seed` 를 실행합니다.
+Vercel 빌드(`npm run build`)는 `prisma generate` + `db push` + `next build` 만 실행합니다.  
+`seed` 는 마스터를 지우고 다시 넣으므로 **최초 1회만** 로컬/Neon에서 수동 실행하세요.
 
 ---
 

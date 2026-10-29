@@ -14,10 +14,11 @@ if (databaseUrl.startsWith("file:")) {
   process.exit(1);
 }
 
+// seed 는 배포마다 돌리면 마스터를 지우고 빌드·첫 요청이 느려집니다.
+// 최초 1회만: npx tsx prisma/seed.ts
 const steps = [
   ["npx", "prisma", "generate"],
   ["npx", "prisma", "db", "push"],
-  ["npx", "prisma", "db", "seed"],
   ["npx", "next", "build"],
 ];
 
