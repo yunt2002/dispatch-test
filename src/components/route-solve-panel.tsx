@@ -11,6 +11,7 @@ import {
 } from "@/lib/route-constraints";
 import type { RoutePriorityId } from "@/lib/route-priority";
 import { sameOrder, suggestVisitOrder } from "@/lib/visit-order-suggest";
+import { defaultFuelEconomy } from "@/lib/vehicle-fuel-economy";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -590,7 +591,10 @@ export function RouteSolvePanel({
           </label>
           <p className="dispatch-route-meta">왕복 경로 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 경유 가격과 연비는 이 화면에서 입력합니다.</p>
 
-          {result.routes.map((route) => (
+          {result.routes.map((route) => {
+            const defaultEfficiency = defaultFuelEconomy(route.vehicleName);
+            const efficiency = efficiencies[route.vehicleId] ?? String(defaultEfficiency?.kmPerLiter ?? "");
+            return (
             <div className="dispatch-route-card" key={route.vehicleId}>
               <div className="dispatch-route-card-head">
                 <strong>
@@ -629,9 +633,10 @@ export function RouteSolvePanel({
               <div className="route-costs">
                 <span>예상 통행료: <b>{route.tollWon == null ? "확인 불가" : `${route.tollWon.toLocaleString("ko-KR")}원`}</b></span>
                 <label>연비 (km/L)
-                  <input className="dispatch-input" type="number" min="0" step="0.1" value={efficiencies[route.vehicleId] ?? ""} placeholder="입력" onChange={(e) => setEfficiencies((prev) => ({ ...prev, [route.vehicleId]: e.target.value }))} />
+                  <input className="dispatch-input" type="number" min="0" step="0.1" value={efficiency} placeholder="입력" onChange={(e) => setEfficiencies((prev) => ({ ...prev, [route.vehicleId]: e.target.value }))} />
                 </label>
-                <span>예상 경유비: <b>{Number(dieselPrice) > 0 && Number(efficiencies[route.vehicleId]) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiencies[route.vehicleId]) * Number(dieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
+                {defaultEfficiency && efficiencies[route.vehicleId] === undefined ? <small>{defaultEfficiency.note}</small> : null}
+                <span>예상 경유비: <b>{Number(dieselPrice) > 0 && Number(efficiency) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiency) * Number(dieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
               </div>
               {altVehicleId === route.vehicleId ? (
                 <div className="dispatch-route-alts">
@@ -739,7 +744,7 @@ export function RouteSolvePanel({
                 })}
               </ol>
             </div>
-          ))}
+          ); })}
 
           {result.unassigned.length ? (
             <div className="dispatch-route-note-warn">
