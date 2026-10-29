@@ -310,30 +310,20 @@ export async function updateSchedule(formData: FormData) {
   }
 
   if (!locationChanged && !qtyChanged && !productChanged) {
-    const mappedLocation = resolveLocationFromCustomer(customerName);
+    // 지역 필드는 그대로 제출된 값만 유지 (자동 매핑은 클라이언트에서 이미 반영)
     await prisma.scheduleEntry.update({
       where: { id },
-      data: {
-        customerName,
-        ...(mappedLocation ? { locationName: mappedLocation } : {}),
-      },
+      data: { customerName },
     });
     await prisma.appLog.create({
       data: {
         userAction: "schedule_update",
         routeCode: date,
-        selectedResult: mappedLocation
-          ? `${customerName} → ${mappedLocation}`
-          : customerName,
+        selectedResult: customerName,
       },
     });
     revalidatePath("/");
-    go({
-      date,
-      ok: mappedLocation
-        ? `거래처·지역(${mappedLocation})을 수정했습니다.`
-        : "거래처를 수정했습니다.",
-    });
+    go({ date, ok: "거래처를 수정했습니다." });
   }
 
   const deliveryDate = entry.deliveryDate;
@@ -483,9 +473,12 @@ export async function deleteSchedules(formData: FormData) {
   if (!ids.length) {
     go({ date, error: "삭제할 항목을 선택하세요." });
   }
+  if (!date) {
+    go({ error: "납품일이 없어 선택 삭제할 수 없습니다." });
+  }
 
   const entries = await prisma.scheduleEntry.findMany({
-    where: { id: { in: ids } },
+    where: { id: { in: ids }, deliveryDate: date },
     select: { id: true, deliveryDate: true },
   });
   if (!entries.length) {
@@ -493,16 +486,13 @@ export async function deleteSchedules(formData: FormData) {
   }
 
   await prisma.scheduleEntry.deleteMany({
-    where: { id: { in: entries.map((entry) => entry.id) } },
+    where: { id: { in: entries.map((entry) => entry.id) }, deliveryDate: date },
   });
 
-  const dates = [...new Set(entries.map((entry) => entry.deliveryDate))];
-  for (const deliveryDate of dates) {
-    await rebalanceDayFleet(deliveryDate);
-  }
+  await rebalanceDayFleet(date);
   revalidatePath("/");
   go({
-    date: date ?? dates[0],
+    date,
     ok: `${entries.length}건을 삭제했습니다.`,
   });
 }

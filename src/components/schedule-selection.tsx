@@ -3,7 +3,6 @@
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -11,7 +10,6 @@ import {
 import { deleteSchedules } from "@/app/schedule/actions";
 
 type SelectionContextValue = {
-  selected: Set<string>;
   toggle: (id: string) => void;
   isSelected: (id: string) => boolean;
 };
@@ -32,21 +30,17 @@ export function ScheduleSelectionRoot({
   children: ReactNode;
 }) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  const idKey = entryIds.join("|");
 
-  useEffect(() => {
-    setSelected((prev) => {
-      const next = new Set<string>();
-      for (const id of entryIds) {
-        if (prev.has(id)) next.add(id);
-      }
-      return next;
-    });
-  }, [idKey, entryIds]);
+  // 목록이 바뀌면 남은 id만 유효 — effect setState 없이 파생
+  const selectedIds = useMemo(
+    () => entryIds.filter((id) => selected.has(id)),
+    [entryIds, selected],
+  );
+  const selectedCount = selectedIds.length;
+  const allSelected = entryIds.length > 0 && selectedCount === entryIds.length;
 
   const value = useMemo<SelectionContextValue>(
     () => ({
-      selected,
       toggle: (id: string) => {
         setSelected((prev) => {
           const next = new Set(prev);
@@ -55,13 +49,10 @@ export function ScheduleSelectionRoot({
           return next;
         });
       },
-      isSelected: (id: string) => selected.has(id),
+      isSelected: (id: string) => selected.has(id) && entryIds.includes(id),
     }),
-    [selected],
+    [selected, entryIds],
   );
-
-  const allSelected = entryIds.length > 0 && entryIds.every((id) => selected.has(id));
-  const selectedCount = selected.size;
 
   function selectAll() {
     setSelected(new Set(entryIds));
@@ -89,7 +80,7 @@ export function ScheduleSelectionRoot({
               {selectedCount > 0
                 ? `${selectedCount}건 선택`
                 : entryIds.length
-                  ? `오늘 ${entryIds.length}건`
+                  ? `${date} · ${entryIds.length}건`
                   : "납품 없음"}
             </span>
           </div>
@@ -117,7 +108,7 @@ export function ScheduleSelectionRoot({
             >
               <input type="hidden" name="date" value={date} />
               <input type="hidden" name="scope" value="selected" />
-              {[...selected].map((id) => (
+              {selectedIds.map((id) => (
                 <input key={id} type="hidden" name="ids" value={id} />
               ))}
               <button
@@ -137,7 +128,7 @@ export function ScheduleSelectionRoot({
                 }
                 if (
                   !confirm(
-                    `오늘(${date}) 납품 ${entryIds.length}건을 모두 삭제할까요? 되돌릴 수 없습니다.`,
+                    `${date} 납품 ${entryIds.length}건을 모두 삭제할까요? 되돌릴 수 없습니다.`,
                   )
                 ) {
                   event.preventDefault();
@@ -151,7 +142,7 @@ export function ScheduleSelectionRoot({
                 disabled={!entryIds.length}
                 type="submit"
               >
-                오늘 전부 삭제
+                이 날짜 전부 삭제
               </button>
             </form>
           </div>

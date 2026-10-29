@@ -86,7 +86,7 @@ export default async function HomePage({
         ? Math.max(maxTripCount, Math.ceil(pallets / maxPallet))
         : maxTripCount;
     const capacity = maxPallet > 0 ? maxPallet * neededTrucks : 0;
-    const remaining = Math.max(0, (maxPallet || 0) - pallets);
+    const remaining = Math.max(0, capacity - pallets);
     const kg = pallets * settings.kgPerPallet;
     return {
       id: vehicle.id,
@@ -254,7 +254,7 @@ export default async function HomePage({
                     <strong>{vehicle.name} · {vehicle.region}</strong>
                     <small>
                       {vehicle.count
-                        ? `${vehicle.count}건 · 박스 ${formatNumber(vehicle.boxes)} · ${formatNumber(vehicle.pallets)}/${formatNumber(maxPallet)} PLT`
+                        ? `${vehicle.count}건 · 박스 ${formatNumber(vehicle.boxes)} · ${formatNumber(vehicle.pallets)}/${formatNumber(denom || maxPallet)} PLT`
                         : `박스 0 · 0/${formatNumber(maxPallet)} PLT`}
                       {vehicle.neededTrucks > 1 ? ` · ${vehicle.neededTrucks}대` : ""}
                       {overOneTruck ? " · 복수 대 필요" : ""}

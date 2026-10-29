@@ -64,6 +64,17 @@ describe("matchProductLoading", () => {
     assert.equal(matchProductLoading("", "IDB GEN1 ASSY (13.5*3.2)")?.boxesPerPallet, null);
     assert.equal(matchProductLoading("", "DM 4545 HFP3.2 ROTOR Assy")?.boxesPerPallet, 60);
     assert.equal(matchProductLoading("", "EPS ASSY")?.boxesPerPallet, 42);
+    // BC3는 제네릭 EPS(14000g)가 아니라 BC3(11000g/462kg)로 매칭
+    assert.equal(
+      matchProductLoading("", "MBCo eps BC3 ROTOR ASSY")?.id,
+      "EPS-BC3",
+    );
+    assert.equal(matchProductLoading("", "MBCo eps BC3 ROTOR ASSY")?.boxWeightG, 11000);
+    assert.equal(matchProductLoading("", "MBCo eps BC3 ROTOR ASSY")?.kgPerPallet, 462);
+    assert.equal(
+      matchProductLoading("", "MBCo EPS NX4 ROTOR ASSY(HRE FREE)")?.id,
+      "EPS-NX4",
+    );
     assert.equal(matchProductLoading("", "CN7 SENSING ASSY")?.boxesPerPallet, null);
     assert.equal(matchProductLoading("", "CKD")?.boxesPerPallet, 48);
     assert.equal(matchProductLoading("", "RING MAGNET"), null);

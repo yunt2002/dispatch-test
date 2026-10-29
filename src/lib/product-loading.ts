@@ -499,14 +499,20 @@ export function matchProductLoading(
   const text = haystack(productCode, productName);
   if (!text) return null;
 
-  // 1) ERP 명 부분일치 (긴 이름 우선)
-  const byErp = [...PRODUCT_FAMILIES]
-    .filter((family) => family.erpNames.some((erp) => includesErp(text, erp)))
-    .sort(
-      (a, b) =>
-        Math.max(...b.erpNames.map((n) => n.length)) - Math.max(...a.erpNames.map((n) => n.length)),
-    );
-  if (byErp[0]) return byErp[0];
+  // 1) ERP 명 부분일치 — 실제로 맞은 ERP 문자열 길이 우선, 동점이면 더 구체적인 패밀리
+  const byErp = PRODUCT_FAMILIES.map((family) => {
+    let matchedLen = 0;
+    for (const erp of family.erpNames) {
+      if (includesErp(text, erp)) matchedLen = Math.max(matchedLen, erp.length);
+    }
+    return { family, matchedLen };
+  })
+    .filter((row) => row.matchedLen > 0)
+    .sort((a, b) => {
+      if (b.matchedLen !== a.matchedLen) return b.matchedLen - a.matchedLen;
+      return a.family.erpNames.length - b.family.erpNames.length;
+    });
+  if (byErp[0]) return byErp[0].family;
 
   // 2) 키워드 매칭 (시트 순서: 구체 규칙이 위에 있음)
   return PRODUCT_FAMILIES.find((family) => family.match(text)) ?? null;
