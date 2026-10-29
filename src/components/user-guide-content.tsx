@@ -11,7 +11,7 @@ export const USER_GUIDE_SECTIONS = [
         <ol>
           <li>
             <strong>일정 · 배차</strong>에서 오늘 납품을 등록하고, 추천된 차량을 확인한 뒤
-            확정합니다.
+            확정합니다. 가까운 건은 <strong>합차</strong>로 한 대에 묶을 수 있습니다.
           </li>
           <li>
             <strong>경로 · 지도</strong>에서 차량별 길을 그리고, 방문 순서를 조정합니다.
@@ -34,6 +34,9 @@ export const USER_GUIDE_SECTIONS = [
       <>
         <p>맨 위 메뉴는 이렇게 나뉩니다.</p>
         <ul>
+          <li>
+            <strong>사용설명서</strong> — 지금 보고 있는 이 안내
+          </li>
           <li>
             <strong>일정 · 배차</strong> — 오늘(또는 선택한 날) 납품 목록과 차량 추천·확정
           </li>
@@ -86,8 +89,9 @@ export const USER_GUIDE_SECTIONS = [
           일정이 다시 보입니다.
         </p>
         <p>
-          오른쪽 요약(전체·확정·완료)과 아래 <strong>잔여 PLT · 차량</strong>으로 1호·2호가
-          얼마나 찼는지 확인합니다. PLT는 팔레트 적재 단위입니다.
+          보드 위 <strong>전체 선택 / 선택 삭제 / 합차</strong> 바로 여러 건을 한꺼번에
+          다루고, 오른쪽 <strong>잔여 PLT · 차량</strong>에서 호차별{" "}
+          <strong>박스 수·PLT·잔여</strong>를 확인합니다.
         </p>
       </>
     ),
@@ -105,8 +109,11 @@ export const USER_GUIDE_SECTIONS = [
             <strong>납품일</strong>·<strong>수량</strong>(박스 또는 PLT)을 넣습니다.
           </li>
           <li>
-            <strong>품명</strong>을 고르면 거래처·지역이 <strong>자동 추천</strong>될 수
-            있습니다. 틀리면 직접 고치세요.
+            <strong>품명</strong>을 고르면 거래처·지역이 추천될 수 있습니다.
+          </li>
+          <li>
+            <strong>거래처</strong>를 고르면 <strong>지역(위치)이 자동으로</strong>{" "}
+            맞춰집니다. 다르면 지역만 다시 고르세요.
           </li>
           <li>
             차량은 보통 <strong>자동 추천</strong>으로 둡니다. 필요하면 1호·2호 등을 직접
@@ -117,15 +124,58 @@ export const USER_GUIDE_SECTIONS = [
           </li>
         </ol>
         <p>
-          시스템이 지역·잔여 PLT를 보고 차를 제안합니다. 카드에 적힌 이유·확인 사항을
-          읽고, 다르면 차량을 바꾸세요.
+          중량은 제품 정리 시트의 <strong>BOX별 중량</strong>과 PLT 기준으로 계산합니다.
+          박스가 풀 PLT보다 적어도 적재 자리는 ceil(올림)으로 잡히고, 중량은 박스 수만큼
+          반영됩니다. 카드·추천 이유에 나온 kg를 확인하세요.
         </p>
       </>
     ),
   },
   {
+    id: "consolidate",
+    title: "5. 합차 (여러 납품을 한 대에 묶기)",
+    body: (
+      <>
+        <p>
+          같은 날 가까운 거래처를 <strong>한 대·한 운행</strong>으로 같이 실을 때
+          씁니다. (예: BMC 3PLT + 코아오토모티브 2PLT → 1호차 한 대)
+        </p>
+        <ol>
+          <li>
+            보드 카드 왼쪽 <strong>체크박스</strong>로 묶을 건을 <strong>2건 이상</strong>{" "}
+            고릅니다.
+          </li>
+          <li>
+            보드 위 <strong>합차</strong>를 누릅니다.
+          </li>
+          <li>
+            PLT를 합산해 같은 차량으로 맞추고, 카드에 <strong>합차 XXXX</strong> 뱃지가
+            붙습니다. 방문 순서도 그룹 안에서 맞춰 둡니다.
+          </li>
+          <li>
+            합차를 풀려면 카드의 <strong>합차 해제</strong>를 누릅니다. (차량은 그대로
+            둡니다)
+          </li>
+        </ol>
+        <ul>
+          <li>
+            합차 그룹 중 <strong>한 건의 차량만 바꿔도</strong> 그룹 전체가 같이
+            바뀝니다.
+          </li>
+          <li>
+            완료·취소된 건은 합차할 수 없습니다.
+          </li>
+          <li>
+            선택만 지울 때는 <strong>선택 삭제</strong>, 그날 전체를 지울 때는{" "}
+            <strong>이 날짜 전부 삭제</strong>를 씁니다.
+          </li>
+        </ul>
+      </>
+    ),
+  },
+  {
     id: "confirm",
-    title: "5. 배차 확정 · 수정 · 완료",
+    title: "6. 배차 확정 · 수정 · 완료",
     body: (
       <>
         <ul>
@@ -137,10 +187,12 @@ export const USER_GUIDE_SECTIONS = [
           </li>
           <li>
             <strong>수정</strong> — 지역·수량·거래처 등을 고칩니다. 바뀌면 추천이 다시
-            계산될 수 있습니다.
+            계산될 수 있습니다. 수정 화면에서도 거래처를 바꾸면 지역이 따라갈 수
+            있습니다.
           </li>
           <li>
-            <strong>삭제</strong> — 잘못 넣은 건을 지웁니다.
+            <strong>삭제</strong> — 카드 단위로 지우거나, 체크 후{" "}
+            <strong>선택 삭제</strong>로 여러 건을 지웁니다.
           </li>
           <li>
             <strong>완료</strong> — 납품이 끝나면 완료 칸으로 옮깁니다. 완료 취소도
@@ -156,7 +208,7 @@ export const USER_GUIDE_SECTIONS = [
   },
   {
     id: "map",
-    title: "6. 경로 · 지도 기본 사용",
+    title: "7. 경로 · 지도 기본 사용",
     body: (
       <>
         <ol>
@@ -182,17 +234,21 @@ export const USER_GUIDE_SECTIONS = [
         </p>
         <p>
           납품일이 다르면 위쪽 날짜를 바꿔 주세요. 일정 보드와 같은 날짜를 쓰는 것이
-          좋습니다.
+          좋습니다. 지도가 안 뜨면 <strong>다시 시도</strong>를 누르거나, 가능하면
+          Production 주소(등록된 도메인)로 접속하세요.
         </p>
       </>
     ),
   },
   {
     id: "order",
-    title: "7. 방문 순서 바꾸기",
+    title: "8. 방문 순서 바꾸기",
     body: (
       <>
-        <p>같은 호차 안에서 어느 납품지를 먼저 갈지 정하는 기능입니다.</p>
+        <p>
+          같은 호차 안에서 어느 납품지를 먼저 갈지 정하는 기능입니다. 합차로 묶인 건도
+          같은 차량 목록에서 순서를 조정합니다.
+        </p>
         <ul>
           <li>
             <strong>드래그</strong> — 목록 항목을 잡아 위아래로 옮긴 뒤 놓으면 순서가
@@ -217,7 +273,7 @@ export const USER_GUIDE_SECTIONS = [
   },
   {
     id: "alts",
-    title: "8. 다른 경로 (길 종류 고르기)",
+    title: "9. 다른 경로 (길 종류 고르기)",
     body: (
       <>
         <p>
@@ -244,7 +300,7 @@ export const USER_GUIDE_SECTIONS = [
   },
   {
     id: "settings",
-    title: "9. 설정 메뉴",
+    title: "10. 설정 메뉴",
     body: (
       <>
         <ul>
@@ -269,13 +325,13 @@ export const USER_GUIDE_SECTIONS = [
   },
   {
     id: "tips",
-    title: "10. 자주 하는 실수 · 팁",
+    title: "11. 자주 하는 실수 · 팁",
     body: (
       <>
         <ul>
           <li>
-            지도에 점이 안 보이면 — 주소·지역명 좌표가 아직 없을 수 있습니다. 잠시 기다리거나
-            지역/거래처 정보를 확인하세요.
+            지도에 점이 안 보이면 — 주소·지역명 좌표가 아직 없을 수 있습니다. 잠시
+            기다리거나 지역/거래처 정보를 확인하세요.
           </li>
           <li>
             경로 계산이 직선만 나오면 — 카카오 REST 키·일일 쿼터를 확인하세요. (서버
@@ -286,12 +342,17 @@ export const USER_GUIDE_SECTIONS = [
             번 더 새로고침해 보세요.
           </li>
           <li>
-            날짜를 바꿨는데 내용이 이상하면 — 홈과 지도의 <strong>납품일</strong>이 같은지
-            확인하세요.
+            날짜를 바꿨는데 내용이 이상하면 — 홈과 지도의 <strong>납품일</strong>이
+            같은지 확인하세요.
           </li>
           <li>
-            낱개 박스(PLT 환산 없음)는 적재율에 안 잡힐 수 있습니다. 카드의 확인 사항을
-            꼭 읽으세요.
+            낱개 박스(PLT 환산 없음)는 적재 자리는 1칸으로 보고, 중량은 BOX별 중량×박스
+            수로 잡힙니다. 카드 확인 사항을 꼭 읽으세요.
+          </li>
+          <li>
+            합차는 <strong>2건 이상</strong> 체크해야 버튼이 살아납니다. 묶인 뒤에도
+            보드에는 카드가 여러 장으로 보이되, 같은 <strong>합차</strong> 뱃지·같은
+            차량입니다.
           </li>
         </ul>
       </>
