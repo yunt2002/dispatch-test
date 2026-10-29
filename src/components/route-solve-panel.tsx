@@ -9,6 +9,7 @@ import {
   findOrderHintForVehicle,
   resolveExplicitOrder,
 } from "@/lib/route-constraints";
+import type { RoutePriorityId } from "@/lib/route-priority";
 import { sameOrder, suggestVisitOrder } from "@/lib/visit-order-suggest";
 
 export type RouteSolveResult = {
@@ -26,10 +27,21 @@ export type RouteSolveResult = {
     load: number;
     capacity: number;
     path?: { lat: number; lng: number; label?: string }[];
+    priority?: RoutePriorityId;
+    priorityLabel?: string;
   }[];
   unassigned: string[];
   solverReachable: boolean;
   error?: string;
+};
+
+type RouteAlternativeOption = {
+  priority: RoutePriorityId;
+  label: string;
+  hint: string;
+  distanceKm: number;
+  durationMin: number;
+  path: { lat: number; lng: number }[];
 };
 
 const FALLBACK_DEPOT = {
@@ -75,6 +87,12 @@ export function RouteSolvePanel({
   const [constraintNotes, setConstraintNotes] = useState<string[]>([]);
   const [constraintSummary, setConstraintSummary] = useState<string | null>(null);
   const [parsingConstraints, setParsingConstraints] = useState(false);
+  const [altVehicleId, setAltVehicleId] = useState<string | null>(null);
+  const [altLoadingId, setAltLoadingId] = useState<string | null>(null);
+  const [altError, setAltError] = useState<string | null>(null);
+  const [altOptionsByVehicle, setAltOptionsByVehicle] = useState<
+    Record<string, RouteAlternativeOption[]>
+  >({});
   const result = controlledResult !== undefined ? controlledResult : localResult;
 
   const allStopLabels = useMemo(() => {
@@ -113,6 +131,9 @@ export function RouteSolvePanel({
   async function runSolve() {
     setLoading(true);
     setOrderError(null);
+    setAltVehicleId(null);
+    setAltOptionsByVehicle({});
+    setAltError(null);
     try {
       publish(await fetchSolve());
     } catch (error) {
@@ -186,6 +207,13 @@ export function RouteSolvePanel({
     if (!baseResult) return null;
     setSavingVehicleId(vehicleId);
     setOrderError(null);
+    setAltOptionsByVehicle((prev) => {
+      if (!(vehicleId in prev)) return prev;
+      const next = { ...prev };
+      delete next[vehicleId];
+      return next;
+    });
+    if (altVehicleId === vehicleId) setAltVehicleId(null);
 
     const route = baseResult.routes.find((item) => item.vehicleId === vehicleId);
     if (!route) {
@@ -313,6 +341,87 @@ export function RouteSolvePanel({
       return;
     }
     void applyOrder(vehicleId, suggested);
+  }
+
+  function buildRoutePoints(route: RouteSolveResult["routes"][number]) {
+    const depot = result?.depot ?? FALLBACK_DEPOT;
+    const markerById = new Map(markers.map((marker) => [marker.id, marker]));
+    const stops = route.stopIds
+      .map((id) => markerById.get(id))
+      .filter((marker): marker is DispatchMapMarker => Boolean(marker));
+    if (!stops.length) return null;
+    return [
+      { lat: depot.lat, lng: depot.lng },
+      ...stops.map((stop) => ({ lat: stop.lat, lng: stop.lng })),
+      { lat: depot.lat, lng: depot.lng },
+    ];
+  }
+
+  async function onOpenAlternatives(vehicleId: string) {
+    if (!result || busy) return;
+    if (altVehicleId === vehicleId) {
+      setAltVehicleId(null);
+      return;
+    }
+
+    const route = result.routes.find((item) => item.vehicleId === vehicleId);
+    if (!route) return;
+    const points = buildRoutePoints(route);
+    if (!points) {
+      setAltError("좌표가 없어 다른 경로를 만들 수 없습니다.");
+      return;
+    }
+
+    setAltVehicleId(vehicleId);
+    setAltError(null);
+    if (altOptionsByVehicle[vehicleId]?.length) return;
+
+    setAltLoadingId(vehicleId);
+    try {
+      const res = await fetch("/api/route/alternatives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ points }),
+      });
+      const data = (await res.json()) as {
+        ok?: boolean;
+        options?: RouteAlternativeOption[];
+        error?: string;
+      };
+      if (!data.ok || !data.options?.length) {
+        setAltError(data.error ?? "다른 경로를 가져오지 못했습니다.");
+        return;
+      }
+      setAltOptionsByVehicle((prev) => ({ ...prev, [vehicleId]: data.options! }));
+    } catch (error) {
+      setAltError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setAltLoadingId(null);
+    }
+  }
+
+  function onApplyAlternative(vehicleId: string, option: RouteAlternativeOption) {
+    if (!result) return;
+    const next: RouteSolveResult = {
+      ...result,
+      routes: result.routes.map((route) =>
+        route.vehicleId === vehicleId
+          ? {
+              ...route,
+              totalDistanceKm: option.distanceKm,
+              totalTimeMin: option.durationMin,
+              path: option.path.map((point, index) =>
+                index === 0 ? { ...point, label: "출" } : point,
+              ),
+              priority: option.priority,
+              priorityLabel: option.label,
+            }
+          : route,
+      ),
+      note: `${result.note.split(" · ")[0]} · ${option.label} 경로 적용`,
+    };
+    publish(next);
+    setAltVehicleId(null);
   }
 
   async function onParseConstraints() {
@@ -464,6 +573,7 @@ export function RouteSolvePanel({
           </div>
 
           {orderError ? <p className="dispatch-route-note-warn">{orderError}</p> : null}
+          {altError ? <p className="dispatch-route-note-warn">{altError}</p> : null}
           {savingVehicleId ? (
             <p className="dispatch-route-meta">순서 저장 · 경로 다시 계산 중…</p>
           ) : null}
@@ -476,19 +586,64 @@ export function RouteSolvePanel({
                   <span>
                     {route.load}/{route.capacity} PLT · {route.totalDistanceKm}km ·{" "}
                     {route.totalTimeMin}분
+                    {route.priorityLabel ? ` · ${route.priorityLabel}` : ""}
                   </span>
                 </strong>
-                {route.stopIds.length > 1 ? (
+                <div className="dispatch-route-card-actions">
+                  {route.stopIds.length > 1 ? (
+                    <button
+                      className="dispatch-route-suggest-btn"
+                      disabled={busy}
+                      onClick={() => onSuggestOrder(route.vehicleId)}
+                      type="button"
+                    >
+                      추천 순서
+                    </button>
+                  ) : null}
                   <button
                     className="dispatch-route-suggest-btn"
-                    disabled={busy}
-                    onClick={() => onSuggestOrder(route.vehicleId)}
+                    disabled={busy || altLoadingId === route.vehicleId}
+                    onClick={() => void onOpenAlternatives(route.vehicleId)}
                     type="button"
                   >
-                    추천 순서
+                    {altLoadingId === route.vehicleId
+                      ? "경로…"
+                      : altVehicleId === route.vehicleId
+                        ? "닫기"
+                        : "다른 경로"}
                   </button>
-                ) : null}
+                </div>
               </div>
+              {altVehicleId === route.vehicleId ? (
+                <div className="dispatch-route-alts">
+                  <p className="dispatch-route-alts-title">경로 우선순위</p>
+                  {altLoadingId === route.vehicleId ? (
+                    <p className="dispatch-route-meta">4가지 경로 조회 중…</p>
+                  ) : null}
+                  {(altOptionsByVehicle[route.vehicleId] ?? []).map((option) => {
+                    const selected =
+                      route.priority === option.priority ||
+                      (!route.priority && option.priority === "RECOMMEND");
+                    return (
+                      <button
+                        className={`dispatch-route-alt-btn${selected ? " is-selected" : ""}`}
+                        disabled={busy}
+                        key={option.priority}
+                        onClick={() => onApplyAlternative(route.vehicleId, option)}
+                        type="button"
+                      >
+                        <span className="dispatch-route-alt-label">
+                          {option.label}
+                          <small>{option.hint}</small>
+                        </span>
+                        <span className="dispatch-route-alt-meta">
+                          {option.distanceKm}km · {option.durationMin}분
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
               <ol className="dispatch-route-stops">
                 {route.titles.map((title, index) => {
                   const canDrag = route.stopIds.length > 1 && !busy;

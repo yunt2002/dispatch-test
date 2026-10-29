@@ -15,6 +15,7 @@ type Props = {
 
 export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
   const [result, setResult] = useState<RouteSolveResult | null>(null);
+  const [mapExpanded, setMapExpanded] = useState(false);
 
   const routes: DispatchMapRoute[] = useMemo(() => {
     if (!result?.ok || !result.routes.length) return [];
@@ -59,9 +60,15 @@ export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
   }, [markers, result]);
 
   return (
-    <div className="map-page-workspace">
+    <div className={`map-page-workspace${mapExpanded ? " is-map-expanded" : ""}`}>
       <div className="map-page-map">
-        <DispatchMap height="min(70vh, 640px)" markers={markers} routes={routes} />
+        <DispatchMap
+          expanded={mapExpanded}
+          height="100%"
+          markers={markers}
+          onToggleExpand={() => setMapExpanded((open) => !open)}
+          routes={routes}
+        />
       </div>
       <aside className="map-page-side">
         <RouteSolvePanel

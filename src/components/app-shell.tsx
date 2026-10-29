@@ -50,9 +50,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="app-shell">
       <header className="app-topbar">
         <Link className="app-brand" href="/">
-          <span className="app-brand-mark" aria-hidden="true">N</span>
+          <span className="app-brand-mark" aria-hidden="true">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="" src="/brand/neo-logo.png?v=4" width={42} height={42} />
+          </span>
           <span>
-            <strong>납품 흐름판</strong>
+            <strong>Dispatch System</strong>
             <small>네오마그네틱 · 당일 운영</small>
           </span>
         </Link>

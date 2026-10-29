@@ -5,6 +5,8 @@
  */
 import "server-only";
 
+import type { RoutePriorityId } from "@/lib/route-priority";
+
 export type RoutePoint = { lat: number; lng: number; id?: string };
 
 export type RouteMatrix = {
@@ -177,11 +179,13 @@ export type DrivingRouteResult = {
   durationMin: number;
   apiCalls: number;
   provider: "kakao" | "haversine";
+  priority?: RoutePriorityId;
 };
 
 async function fetchOneDirectionsSegment(
   key: string,
   points: RoutePoint[],
+  priority: RoutePriorityId = "RECOMMEND",
 ): Promise<{
   path: { lat: number; lng: number }[];
   distanceM: number;
@@ -195,7 +199,7 @@ async function fetchOneDirectionsSegment(
   const params = new URLSearchParams({
     origin: `${origin.lng},${origin.lat}`,
     destination: `${destination.lng},${destination.lat}`,
-    priority: "RECOMMEND",
+    priority,
     summary: "false",
   });
   if (middles.length) {
@@ -245,6 +249,7 @@ async function fetchOneDirectionsSegment(
  */
 export async function fetchKakaoDrivingRoute(
   points: RoutePoint[],
+  priority: RoutePriorityId = "RECOMMEND",
 ): Promise<DrivingRouteResult | null> {
   const key = restKey();
   if (!key || points.length < 2) return null;
@@ -262,7 +267,7 @@ export async function fetchKakaoDrivingRoute(
     const segmentPoints = points.slice(start, end + 1);
     apiCalls += 1;
     try {
-      const seg = await fetchOneDirectionsSegment(key, segmentPoints);
+      const seg = await fetchOneDirectionsSegment(key, segmentPoints, priority);
       if (!seg) {
         return null;
       }
@@ -287,6 +292,7 @@ export async function fetchKakaoDrivingRoute(
     durationMin: Math.max(1, Math.round(durationSec / 60)),
     apiCalls,
     provider: "kakao",
+    priority,
   };
 }
 

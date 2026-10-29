@@ -12,9 +12,17 @@ type Props = {
   markers: DispatchMapMarker[];
   routes?: DispatchMapRoute[];
   height?: string;
+  expanded?: boolean;
+  onToggleExpand?: () => void;
 };
 
-export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
+export function DispatchMap({
+  markers,
+  routes = [],
+  height = "220px",
+  expanded = false,
+  onToggleExpand,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<kakao.maps.Map | null>(null);
   const overlaysRef = useRef<kakao.maps.Marker[]>([]);
@@ -156,6 +164,27 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
     };
   }, [markers, markersKey, routes, routesKey]);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || status !== "ready") return;
+    const relayout = () => {
+      mapRef.current?.relayout();
+    };
+    relayout();
+    const ro = new ResizeObserver(() => relayout());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [status, expanded, height]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onToggleExpand?.();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [expanded, onToggleExpand]);
+
   if (status === "no-key") {
     return (
       <section className="dispatch-map-panel" aria-label="배차 지도">
@@ -169,13 +198,27 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
   }
 
   return (
-    <section className="dispatch-map-panel" aria-label="배차 지도">
+    <section
+      className={`dispatch-map-panel${expanded ? " is-expanded" : ""}`}
+      aria-label="배차 지도"
+    >
       <div className="dispatch-map-head">
-        <h2>납품지 지도</h2>
-        <span>
-          {markers.length > 0 ? `좌표 ${markers.length}곳` : "표시할 좌표 없음"}
-          {routes.length ? ` · 경로 ${routes.length}대` : ""}
-        </span>
+        <div className="dispatch-map-head-text">
+          <h2>납품지 지도</h2>
+          <span>
+            {markers.length > 0 ? `좌표 ${markers.length}곳` : "표시할 좌표 없음"}
+            {routes.length ? ` · 경로 ${routes.length}대` : ""}
+          </span>
+        </div>
+        {onToggleExpand ? (
+          <button
+            className="dispatch-map-expand-btn"
+            onClick={onToggleExpand}
+            type="button"
+          >
+            {expanded ? "닫기" : "크게 보기"}
+          </button>
+        ) : null}
       </div>
       {status === "error" ? (
         <p className="dispatch-map-placeholder">{errorMessage}</p>
@@ -198,7 +241,11 @@ export function DispatchMap({ markers, routes = [], height = "220px" }: Props) {
           ))}
         </ul>
       ) : null}
-      <div className="dispatch-map-canvas" ref={containerRef} style={{ height }} />
+      <div
+        className="dispatch-map-canvas"
+        ref={containerRef}
+        style={expanded ? undefined : { height }}
+      />
     </section>
   );
 }
