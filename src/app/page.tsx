@@ -1,4 +1,5 @@
 import { DateSwitcher } from "@/components/date-switcher";
+import { GeumsureFare } from "@/components/geumsure-fare";
 import { ScheduleEntryCard } from "@/components/schedule-entry-card";
 import { ScheduleRegisterDialog } from "@/components/schedule-register-dialog";
 import { ScheduleSelectionRoot } from "@/components/schedule-selection";
@@ -250,6 +251,7 @@ export default async function HomePage({
         </ScheduleSelectionRoot>
 
         <aside className="dispatch-side">
+          <GeumsureFare date={date} />
           <section className="dispatch-vehicle-panel">
             <h2>잔여 PLT · 차량</h2>
             <p className="dispatch-side-meta">

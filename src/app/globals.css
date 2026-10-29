@@ -2240,3 +2240,7 @@ body {
     padding: 8px;
   }
 }
+ .geumsure-fare label { display: grid; gap: 4px; margin-top: 10px; font-size: 12px; font-weight: 600; }
+ .geumsure-fare select, .geumsure-fare input { width: 100%; }
+ .geumsure-fare-result { margin: 12px 0; font-size: 13px; }
+ .geumsure-fare-result strong { display: block; margin-top: 4px; font-size: 17px; }
