@@ -792,12 +792,12 @@ body {
 }
 
 .dispatch-column-head strong {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .dispatch-column-head span {
   color: #8b8981;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .dispatch-column-head > b {
@@ -809,7 +809,7 @@ body {
   color: #716f68;
   background: #f8f7f3;
   border-radius: 50%;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .dispatch-card-list {
@@ -824,7 +824,7 @@ body {
   border: 1px dashed #c8c4ba;
   border-radius: 8px;
   text-align: center;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .dispatch-job {
@@ -859,7 +859,7 @@ body {
 .dispatch-job-top span {
   margin-left: 5px;
   color: #8a877f;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .dispatch-job-top > b {
@@ -872,7 +872,7 @@ body {
 .dispatch-job-client {
   margin-top: 7px;
   color: #55544f;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 750;
 }
 
@@ -880,7 +880,7 @@ body {
   margin-top: 2px;
   overflow: hidden;
   color: #95928a;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -903,7 +903,7 @@ body {
   color: #fff;
   background: var(--dispatch-dark);
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -917,14 +917,14 @@ body {
 }
 
 .dispatch-vehicle-copy strong {
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .dispatch-vehicle-copy span {
   margin-top: 2px;
   overflow: hidden;
   color: #8d8a82;
-  font-size: 10px;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -935,7 +935,7 @@ body {
   color: #33342f;
   background: transparent;
   border: 0;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 850;
   cursor: pointer;
 }
@@ -946,7 +946,7 @@ body {
   color: #855f21;
   background: #fff7e8;
   border-radius: 5px;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .dispatch-warning summary {
@@ -977,7 +977,7 @@ body {
   min-height: 34px;
   padding: 0 8px;
   border-radius: 5px;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .dispatch-flow-button {
@@ -1086,12 +1086,12 @@ body {
 .dispatch-map-panel h2,
 .dispatch-map-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .dispatch-map-head span {
   color: #adafa9;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .dispatch-map-expand-btn {
@@ -1101,7 +1101,7 @@ body {
   border-radius: 6px;
   background: #fffdf8;
   color: #5c5240;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
   cursor: pointer;
@@ -1125,7 +1125,7 @@ body {
 .dispatch-map-hint {
   margin: 0 0 10px;
   color: #78766e;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -1153,7 +1153,7 @@ body {
 
 .dispatch-route-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .dispatch-route-hint,
@@ -1161,7 +1161,7 @@ body {
 .dispatch-route-note-warn,
 .dispatch-route-meta {
   margin: 0;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.45;
   color: #78766e;
 }
@@ -1220,7 +1220,7 @@ body {
 .dispatch-route-alts-title {
   margin: 0 0 2px;
   color: #5c5a53;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
 }
 
@@ -1258,20 +1258,20 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .dispatch-route-alt-label small {
   color: #8a877e;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
 }
 
 .dispatch-route-alt-meta {
   flex-shrink: 0;
   color: #5c5240;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -1279,13 +1279,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  font-size: 11px;
+  font-size: 13px;
   min-width: 0;
 }
 
 .dispatch-route-card strong span {
   color: #8a877e;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
@@ -1296,7 +1296,7 @@ body {
   border-radius: 6px;
   background: #fffdf8;
   color: #5c5240;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   line-height: 1.3;
   cursor: pointer;
@@ -1322,7 +1322,7 @@ body {
 }
 
 .dispatch-route-constraint label {
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   color: #5c5a53;
 }
@@ -1336,7 +1336,7 @@ body {
   border-radius: 6px;
   background: #fff;
   color: #2f2c26;
-  font-size: 11px;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -1351,7 +1351,7 @@ body {
   margin: 8px 0 0;
   padding-left: 16px;
   color: #5c5a53;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -1399,7 +1399,7 @@ body {
 .dispatch-route-drag-handle {
   flex-shrink: 0;
   color: #a39e93;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: -2px;
   line-height: 1;
   user-select: none;
@@ -1413,7 +1413,7 @@ body {
 .dispatch-route-stop-placeholder {
   flex: 1;
   color: #8a877e;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .dispatch-route-drag-ghost {
@@ -1426,7 +1426,7 @@ body {
   border-radius: 8px;
   background: #fffdf8;
   color: #2f2c26;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.3;
   white-space: nowrap;
@@ -1517,7 +1517,7 @@ body {
   align-items: center;
   gap: 6px;
   color: #5c5a53;
-  font-size: 11px;
+  font-size: 13px;
 }
 
 .map-route-legend i {
@@ -1543,16 +1543,35 @@ body {
   .map-page-workspace {
     grid-template-columns: 1fr;
     min-height: 0;
+    gap: 12px;
   }
 
   .map-page-map .dispatch-map-panel,
   .map-page-side {
-    min-height: 420px;
+    min-height: 0;
     height: auto;
+  }
+
+  .map-page-map .dispatch-map-panel {
+    min-height: 0;
+  }
+
+  .map-page-map .dispatch-map-canvas {
+    min-height: 280px;
+    height: min(48vh, 420px);
+  }
+
+  .map-page-side {
+    min-height: 0;
   }
 
   .map-page-side .dispatch-route-panel {
     max-height: none;
+    height: auto;
+  }
+
+  .map-page-workspace.is-map-expanded .map-page-map {
+    padding: 10px;
   }
 }
 
@@ -1678,7 +1697,7 @@ body {
   color: #77756e;
   background: #e9e6df;
   border-radius: 9px;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
@@ -1898,32 +1917,76 @@ body {
   }
 
   .app-topbar {
-    position: static;
-    padding: 14px 18px;
+    position: sticky;
+    top: 0;
+    gap: 10px;
+    padding: 12px 16px;
   }
 
   .app-nav {
     width: 100%;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .app-nav .nav-link,
+  .app-nav .nav-settings-summary {
+    padding: 8px 11px;
+    font-size: 12px;
   }
 
   .app-main {
-    padding: 20px 18px 30px;
+    padding: 16px 14px 28px;
+  }
+
+  .dispatch-page-head {
+    gap: 12px;
   }
 
   .dispatch-head-actions,
   .dispatch-summary {
+    width: 100%;
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
-  .dispatch-workflow {
-    grid-template-columns: auto 1fr 1fr;
+  .dispatch-head-actions > * {
+    flex: 1 1 auto;
+  }
+
+  .dispatch-control-row {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .dispatch-control-row > div:first-child {
+    width: 100%;
+  }
+
+  .dispatch-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
   }
 
+  .dispatch-workflow {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .dispatch-workflow > b {
+    grid-column: 1 / -1;
+    padding-right: 0;
+  }
+
   .dispatch-board {
-    grid-template-columns: repeat(3, 280px);
-    overflow-x: auto;
-    padding-bottom: 6px;
+    grid-template-columns: 1fr;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .dispatch-column {
+    min-height: 0;
   }
 
   .dispatch-side {
@@ -1933,9 +1996,33 @@ body {
   .dispatch-export-note {
     grid-column: auto;
   }
+
+  .dispatch-modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .dispatch-modal-backdrop .dispatch-modal {
+    width: 100%;
+    max-height: min(92vh, 100%);
+    border-radius: 14px 14px 0 0;
+  }
 }
 
 @media (max-width: 520px) {
+  .app-brand {
+    gap: 8px;
+  }
+
+  .app-brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .app-brand strong {
+    font-size: 15px;
+  }
+
   .app-brand small {
     display: none;
   }
@@ -1946,7 +2033,15 @@ body {
   }
 
   .dispatch-page-head h1 {
-    font-size: 27px;
+    font-size: 24px;
+  }
+
+  .dispatch-page-head p {
+    font-size: 12px;
+  }
+
+  .dispatch-summary strong {
+    font-size: 20px;
   }
 
   .dispatch-form-grid,
@@ -1956,5 +2051,33 @@ body {
 
   .dispatch-field-wide {
     grid-column: auto;
+  }
+
+  .dispatch-card-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .dispatch-job-top strong {
+    font-size: 15px;
+  }
+
+  .map-page-map .dispatch-map-canvas {
+    height: min(42vh, 360px);
+    min-height: 240px;
+  }
+
+  .dispatch-route-card-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .dispatch-route-card-actions .dispatch-route-suggest-btn {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .dispatch-route-stop {
+    min-height: 40px;
+    padding: 8px;
   }
 }
