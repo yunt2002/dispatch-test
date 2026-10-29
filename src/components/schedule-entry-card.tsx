@@ -7,6 +7,7 @@ import {
   deleteSchedule,
   markScheduleDone,
   reopenSchedule,
+  splitConsolidateSchedules,
   updateSchedule,
 } from "@/app/schedule/actions";
 import { AutoSubmitSelect } from "@/components/auto-submit-select";
@@ -38,6 +39,8 @@ export function ScheduleEntryCard({
   reason,
   warnings,
   vehicles,
+  consolidateGroupId,
+  consolidateLabel,
 }: {
   id: string;
   date: string;
@@ -58,6 +61,8 @@ export function ScheduleEntryCard({
   reason: string | null;
   warnings: string[];
   vehicles: ScheduleVehicleOption[];
+  consolidateGroupId?: string | null;
+  consolidateLabel?: string | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [editCustomer, setEditCustomer] = useState(customerName ?? "");
@@ -168,6 +173,9 @@ export function ScheduleEntryCard({
           <div>
             <strong>{locationName}</strong>
             <span>{regionTypeLabel}</span>
+            {consolidateLabel ? (
+              <em className="dispatch-consolidate-badge">{consolidateLabel}</em>
+            ) : null}
           </div>
         </div>
         <b>{qtyLabel}</b>
@@ -243,6 +251,22 @@ export function ScheduleEntryCard({
             <button className="dispatch-flow-button" type="submit">배차 확정</button>
           </form>
         )}
+        {consolidateGroupId ? (
+          <form
+            action={splitConsolidateSchedules}
+            onSubmit={(event) => {
+              if (!confirm("이 합차 그룹을 해제할까요? 차량은 그대로 둡니다.")) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <input type="hidden" name="date" value={date} />
+            <input type="hidden" name="groupId" value={consolidateGroupId} />
+            <button className="dispatch-secondary-button dispatch-card-action" type="submit">
+              합차 해제
+            </button>
+          </form>
+        ) : null}
         <ConfirmSubmit
           action={deleteSchedule}
           buttonClassName="dispatch-delete-button dispatch-card-action"

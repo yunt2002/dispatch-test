@@ -3,6 +3,7 @@ import { ScheduleEntryCard } from "@/components/schedule-entry-card";
 import { ScheduleRegisterDialog } from "@/components/schedule-register-dialog";
 import { ScheduleSelectionRoot } from "@/components/schedule-selection";
 import { ErrorText, SuccessText } from "@/components/ui";
+import { consolidateLabel } from "@/lib/consolidate-label";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { formatNumber, formatSheetDate, parseJson, todayISO } from "@/lib/format";
 import { importLatestExcelIfNeeded } from "@/lib/import-schedule";
@@ -139,6 +140,8 @@ export default async function HomePage({
 
     return (
       <ScheduleEntryCard
+        consolidateGroupId={entry.consolidateGroupId}
+        consolidateLabel={consolidateLabel(entry.consolidateGroupId)}
         customerName={entry.customerName}
         date={date}
         id={entry.id}

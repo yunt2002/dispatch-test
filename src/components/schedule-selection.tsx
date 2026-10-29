@@ -7,7 +7,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { deleteSchedules } from "@/app/schedule/actions";
+import {
+  consolidateSchedules,
+  deleteSchedules,
+} from "@/app/schedule/actions";
 
 type SelectionContextValue = {
   toggle: (id: string) => void;
@@ -94,6 +97,34 @@ export function ScheduleSelectionRoot({
                 선택 해제
               </button>
             ) : null}
+            <form
+              action={consolidateSchedules}
+              onSubmit={(event) => {
+                if (selectedCount < 2) {
+                  event.preventDefault();
+                  return;
+                }
+                if (
+                  !confirm(
+                    `선택한 ${selectedCount}건을 한 대(합차)로 묶을까요?\nPLT를 합산해 같은 차량·방문 순서로 맞춥니다.`,
+                  )
+                ) {
+                  event.preventDefault();
+                }
+              }}
+            >
+              <input type="hidden" name="date" value={date} />
+              {selectedIds.map((id) => (
+                <input key={id} type="hidden" name="ids" value={id} />
+              ))}
+              <button
+                className="dispatch-primary-button"
+                disabled={selectedCount < 2}
+                type="submit"
+              >
+                합차{selectedCount >= 2 ? ` (${selectedCount})` : ""}
+              </button>
+            </form>
             <form
               action={deleteSchedules}
               onSubmit={(event) => {

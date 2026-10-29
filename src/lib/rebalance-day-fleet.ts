@@ -3,6 +3,7 @@ import "server-only";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { recommendForQuantity } from "@/lib/dispatch-group";
 import type { RegionLookup } from "@/lib/delivery-excel";
+import { capacityUnits } from "@/lib/consolidate";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
@@ -18,13 +19,6 @@ async function loadRegions(): Promise<RegionLookup> {
       },
     ]),
   );
-}
-
-/** 잔여 차감용 PLT. 환산 없으면 박스 건당 1칸으로 본다. */
-function capacityUnits(pallet: number | null | undefined, boxCount: number | null | undefined) {
-  if (pallet != null && pallet > 0) return pallet;
-  if (boxCount != null && boxCount > 0) return 1;
-  return 0;
 }
 
 /**
@@ -59,6 +53,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
   }
 
   let changed = 0;
+  const lockedGroups = new Set<string>();
 
   for (const entry of entries) {
     const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
@@ -66,6 +61,29 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
     const manual = Boolean(
       oldSel && oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId,
     );
+
+    // 합차 그룹: 차량 유지, 그룹 PLT를 한 번에 차감
+    if (entry.consolidateGroupId) {
+      if (lockedGroups.has(entry.consolidateGroupId)) continue;
+      lockedGroups.add(entry.consolidateGroupId);
+      const group = entries.filter((e) => e.consolidateGroupId === entry.consolidateGroupId);
+      const sel =
+        parseJson<VehicleRecommendation | null>(group[0]?.selectedVehicleJson ?? null, null) ??
+        oldSel;
+      if (sel) {
+        const used = group.reduce(
+          (sum, e) => sum + capacityUnits(e.palletCount, e.boxCount),
+          0,
+        );
+        if (used > 0) {
+          remaining[sel.vehicleTypeId] = Math.max(
+            0,
+            (remaining[sel.vehicleTypeId] ?? 0) - used,
+          );
+        }
+      }
+      continue;
+    }
 
     if (manual && oldSel) {
       const used = capacityUnits(entry.palletCount, entry.boxCount);

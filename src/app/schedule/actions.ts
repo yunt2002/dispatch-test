@@ -12,6 +12,11 @@ import {
 import { optionalText, text } from "@/lib/form";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import {
+  capacityUnits,
+  consolidateEntries,
+  splitConsolidateGroup,
+} from "@/lib/consolidate";
 import { resolveLocationFromCustomer } from "@/lib/delivery-customers";
 import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
@@ -231,20 +236,39 @@ export async function changeScheduleVehicle(formData: FormData) {
   }
 
   const recommended = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
-  const vehicleCount = vehicleCountForPallets(entry.palletCount, vehicle.maxPallet);
+  const groupmates = entry.consolidateGroupId
+    ? await prisma.scheduleEntry.findMany({
+        where: {
+          consolidateGroupId: entry.consolidateGroupId,
+          deliveryDate: entry.deliveryDate,
+        },
+      })
+    : [entry];
+  const totalPallets = groupmates.reduce(
+    (sum, row) => sum + capacityUnits(row.palletCount, row.boxCount),
+    0,
+  );
+  const vehicleCount = vehicleCountForPallets(
+    totalPallets || entry.palletCount,
+    vehicle.maxPallet,
+  );
   const selected: VehicleRecommendation = {
     vehicleTypeId: vehicle.id,
     vehicleName: vehicle.vehicleName,
     vehicleCount,
     maxPallet: vehicle.maxPallet,
     maxWeight: vehicle.maxWeight,
-    loadingRate: loadingRateForPallets(entry.palletCount, vehicle.maxPallet, vehicleCount),
+    loadingRate: loadingRateForPallets(
+      totalPallets || entry.palletCount,
+      vehicle.maxPallet,
+      vehicleCount,
+    ),
     primaryRegionType: vehicle.primaryRegionType,
     boxPreferred: vehicle.boxPreferred,
   };
 
-  await prisma.scheduleEntry.update({
-    where: { id },
+  await prisma.scheduleEntry.updateMany({
+    where: { id: { in: groupmates.map((row) => row.id) } },
     data: {
       selectedVehicleJson: JSON.stringify(selected),
       logistics: vehicle.vehicleName,
@@ -256,14 +280,20 @@ export async function changeScheduleVehicle(formData: FormData) {
       userAction: "schedule_vehicle_change",
       routeCode: date,
       recommendation: recommended?.vehicleName ?? null,
-      selectedResult: vehicle.vehicleName,
+      selectedResult: entry.consolidateGroupId
+        ? `${vehicle.vehicleName} (합차 ${groupmates.length}건)`
+        : vehicle.vehicleName,
     },
   });
 
   await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   const countLabel = vehicleCount > 1 ? ` ×${vehicleCount}` : "";
-  go({ date, ok: `${vehicle.vehicleName}${countLabel}로 바꿨습니다.` });
+  const groupLabel =
+    entry.consolidateGroupId && groupmates.length > 1
+      ? ` · 합차 ${groupmates.length}건`
+      : "";
+  go({ date, ok: `${vehicle.vehicleName}${countLabel}${groupLabel}로 바꿨습니다.` });
 }
 
 function sameQty(a: number | null | undefined, b: number | null): boolean {
@@ -495,4 +525,39 @@ export async function deleteSchedules(formData: FormData) {
     date,
     ok: `${entries.length}건을 삭제했습니다.`,
   });
+}
+
+/** 선택한 납품을 한 대·한 운행으로 묶기 */
+export async function consolidateSchedules(formData: FormData) {
+  const date = optionalText(formData, "date") ?? undefined;
+  const ids = formData
+    .getAll("ids")
+    .map((value) => String(value).trim())
+    .filter(Boolean);
+  if (!date) {
+    go({ error: "납품일이 필요합니다." });
+  }
+  const result = await consolidateEntries({ ids, date });
+  if ("error" in result) {
+    go({ date, error: result.error });
+  }
+  await rebalanceDayFleet(date);
+  revalidatePath("/");
+  go({ date, ok: result.ok });
+}
+
+/** 합차 그룹 해제 */
+export async function splitConsolidateSchedules(formData: FormData) {
+  const date = optionalText(formData, "date") ?? undefined;
+  const groupId = text(formData, "groupId");
+  if (!date) {
+    go({ error: "납품일이 필요합니다." });
+  }
+  const result = await splitConsolidateGroup({ groupId, date });
+  if ("error" in result) {
+    go({ date, error: result.error });
+  }
+  await rebalanceDayFleet(date);
+  revalidatePath("/");
+  go({ date, ok: result.ok });
 }

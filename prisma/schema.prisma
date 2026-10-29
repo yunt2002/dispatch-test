@@ -252,12 +252,15 @@ model ScheduleEntry {
   notes                  String?
   /// 같은 날·같은 차량 안 방문 순서 (수동 조정). null이면 createdAt 순
   visitOrder             Int?
+  /// 합차 그룹 id. 같은 값이면 한 대·한 운행으로 묶인 납품
+  consolidateGroupId     String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
 
   @@index([deliveryDate])
   @@index([status])
   @@index([source])
+  @@index([consolidateGroupId])
 }
 
 model AppLog {
