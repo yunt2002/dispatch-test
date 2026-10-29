@@ -216,10 +216,10 @@ export default async function HomePage({
 
       <section className="dispatch-workflow" aria-label="업무 흐름">
         <b>업무 흐름</b>
-        <span className="dispatch-workflow-step dispatch-workflow-step-active"><i>1</i> 납품 등록</span>
-        <span className="dispatch-workflow-step dispatch-workflow-step-active"><i>2</i> 차량 추천 확인</span>
-        <span className={`dispatch-workflow-step ${confirmedEntries.length || doneEntries.length ? "dispatch-workflow-step-active" : ""}`}><i>3</i> 배차 확정</span>
-        <span className={`dispatch-workflow-step ${doneEntries.length ? "dispatch-workflow-step-active" : ""}`}><i>4</i> 납품 완료</span>
+        <span className={`dispatch-workflow-step ${entries.length ? "dispatch-workflow-step-active" : ""}`}><i>1</i> 납품 등록 · 전체 {entries.length}건</span>
+        <span className={`dispatch-workflow-step ${reviewEntries.length ? "dispatch-workflow-step-active" : ""}`}><i>2</i> 추천 확인 · {reviewEntries.length}건</span>
+        <span className={`dispatch-workflow-step ${confirmedEntries.length ? "dispatch-workflow-step-active" : ""}`}><i>3</i> 배차 확정 · {confirmedEntries.length}건</span>
+        <span className={`dispatch-workflow-step ${doneEntries.length ? "dispatch-workflow-step-active" : ""}`}><i>4</i> 납품 완료 · {doneEntries.length}건</span>
       </section>
 
       <datalist id="location-options">
