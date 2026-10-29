@@ -6,6 +6,7 @@ export const maxDuration = 60;
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     points?: { lat?: number; lng?: number }[];
+    carType?: number;
   };
 
   const points = (body.points ?? [])
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const result = await fetchRouteAlternatives(points);
+  const carType = body.carType === 2 ? 2 : 1;
+  const result = await fetchRouteAlternatives(points, carType);
   return NextResponse.json(result, { status: result.ok ? 200 : 502 });
 }

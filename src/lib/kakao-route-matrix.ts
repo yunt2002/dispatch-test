@@ -177,6 +177,7 @@ export type DrivingRouteResult = {
   path: { lat: number; lng: number }[];
   distanceKm: number;
   durationMin: number;
+  tollWon: number | null;
   apiCalls: number;
   provider: "kakao" | "haversine";
   priority?: RoutePriorityId;
@@ -186,10 +187,12 @@ async function fetchOneDirectionsSegment(
   key: string,
   points: RoutePoint[],
   priority: RoutePriorityId = "RECOMMEND",
+  carType = 1,
 ): Promise<{
   path: { lat: number; lng: number }[];
   distanceM: number;
   durationSec: number;
+  tollWon: number | null;
 } | null> {
   if (points.length < 2) return null;
   const origin = points[0];
@@ -200,6 +203,8 @@ async function fetchOneDirectionsSegment(
     origin: `${origin.lng},${origin.lat}`,
     destination: `${destination.lng},${destination.lat}`,
     priority,
+    car_type: String(carType),
+    car_fuel: "DIESEL",
     summary: "false",
   });
   if (middles.length) {
@@ -220,7 +225,7 @@ async function fetchOneDirectionsSegment(
   const data = (await res.json()) as {
     routes?: {
       result_code?: number;
-      summary?: { distance: number; duration: number };
+      summary?: { distance: number; duration: number; fare?: { toll?: number } };
       sections?: { roads?: { vertexes?: number[] }[] }[];
     }[];
   };
@@ -240,6 +245,7 @@ async function fetchOneDirectionsSegment(
     path,
     distanceM: route.summary?.distance ?? 0,
     durationSec: route.summary?.duration ?? 0,
+    tollWon: route.summary?.fare?.toll ?? null,
   };
 }
 
@@ -250,6 +256,7 @@ async function fetchOneDirectionsSegment(
 export async function fetchKakaoDrivingRoute(
   points: RoutePoint[],
   priority: RoutePriorityId = "RECOMMEND",
+  carType = 1,
 ): Promise<DrivingRouteResult | null> {
   const key = restKey();
   if (!key || points.length < 2) return null;
@@ -260,6 +267,7 @@ export async function fetchKakaoDrivingRoute(
   let distanceM = 0;
   let durationSec = 0;
   let apiCalls = 0;
+  let tollWon: number | null = null;
 
   let start = 0;
   while (start < points.length - 1) {
@@ -267,7 +275,7 @@ export async function fetchKakaoDrivingRoute(
     const segmentPoints = points.slice(start, end + 1);
     apiCalls += 1;
     try {
-      const seg = await fetchOneDirectionsSegment(key, segmentPoints, priority);
+      const seg = await fetchOneDirectionsSegment(key, segmentPoints, priority, carType);
       if (!seg) {
         return null;
       }
@@ -278,6 +286,9 @@ export async function fetchKakaoDrivingRoute(
       }
       distanceM += seg.distanceM;
       durationSec += seg.durationSec;
+      // 구간을 나눠 호출하면 동일 고속도로 요금이 중복될 수 있다.
+      if (apiCalls === 1) tollWon = seg.tollWon;
+      else tollWon = null;
     } catch {
       return null;
     }
@@ -290,6 +301,7 @@ export async function fetchKakaoDrivingRoute(
     path,
     distanceKm: Math.round((distanceM / 1000) * 10) / 10,
     durationMin: Math.max(1, Math.round(durationSec / 60)),
+    tollWon,
     apiCalls,
     provider: "kakao",
     priority,

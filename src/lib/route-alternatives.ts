@@ -9,11 +9,13 @@ export type RouteAlternativeOption = {
   hint: string;
   distanceKm: number;
   durationMin: number;
+  tollWon: number | null;
   path: { lat: number; lng: number }[];
 };
 
 export async function fetchRouteAlternatives(
   points: { lat: number; lng: number }[],
+  carType = 1,
 ): Promise<{
   ok: boolean;
   options: RouteAlternativeOption[];
@@ -25,7 +27,7 @@ export async function fetchRouteAlternatives(
 
   const settled = await Promise.all(
     ROUTE_PRIORITIES.map(async (item) => {
-      const road = await fetchKakaoDrivingRoute(points, item.id);
+      const road = await fetchKakaoDrivingRoute(points, item.id, carType);
       if (!road) return null;
       const option: RouteAlternativeOption = {
         priority: item.id,
@@ -33,6 +35,7 @@ export async function fetchRouteAlternatives(
         hint: item.hint,
         distanceKm: road.distanceKm,
         durationMin: road.durationMin,
+        tollWon: road.tollWon,
         path: road.path,
       };
       return option;

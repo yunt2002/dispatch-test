@@ -2244,3 +2244,6 @@ body {
  .geumsure-fare select, .geumsure-fare input { width: 100%; }
  .geumsure-fare-result { margin: 12px 0; font-size: 13px; }
  .geumsure-fare-result strong { display: block; margin-top: 4px; font-size: 17px; }
+ .route-fuel-price, .route-costs label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+ .route-fuel-price input, .route-costs input { width: 120px; }
+ .route-costs { display: grid; gap: 8px; margin: 10px 0; font-size: 12px; }

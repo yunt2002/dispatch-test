@@ -24,6 +24,8 @@ export type RouteSolveResult = {
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
+    tollWon: number | null;
+    carType: number;
     load: number;
     capacity: number;
     path?: { lat: number; lng: number; label?: string }[];
@@ -42,6 +44,7 @@ type RouteAlternativeOption = {
   hint: string;
   distanceKm: number;
   durationMin: number;
+  tollWon: number | null;
   path: { lat: number; lng: number }[];
 };
 
@@ -73,6 +76,8 @@ export function RouteSolvePanel({
   onResult,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [dieselPrice, setDieselPrice] = useState("");
+  const [efficiencies, setEfficiencies] = useState<Record<string, string>>({});
   const [savingVehicleId, setSavingVehicleId] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [localResult, setLocalResult] = useState<RouteSolveResult | null>(null);
@@ -382,7 +387,7 @@ export function RouteSolvePanel({
       const res = await fetch("/api/route/alternatives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ points }),
+        body: JSON.stringify({ points, carType: route.carType }),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -411,6 +416,7 @@ export function RouteSolvePanel({
               ...route,
               totalDistanceKm: option.distanceKm,
               totalTimeMin: option.durationMin,
+              tollWon: option.tollWon,
               path: option.path.map((point, index) =>
                 index === 0 ? { ...point, label: "출" } : point,
               ),
@@ -579,6 +585,11 @@ export function RouteSolvePanel({
             <p className="dispatch-route-meta">순서 저장 · 경로 다시 계산 중…</p>
           ) : null}
 
+          <label className="route-fuel-price">경유 가격 (원/L)
+            <input className="dispatch-input" type="number" min="0" step="1" value={dieselPrice} onChange={(e) => setDieselPrice(e.target.value)} placeholder="주유 가격 입력" />
+          </label>
+          <p className="dispatch-route-meta">왕복 경로 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 경유 가격과 연비는 이 화면에서 입력합니다.</p>
+
           {result.routes.map((route) => (
             <div className="dispatch-route-card" key={route.vehicleId}>
               <div className="dispatch-route-card-head">
@@ -615,6 +626,13 @@ export function RouteSolvePanel({
                   </button>
                 </div>
               </div>
+              <div className="route-costs">
+                <span>예상 통행료: <b>{route.tollWon == null ? "확인 불가" : `${route.tollWon.toLocaleString("ko-KR")}원`}</b></span>
+                <label>연비 (km/L)
+                  <input className="dispatch-input" type="number" min="0" step="0.1" value={efficiencies[route.vehicleId] ?? ""} placeholder="입력" onChange={(e) => setEfficiencies((prev) => ({ ...prev, [route.vehicleId]: e.target.value }))} />
+                </label>
+                <span>예상 경유비: <b>{Number(dieselPrice) > 0 && Number(efficiencies[route.vehicleId]) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiencies[route.vehicleId]) * Number(dieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
+              </div>
               {altVehicleId === route.vehicleId ? (
                 <div className="dispatch-route-alts">
                   <p className="dispatch-route-alts-title">경로 우선순위</p>
@@ -638,7 +656,7 @@ export function RouteSolvePanel({
                           <small>{option.hint}</small>
                         </span>
                         <span className="dispatch-route-alt-meta">
-                          {option.distanceKm}km · {option.durationMin}분
+                          {option.distanceKm}km · {option.durationMin}분 · 통행료 {option.tollWon == null ? "확인 불가" : `${option.tollWon.toLocaleString("ko-KR")}원`}
                         </span>
                       </button>
                     );

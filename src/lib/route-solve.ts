@@ -19,6 +19,8 @@ export type RouteSolveResult = {
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
+    tollWon: number | null;
+    carType: number;
     load: number;
     capacity: number;
     path?: { lat: number; lng: number; label?: string }[];
@@ -180,7 +182,9 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
       const titles = groupStops.map((s) => s.title);
 
       const points = [depot, ...groupStops.map((s) => ({ lat: s.lat, lng: s.lng })), depot];
-      const road = await fetchKakaoDrivingRoute(points);
+      // 카카오 차종은 축·윤폭·윤거 기준이므로 톤수는 잠정 분류다.
+      const carType = vehicle.maxWeight >= 2500 ? 2 : 1;
+      const road = await fetchKakaoDrivingRoute(points, "RECOMMEND", carType);
 
       if (road) {
         totalApiCalls += road.apiCalls;
@@ -192,6 +196,8 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
           titles,
           totalDistanceKm: road.distanceKm,
           totalTimeMin: road.durationMin,
+          tollWon: road.tollWon,
+          carType,
           load: Math.round(load * 10) / 10,
           capacity,
           path: road.path.map((p, i) => (i === 0 ? { ...p, label: "출" } : p)),
@@ -211,6 +217,8 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
         titles,
         totalDistanceKm: km,
         totalTimeMin: Math.max(1, Math.round((km / 40) * 60)),
+        tollWon: null,
+        carType,
         load: Math.round(load * 10) / 10,
         capacity,
         path: points.map((p, i) => (i === 0 ? { ...p, label: "출" } : p)),
