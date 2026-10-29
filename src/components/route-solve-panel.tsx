@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { DispatchMapMarker } from "@/components/kakao-map/types";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import type { OrderConstraint, VehicleOrderHint } from "@/lib/route-constraints";
@@ -78,6 +78,9 @@ export function RouteSolvePanel({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [dieselPrice, setDieselPrice] = useState("");
+  const [marketPrice, setMarketPrice] = useState<{ price: number; date: string } | null>(null);
+  const [priceStatus, setPriceStatus] = useState("오피넷 경유 가격 조회 중…");
+  const [manualPrice, setManualPrice] = useState(false);
   const [efficiencies, setEfficiencies] = useState<Record<string, string>>({});
   const [savingVehicleId, setSavingVehicleId] = useState<string | null>(null);
   const [orderError, setOrderError] = useState<string | null>(null);
@@ -101,6 +104,21 @@ export function RouteSolvePanel({
     Record<string, RouteAlternativeOption[]>
   >({});
   const result = controlledResult !== undefined ? controlledResult : localResult;
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/diesel-price", { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("price unavailable");
+        return response.json() as Promise<{ price: number; date: string }>;
+      })
+      .then((data) => {
+        setMarketPrice(data);
+        setPriceStatus(`오피넷 전국 평균 · ${data.date.slice(0, 4)}.${data.date.slice(4, 6)}.${data.date.slice(6, 8)} 기준`);
+      })
+      .catch(() => { if (!controller.signal.aborted) setPriceStatus("오피넷 가격 조회 실패 · 직접 입력해 주세요."); });
+    return () => controller.abort();
+  }, []);
+  const effectiveDieselPrice = manualPrice ? dieselPrice : String(marketPrice?.price ?? "");
 
   const allStopLabels = useMemo(() => {
     if (!result?.routes.length) return [];
@@ -587,9 +605,10 @@ export function RouteSolvePanel({
           ) : null}
 
           <label className="route-fuel-price">경유 가격 (원/L)
-            <input className="dispatch-input" type="number" min="0" step="1" value={dieselPrice} onChange={(e) => setDieselPrice(e.target.value)} placeholder="주유 가격 입력" />
+            <input className="dispatch-input" type="number" min="0" step="0.01" value={effectiveDieselPrice} onChange={(e) => { setManualPrice(true); setDieselPrice(e.target.value); }} placeholder="주유 가격 입력" />
           </label>
-          <p className="dispatch-route-meta">왕복 경로 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 경유 가격과 연비는 이 화면에서 입력합니다.</p>
+          <p className="dispatch-route-meta">{manualPrice ? "직접 입력한 경유 가격" : priceStatus}{manualPrice && marketPrice ? <button type="button" className="dispatch-route-suggest-btn" onClick={() => setManualPrice(false)}>전국 평균 적용</button> : null}</p>
+          <p className="dispatch-route-meta">왕복 경로 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 실제 주유 가격과 연비는 다를 수 있습니다.</p>
 
           {result.routes.map((route) => {
             const defaultEfficiency = defaultFuelEconomy(route.vehicleName);
@@ -636,7 +655,7 @@ export function RouteSolvePanel({
                   <input className="dispatch-input" type="number" min="0" step="0.1" value={efficiency} placeholder="입력" onChange={(e) => setEfficiencies((prev) => ({ ...prev, [route.vehicleId]: e.target.value }))} />
                 </label>
                 {defaultEfficiency && efficiencies[route.vehicleId] === undefined ? <small>{defaultEfficiency.note}</small> : null}
-                <span>예상 경유비: <b>{Number(dieselPrice) > 0 && Number(efficiency) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiency) * Number(dieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
+                <span>예상 경유비: <b>{Number(effectiveDieselPrice) > 0 && Number(efficiency) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiency) * Number(effectiveDieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
               </div>
               {altVehicleId === route.vehicleId ? (
                 <div className="dispatch-route-alts">
