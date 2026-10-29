@@ -41,7 +41,7 @@ export default async function MapRoutePage({
           <h1>경로 · 지도</h1>
           <p>
             {formatSheetDate(date)} 납품지를 지도에서 보고, 카카오 길찾기로 경로를 그립니다. 방문
-            순서는 ▲▼로 조정할 수 있습니다.
+            순서는 드래그로 조정할 수 있습니다.
           </p>
         </div>
         <div className="dispatch-head-actions">

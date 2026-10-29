@@ -60,7 +60,7 @@ function haversineKm(
 /**
  * 보드 차량 배정 + 일정 등록 순서를 유지한 채
  * 카카오 자동차 길찾기로 도로 거리·시간·폴리라인을 구한다.
- * (OR-Tools 없음 — 방문 순서는 visitOrder / ▲▼ 수동 조정)
+ * (OR-Tools 없음 — 방문 순서는 visitOrder / 드래그 수동 조정)
  */
 export async function solveRoutesForDate(date: string): Promise<RouteSolveResult> {
   const [entries, vehicles] = await Promise.all([
@@ -204,7 +204,7 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
     depot: DEFAULT_DEPOT,
     note: ok
       ? usedKakao
-        ? "저장된 방문 순서(또는 등록 순)로 카카오 도로 길찾기를 계산했습니다. ▲▼로 순서를 바꾼 뒤 적용하세요."
+        ? "저장된 방문 순서(또는 등록 순)로 카카오 도로 길찾기를 계산했습니다. 드래그로 순서를 바꿀 수 있습니다."
         : "카카오 길찾기 실패로 직선 근사를 사용했습니다. REST API 키·쿼터를 확인하세요."
       : "배정된 차량이 있는 납품지가 없습니다.",
     matrixNote: usedKakao

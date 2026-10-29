@@ -64,10 +64,16 @@ export function MapRouteWorkspace({ date, markers, boardHref }: Props) {
         <DispatchMap height="min(70vh, 640px)" markers={markers} routes={routes} />
       </div>
       <aside className="map-page-side">
-        <RouteSolvePanel date={date} onResult={setResult} result={result} />
+        <RouteSolvePanel
+          date={date}
+          markers={markers}
+          onResult={setResult}
+          result={result}
+        />
         <section className="dispatch-export-note">
-          카카오 길찾기만 사용합니다(OR-Tools 없음). 같은 차량 안 순서는 ▲▼로 저장됩니다. 실패 시
-          직선 근사로 폴백합니다. 일정은 <a href={boardHref}>일정 · 배차</a>에서 등록·확정합니다.
+          카카오 길찾기만 사용합니다(OR-Tools 없음). 추천 순서·드래그로 같은 차량 안 순서를 저장합니다.
+          실패 시 직선 근사로 폴백합니다. 일정은 <a href={boardHref}>일정 · 배차</a>에서
+          등록·확정합니다.
         </section>
       </aside>
     </div>
