@@ -65,18 +65,38 @@ export async function consolidateEntries(input: {
     return { error: "합차는 2건 이상 선택하세요." };
   }
 
-  const [entries, vehicles] = await Promise.all([
+  const [selected, vehicles] = await Promise.all([
     prisma.scheduleEntry.findMany({
       where: { id: { in: ids }, deliveryDate: input.date },
     }),
     prisma.vehicleType.findMany({ where: { isActive: true } }),
   ]);
 
-  if (entries.length !== ids.length) {
+  if (selected.length !== ids.length) {
     return { error: "선택한 일정 중 일부를 찾지 못했습니다. 날짜를 확인하세요." };
   }
-  if (entries.some((e) => e.status === "DONE" || e.status === "CANCELLED")) {
+  if (selected.some((e) => e.status === "DONE" || e.status === "CANCELLED")) {
     return { error: "완료·취소 건은 합차할 수 없습니다." };
+  }
+
+  // 기존 합차 그룹의 일부만 골라도 그룹 전체로 확장 (잔여 고아 그룹 방지)
+  const touchedGroupIds = [
+    ...new Set(selected.map((e) => e.consolidateGroupId).filter(Boolean)),
+  ] as string[];
+  let entries = selected;
+  if (touchedGroupIds.length) {
+    const siblings = await prisma.scheduleEntry.findMany({
+      where: {
+        deliveryDate: input.date,
+        consolidateGroupId: { in: touchedGroupIds },
+        status: { notIn: ["DONE", "CANCELLED"] },
+      },
+    });
+    const byId = new Map(selected.map((e) => [e.id, e]));
+    for (const s of siblings) {
+      if (!byId.has(s.id)) byId.set(s.id, s);
+    }
+    entries = [...byId.values()];
   }
 
   const totalPallets = entries.reduce(
@@ -136,6 +156,33 @@ export async function consolidateEntries(input: {
     if (ao !== bo) return ao - bo;
     return a.createdAt.getTime() - b.createdAt.getTime();
   });
+  const memberIds = ordered.map((e) => e.id);
+
+  // 같은 차량의 다른 일정과 visitOrder가 겹치지 않게 이어 붙임
+  const sameDayOthers = await prisma.scheduleEntry.findMany({
+    where: {
+      deliveryDate: input.date,
+      id: { notIn: memberIds },
+      status: { in: ["PLANNED", "CONFIRMED"] },
+    },
+    select: {
+      visitOrder: true,
+      selectedVehicleJson: true,
+      recommendedVehicleJson: true,
+    },
+  });
+  const sameVehicleOrders = sameDayOthers
+    .filter((e) => {
+      const v =
+        parseJson<VehicleRecommendation | null>(e.selectedVehicleJson, null) ??
+        parseJson<VehicleRecommendation | null>(e.recommendedVehicleJson, null);
+      return v?.vehicleTypeId === vehicle.id;
+    })
+    .map((e) => e.visitOrder)
+    .filter((o): o is number => o != null);
+  const visitBase = sameVehicleOrders.length
+    ? Math.max(...sameVehicleOrders) + 1
+    : 0;
 
   await prisma.$transaction(
     ordered.map((entry, index) =>
@@ -143,7 +190,7 @@ export async function consolidateEntries(input: {
         where: { id: entry.id },
         data: {
           consolidateGroupId: groupId,
-          visitOrder: index,
+          visitOrder: visitBase + index,
           selectedVehicleJson: vehicleJson,
           recommendedVehicleJson: vehicleJson,
           recommendationReason: reason,

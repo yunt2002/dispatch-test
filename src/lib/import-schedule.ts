@@ -25,8 +25,6 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     getDispatchSettings(),
   ]);
 
-  await prisma.scheduleEntry.deleteMany({ where: { source: "EXCEL" } });
-
   const data = usable.map((row) => {
     const rec = recommendForQuantity({
       locationName: row.location,
@@ -60,9 +58,13 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     };
   });
 
-  if (data.length) {
-    await prisma.scheduleEntry.createMany({ data });
-  }
+  // 삭제→생성은 한 트랜잭션. 중간에 실패하면 기존 EXCEL 일정이 유지된다.
+  await prisma.$transaction(async (tx) => {
+    await tx.scheduleEntry.deleteMany({ where: { source: "EXCEL" } });
+    if (data.length) {
+      await tx.scheduleEntry.createMany({ data });
+    }
+  });
   return data.length;
 }
 

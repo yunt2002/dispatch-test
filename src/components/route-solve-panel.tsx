@@ -31,6 +31,7 @@ export type RouteSolveResult = {
     priorityLabel?: string;
   }[];
   unassigned: string[];
+  unassignedDetails?: { id: string; title: string; reason: string }[];
   solverReachable: boolean;
   error?: string;
 };
@@ -723,9 +724,26 @@ export function RouteSolvePanel({
           ))}
 
           {result.unassigned.length ? (
-            <p className="dispatch-route-note-warn">
-              미할당 {result.unassigned.length}건 (용량·좌표 확인)
-            </p>
+            <div className="dispatch-route-note-warn">
+              <p>경로 제외 {result.unassigned.length}건</p>
+              <ul className="dispatch-route-unassigned-list">
+                {(
+                  result.unassignedDetails ??
+                  result.unassigned.map((id) => {
+                    const marker = markers.find((m) => m.id === id);
+                    return {
+                      id,
+                      title: marker?.title ?? "납품지",
+                      reason: marker ? "차량 미배정" : "좌표 없음",
+                    };
+                  })
+                ).map((item) => (
+                  <li key={item.id}>
+                    {item.title} · {item.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
         </div>
       ) : null}

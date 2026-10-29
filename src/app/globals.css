@@ -1298,6 +1298,13 @@ body {
   color: #9a3412;
 }
 
+.dispatch-route-unassigned-list {
+  margin: 4px 0 0;
+  padding-left: 1.1rem;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
 .dispatch-route-meta {
   margin-top: 4px;
   color: #adafa9;

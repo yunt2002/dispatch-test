@@ -24,6 +24,8 @@ export type RouteSolveResult = {
     path?: { lat: number; lng: number; label?: string }[];
   }[];
   unassigned: string[];
+  /** 경로에서 빠진 건의 표시명·사유 (좌표 없음 / 차량 미배정) */
+  unassignedDetails?: { id: string; title: string; reason: string }[];
   /** 항상 true — 외부 OR-Tools 불필요 */
   solverReachable: boolean;
   error?: string;
@@ -92,48 +94,67 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
     createdAt: Date;
   };
 
-  const stops: Stop[] = entries
-    .map((entry) => {
-      const marker = markerById.get(entry.id);
-      if (!marker) return null;
-      const assigned = assignedVehicle(entry);
-      const demand =
-        entry.palletCount != null && entry.palletCount > 0 ? entry.palletCount : 1;
-      return {
+  const unassignedDetails: { id: string; title: string; reason: string }[] = [];
+  const stops: Stop[] = [];
+  for (const entry of entries) {
+    const title =
+      entry.locationName?.trim() ||
+      entry.customerName?.trim() ||
+      "납품지";
+    const marker = markerById.get(entry.id);
+    if (!marker) {
+      unassignedDetails.push({
         id: entry.id,
-        lat: marker.lat,
-        lng: marker.lng,
-        demand,
-        title: marker.title,
-        vehicleId: assigned?.vehicleTypeId ?? null,
-        visitOrder: entry.visitOrder ?? null,
-        createdAt: entry.createdAt,
-      };
-    })
-    .filter((s): s is Stop => Boolean(s));
+        title,
+        reason: "좌표 없음",
+      });
+      continue;
+    }
+    const assigned = assignedVehicle(entry);
+    const demand =
+      entry.palletCount != null && entry.palletCount > 0 ? entry.palletCount : 1;
+    stops.push({
+      id: entry.id,
+      lat: marker.lat,
+      lng: marker.lng,
+      demand,
+      title: marker.title,
+      vehicleId: assigned?.vehicleTypeId ?? null,
+      visitOrder: entry.visitOrder ?? null,
+      createdAt: entry.createdAt,
+    });
+  }
 
   if (!stops.length) {
     return {
       ok: false,
       solverReachable: true,
       depot: DEFAULT_DEPOT,
-      note: "좌표가 있는 납품 일정이 없습니다. REST Geocoding 키와 주소를 확인하세요.",
+      note: unassignedDetails.length
+        ? `좌표를 찾지 못한 납품 ${unassignedDetails.length}건이 있어 경로를 만들 수 없습니다. 주소·거래처 매핑을 확인하세요.`
+        : "좌표가 있는 납품 일정이 없습니다. REST Geocoding 키와 주소를 확인하세요.",
       routes: [],
-      unassigned: [],
+      unassigned: unassignedDetails.map((u) => u.id),
+      unassignedDetails,
     };
   }
 
   const grouped = new Map<string, Stop[]>();
-  const unassigned: string[] = [];
   for (const stop of stops) {
     if (!stop.vehicleId || !vehicleById.has(stop.vehicleId)) {
-      unassigned.push(stop.id);
+      unassignedDetails.push({
+        id: stop.id,
+        title: stop.title,
+        reason: "차량 미배정",
+      });
       continue;
     }
     const list = grouped.get(stop.vehicleId) ?? [];
     list.push(stop);
     grouped.set(stop.vehicleId, list);
   }
+  const unassigned = unassignedDetails.map((u) => u.id);
+  const ungeocodedCount = unassignedDetails.filter((u) => u.reason === "좌표 없음").length;
 
   for (const list of grouped.values()) {
     list.sort((a, b) => {
@@ -198,19 +219,24 @@ export async function solveRoutesForDate(date: string): Promise<RouteSolveResult
   );
 
   const ok = routes.length > 0;
+  const missingNote =
+    ungeocodedCount > 0
+      ? ` · 좌표 없음 ${ungeocodedCount}건은 경로에서 제외됨`
+      : "";
   return {
     ok,
     solverReachable: true,
     depot: DEFAULT_DEPOT,
     note: ok
       ? usedKakao
-        ? "저장된 방문 순서(또는 등록 순)로 카카오 도로 길찾기를 계산했습니다. 드래그로 순서를 바꿀 수 있습니다."
-        : "카카오 길찾기 실패로 직선 근사를 사용했습니다. REST API 키·쿼터를 확인하세요."
+        ? `저장된 방문 순서(또는 등록 순)로 카카오 도로 길찾기를 계산했습니다. 드래그로 순서를 바꿀 수 있습니다.${missingNote}`
+        : `카카오 길찾기 실패로 직선 근사를 사용했습니다. REST API 키·쿼터를 확인하세요.${missingNote}`
       : "배정된 차량이 있는 납품지가 없습니다.",
     matrixNote: usedKakao
       ? `카카오 자동차 길찾기 · API ${totalApiCalls}회 · OR-Tools 미사용`
       : "haversine×1.3 / 40km/h 폴백 · OR-Tools 미사용",
     routes,
     unassigned,
+    unassignedDetails,
   };
 }

@@ -377,6 +377,42 @@ export async function updateSchedule(formData: FormData) {
     remainingByVehicleId,
   });
 
+  const nextPallet = qtyUnit === "plt" ? palletCount : result.palletCount;
+  const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
+  const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
+  // 담당자가 추천과 다른 차를 고른 경우: 추천만 갱신하고 선택 차량은 유지
+  const manual = Boolean(
+    oldSel && (!oldRec || oldSel.vehicleTypeId !== oldRec.vehicleTypeId),
+  );
+
+  let selectedJson = result.recommended ? JSON.stringify(result.recommended) : null;
+  let logistics = result.recommended?.vehicleName ?? null;
+  let keptManualLabel: string | null = null;
+
+  if (manual && oldSel) {
+    const vehicle = vehicles.find((v) => v.id === oldSel.vehicleTypeId);
+    if (vehicle) {
+      const vehicleCount = vehicleCountForPallets(nextPallet, vehicle.maxPallet);
+      const selected: VehicleRecommendation = {
+        vehicleTypeId: vehicle.id,
+        vehicleName: vehicle.vehicleName,
+        vehicleCount,
+        maxPallet: vehicle.maxPallet,
+        maxWeight: vehicle.maxWeight,
+        loadingRate: loadingRateForPallets(nextPallet, vehicle.maxPallet, vehicleCount),
+        primaryRegionType: vehicle.primaryRegionType,
+        boxPreferred: vehicle.boxPreferred,
+      };
+      selectedJson = JSON.stringify(selected);
+      logistics = vehicle.vehicleName;
+      keptManualLabel = `${vehicle.vehicleName}${vehicleCount > 1 ? ` ×${vehicleCount}` : ""}`;
+    } else {
+      selectedJson = entry.selectedVehicleJson;
+      logistics = entry.logistics;
+      keptManualLabel = oldSel.vehicleName;
+    }
+  }
+
   await prisma.scheduleEntry.update({
     where: { id },
     data: {
@@ -385,12 +421,12 @@ export async function updateSchedule(formData: FormData) {
       customerName,
       productName,
       boxCount,
-      palletCount: qtyUnit === "plt" ? palletCount : result.palletCount,
+      palletCount: nextPallet,
       recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
-      selectedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
+      selectedVehicleJson: selectedJson,
       recommendationReason: result.reasonLines.join("\n"),
       warningsJson: JSON.stringify(result.warnings),
-      logistics: result.recommended?.vehicleName ?? null,
+      logistics,
     },
   });
 
@@ -401,11 +437,18 @@ export async function updateSchedule(formData: FormData) {
       recommendation: result.recommended
         ? `${result.recommended.vehicleName}×${result.recommended.vehicleCount}`
         : "없음",
+      selectedResult: keptManualLabel ? `수동유지 ${keptManualLabel}` : null,
     },
   });
 
   await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
+  if (keptManualLabel) {
+    const recLabel = result.recommended
+      ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
+      : "없음";
+    go({ date, ok: `수정 · 수동 차량 ${keptManualLabel} 유지 (추천 ${recLabel})` });
+  }
   const vehicleLabel = result.recommended
     ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
     : "추천 없음";
