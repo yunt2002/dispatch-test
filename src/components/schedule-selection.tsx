@@ -9,6 +9,7 @@ import {
 } from "react";
 import {
   consolidateSchedules,
+  confirmSchedules,
   deleteSchedules,
 } from "@/app/schedule/actions";
 
@@ -88,6 +89,13 @@ export function ScheduleSelectionRoot({
             </span>
           </div>
           <div className="dispatch-bulk-bar-actions">
+            <form action={confirmSchedules} onSubmit={(event) => {
+              if (!selectedCount || !confirm(`선택한 ${selectedCount}건 중 추천 확인 상태인 배차를 확정할까요? 확인 사항과 차량을 먼저 검토하세요.`)) event.preventDefault();
+            }}>
+              <input type="hidden" name="date" value={date} />
+              {selectedIds.map((id) => <input key={id} type="hidden" name="ids" value={id} />)}
+              <button className="dispatch-primary-button" disabled={!selectedCount} type="submit">선택 배차 확정{selectedCount ? ` (${selectedCount})` : ""}</button>
+            </form>
             {selectedCount > 0 ? (
               <button
                 className="dispatch-secondary-button"

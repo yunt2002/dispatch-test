@@ -251,7 +251,6 @@ export default async function HomePage({
         </ScheduleSelectionRoot>
 
         <aside className="dispatch-side">
-          <GeumsureFare date={date} />
           <section className="dispatch-vehicle-panel">
             <h2>잔여 PLT · 차량</h2>
             <p className="dispatch-side-meta">
@@ -290,6 +289,7 @@ export default async function HomePage({
               </p>
             ) : null}
           </section>
+          <GeumsureFare date={date} />
           <section className="dispatch-notice-panel">
             <h2>오늘의 확인 사항</h2>
             {zoneHints.length ? (

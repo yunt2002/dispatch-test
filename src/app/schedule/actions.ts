@@ -369,7 +369,7 @@ export async function updateSchedule(formData: FormData) {
     customerName,
     boxCount,
     palletCount,
-    productCode: entry.productCode,
+    productCode: productChanged ? null : entry.productCode,
     productName,
     vehicles,
     regions,
@@ -420,6 +420,7 @@ export async function updateSchedule(formData: FormData) {
       regionType: result.regionType,
       customerName,
       productName,
+      ...(productChanged ? { productCode: null } : {}),
       boxCount,
       palletCount: nextPallet,
       recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
@@ -492,6 +493,21 @@ export async function confirmSchedule(formData: FormData) {
   });
   revalidatePath("/");
   go({ date, ok: "배차를 확정했습니다." });
+}
+
+export async function confirmSchedules(formData: FormData) {
+  const date = optionalText(formData, "date") ?? undefined;
+  const ids = [...new Set(formData.getAll("ids").map((value) => String(value).trim()).filter(Boolean))];
+  if (!date || !ids.length) go({ date, error: "확정할 납품을 선택하세요." });
+  const result = await prisma.scheduleEntry.updateMany({
+    where: { id: { in: ids }, deliveryDate: date, status: "PLANNED" },
+    data: { status: "CONFIRMED" },
+  });
+  if (result.count) {
+    await prisma.appLog.create({ data: { userAction: "schedule_confirm_bulk", routeCode: date, selectedResult: `${result.count}건` } });
+  }
+  revalidatePath("/");
+  go({ date, ok: result.count ? `${result.count}건을 배차 확정했습니다.` : "확정할 추천 확인 항목이 없습니다." });
 }
 
 export async function reopenSchedule(formData: FormData) {

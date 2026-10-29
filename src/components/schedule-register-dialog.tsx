@@ -26,6 +26,7 @@ export function ScheduleRegisterDialog({
   const [locationName, setLocationName] = useState("");
   const [suggestNote, setSuggestNote] = useState<string | null>(null);
   const [locationLockedByCustomer, setLocationLockedByCustomer] = useState(false);
+  const [productDefaultsApplied, setProductDefaultsApplied] = useState(false);
 
   const erpNames = useMemo(() => listErpProductNames(), []);
   const customerNames = useMemo(
@@ -55,6 +56,7 @@ export function ScheduleRegisterDialog({
     setLocationName("");
     setSuggestNote(null);
     setLocationLockedByCustomer(false);
+    setProductDefaultsApplied(false);
   }
 
   function openDialog() {
@@ -79,12 +81,19 @@ export function ScheduleRegisterDialog({
   function onProductChange(name: string) {
     setProductName(name);
     const defaults = resolveDefaultsFromProduct(name);
+    if (productDefaultsApplied) {
+      const customer = defaults.customerName ?? "";
+      setCustomerName(customer);
+      setLocationName(customer ? (resolveLocationFromCustomer(customer, locationOptions) ?? defaults.locationName ?? "") : (defaults.locationName ?? ""));
+      setLocationLockedByCustomer(Boolean(customer));
+    }
     if (!defaults.customerName && !defaults.locationName) {
       if (!locationLockedByCustomer) setSuggestNote(null);
       return;
     }
     if (defaults.customerName && !customerName) {
       setCustomerName(defaults.customerName);
+      setProductDefaultsApplied(true);
       if (!locationName || !locationLockedByCustomer) {
         const mapped =
           resolveLocationFromCustomer(defaults.customerName, locationOptions) ??
@@ -109,6 +118,7 @@ export function ScheduleRegisterDialog({
   }
 
   function onCustomerChange(name: string) {
+    setProductDefaultsApplied(false);
     setCustomerName(name);
     applyLocationFromCustomer(name);
   }
@@ -228,6 +238,7 @@ export function ScheduleRegisterDialog({
                     onChange={(event) => {
                       setLocationName(event.target.value);
                       setLocationLockedByCustomer(false);
+                      setProductDefaultsApplied(false);
                     }}
                     value={locationName}
                   >
