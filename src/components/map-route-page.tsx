@@ -110,7 +110,7 @@ export default async function MapRoutePage({
       {!scope.valid ? <p className="dispatch-route-note-warn">선택한 확정 배차를 찾을 수 없습니다. 목록에서 다시 선택하세요.</p> : null}
 
       <MapRouteWorkspace key={`${date}:${batchId ?? "pending"}:${signature}:${snapshot?.savedAt ?? ""}`} boardHref={boardHref} date={date} batchId={batchId} markers={mapMarkers} initialResult={initialResult} />
-      <DeliveryComparison />
+      <DeliveryComparison key={date} initialDate={date} />
     </div>
   );
 }

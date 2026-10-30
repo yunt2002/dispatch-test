@@ -25,8 +25,8 @@ function Plan({ title, routes, external }: { title: string; routes: SimulationRo
       <details><summary>품목 보기 ({r.items.length}품목)</summary><ul>{r.items.map((i) => <li key={i.rowNumber}>{i.customer} · {i.product} · {i.transport || "방식 미확인"} {i.vehicle ? "" : "→ 자사 차량"}</li>)}</ul></details></>}
   </div>) : <p>AI 제안이 없습니다.</p>}{external ? <ExternalDeliveries items={external} /> : null}</div>;
 }
-export function DeliveryComparison() {
-  const [date, setDate] = useState("2026-10-14"); const [file, setFile] = useState<File | null>(null);
+export function DeliveryComparison({ initialDate }: { initialDate: string }) {
+  const [date, setDate] = useState(initialDate); const [file, setFile] = useState<File | null>(null);
   const [price, setPrice] = useState(""); const [priceSource, setPriceSource] = useState("경유 가격을 입력해 주세요.");
   const [result, setResult] = useState<SimulationResult | null>(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const [originalTrips, setOriginalTrips] = useState("");
@@ -34,6 +34,7 @@ export function DeliveryComparison() {
   useEffect(() => { const controller = new AbortController(); fetch("/api/diesel-price", { signal: controller.signal }).then(async (r) => { if (!r.ok) throw new Error(); return r.json() as Promise<{ price: number; date: string }>; }).then((d) => { setPrice((current) => current || String(d.price)); setPriceSource(`오피넷 전국 평균 ${d.date} 기준 · 수정 가능`); }).catch(() => { if (!controller.signal.aborted) setPriceSource("오피넷 조회 실패 · 경유 가격을 직접 입력해 주세요."); }); return () => controller.abort(); }, []);
   async function run() {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
+    if (!date) { setError("납품일을 선택해 주세요."); return; }
     setLoading(true); setError(""); const form = new FormData(); form.set("file", file); form.set("date", date); form.set("price", price); form.set("packing", JSON.stringify(packing));
     try { const response = await fetch("/api/route/compare", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다."); const next = data as SimulationResult; setOriginalTrips(String(estimateCharterTrips(next.items))); setPackingDirty(false); setResult(next); }
     catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
@@ -49,7 +50,7 @@ export function DeliveryComparison() {
   return <section className="comparison-section" aria-labelledby="simulation-title"><h2 id="simulation-title">AI 배차 시뮬레이션</h2>
     <p>용차·택배 물량을 자사 차량에 함께 실을 수 있는지 검토합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setPacking({}); setPackingDirty(false); }} /></label>
-      <label>납품일 <select value={date} disabled={loading} onChange={(e) => { setDate(e.target.value); setResult(null); setPacking({}); setPackingDirty(false); }}><option value="2026-10-14">2026-10-14</option><option value="2026-10-15">2026-10-15</option></select></label>
+      <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { setDate(e.target.value); setResult(null); setPacking({}); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { setPrice(e.target.value); setResult(null); }} placeholder="직접 입력" /></label>
       <button type="button" className="dispatch-secondary-button" disabled={loading} onClick={() => void run()}>{loading ? "시뮬레이션 중…" : "시뮬레이션 실행"}</button></div>
     <p className="comparison-note">{priceSource} · 사람 계획은 엑셀 행 순서 · 자사 차량 왕복, 임시 연비 7.1km/L</p>

@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import ExcelJS from "exceljs";
-import { extractComparisonShipments } from "./comparison-workbook";
+import { extractComparisonShipments, findComparisonSheet } from "./comparison-workbook";
 
 test("엑셀 순서와 운송 방식을 유지하고 빈 위치는 앞 행의 위치를 상속하지 않는다", () => {
   const workbook = new ExcelJS.Workbook();
@@ -15,4 +15,13 @@ test("엑셀 순서와 운송 방식을 유지하고 빈 위치는 앞 행의 �
   assert.deepEqual(rows.map((row) => row.customer), ["업체 A", "업체 B"]);
   assert.equal(rows[1].location, "");
   assert.equal(rows[1].transport, "경동택배");
+});
+test("선택한 연월에 맞는 시트를 앞자리 0 유무와 관계없이 찾는다", () => {
+  const workbook = new ExcelJS.Workbook();
+  const september = workbook.addWorksheet("26년 09월");
+  const october = workbook.addWorksheet("26년 10월");
+  assert.equal(findComparisonSheet(workbook, "2026-09-14"), september);
+  assert.equal(findComparisonSheet(workbook, "2026-10-15"), october);
+  assert.equal(findComparisonSheet(workbook, "2026-11-15"), null);
+  assert.equal(findComparisonSheet(workbook, "2026-00-15"), null);
 });

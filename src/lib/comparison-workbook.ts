@@ -13,6 +13,19 @@ export type ComparisonShipment = {
   transport: string;
 };
 
+/** 월 표기에 앞자리 0이 있는 일정표도 선택한다. */
+export function findComparisonSheet(workbook: ExcelJS.Workbook, date: string): ExcelJS.Worksheet | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const fullYear = Number(date.slice(0, 4));
+  const year = Number(date.slice(2, 4));
+  const month = Number(date.slice(5, 7));
+  if (fullYear < 2000 || fullYear > 2099 || month < 1 || month > 12) return null;
+  return workbook.worksheets.find((sheet) => {
+    const match = sheet.name.trim().match(/^(\d{2})년\s*(\d{1,2})월$/);
+    return !!match && Number(match[1]) === year && Number(match[2]) === month;
+  }) ?? null;
+}
+
 /** 비교용 원본은 빈 지역과 운송 방식을 다른 행에서 임의로 상속하지 않는다. */
 export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: string): ComparisonShipment[] {
   let headerRow = 0;

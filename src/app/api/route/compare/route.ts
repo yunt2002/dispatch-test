@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import { extractComparisonShipments } from "@/lib/comparison-workbook";
+import { extractComparisonShipments, findComparisonSheet } from "@/lib/comparison-workbook";
 import { resolveCustomerAddress } from "@/lib/delivery-customers";
 import { geocodeAddresses } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
@@ -64,8 +64,8 @@ export async function POST(request: Request) {
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()) as unknown as ExcelJS.Buffer);
-    const sheetName = `${date.slice(2, 4)}년 ${Number(date.slice(5, 7))}월`; const sheet = workbook.getWorksheet(sheetName);
-    if (!sheet) return NextResponse.json({ error: `${sheetName} 시트를 찾을 수 없습니다.` }, { status: 400 });
+    const sheet = findComparisonSheet(workbook, date);
+    if (!sheet) return NextResponse.json({ error: `선택한 날짜의 ${date.slice(0, 7)} 월별 시트를 찾을 수 없습니다.` }, { status: 400 });
     const rows = extractComparisonShipments(sheet, date);
     if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
