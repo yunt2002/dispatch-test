@@ -7,6 +7,7 @@ export type ComparisonShipment = {
   customer: string;
   location: string;
   product: string;
+  productCode: string;
   quantity: number | null;
   boxes: number | null;
   transport: string;
@@ -22,7 +23,7 @@ export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: strin
     row.eachCell((cell, col) => labels.set(cellText(cell.value).replace(/\s/g, ""), col));
     if (labels.has("일자") && labels.has("업체명") && labels.has("품명")) {
       headerRow = n;
-      for (const name of ["일자", "업체명", "업체위치", "품명", "수량합계", "박스수량", "물류"]) columns[name] = labels.get(name) ?? 0;
+      for (const name of ["일자", "업체명", "업체위치", "품번", "품명", "수량합계", "박스수량", "물류"]) columns[name] = labels.get(name) ?? 0;
       break;
     }
   }
@@ -36,7 +37,7 @@ export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: strin
     const customer = cellText(value(row, columns.업체명));
     const product = cellText(value(row, columns.품명));
     if (!customer && !product) continue;
-    shipments.push({ rowNumber: n, date: rowDate, customer, location: cellText(value(row, columns.업체위치)), product,
+    shipments.push({ rowNumber: n, date: rowDate, customer, location: cellText(value(row, columns.업체위치)), product, productCode: cellText(value(row, columns.품번)),
       quantity: cellNumber(value(row, columns.수량합계)), boxes: cellNumber(value(row, columns.박스수량)), transport: cellText(value(row, columns.물류)) });
   }
   return shipments;
