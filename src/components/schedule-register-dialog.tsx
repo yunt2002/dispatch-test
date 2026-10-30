@@ -291,7 +291,7 @@ export function ScheduleRegisterDialog({
                 </div>
               ))}
               <button className="dispatch-secondary-button" type="button" onClick={() => { setExtraProducts((items) => [...items, nextProductId]); setNextProductId((id) => id + 1); }}>+ 품목 추가</button>
-              {extraProducts.length > 0 ? <p className="dispatch-form-note">같은 거래처·지역으로 품목별 일정이 각각 등록됩니다. 함께 운행하려면 등록 후 합차를 확인하세요.</p> : null}
+              {extraProducts.length > 0 ? <p className="dispatch-form-note">같은 거래처의 품목을 한 카드로 묶어 등록합니다. 차량과 총 적재량을 확인하세요.</p> : null}
               <p className="dispatch-form-note">
                 {suggestNote ??
                   "거래처를 고르면 지역이 매핑됩니다. 비워 두면 품명 기준으로도 추천합니다."}

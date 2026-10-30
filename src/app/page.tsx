@@ -1,6 +1,7 @@
 import { DateSwitcher } from "@/components/date-switcher";
 import { GeumsureFare } from "@/components/geumsure-fare";
 import { ScheduleEntryCard } from "@/components/schedule-entry-card";
+import { ScheduleGroupCard } from "@/components/schedule-group-card";
 import { ScheduleRegisterDialog } from "@/components/schedule-register-dialog";
 import { ScheduleSelectionRoot } from "@/components/schedule-selection";
 import { ErrorText, SuccessText } from "@/components/ui";
@@ -17,6 +18,7 @@ import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
 import { getDispatchSettings } from "@/lib/settings";
 import { matchRouteZone } from "@/lib/route-master";
 import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
+import { groupScheduleCards } from "@/lib/schedule-card-groups";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -181,6 +183,34 @@ export default async function HomePage({
     );
   }
 
+  function cards(list: ScheduleEntry[]) {
+    return groupScheduleCards(list).map((group) => {
+      const first = group[0];
+      const allMembers = first.consolidateGroupId ? entries.filter((entry) => entry.consolidateGroupId === first.consolidateGroupId) : [];
+      if (!first.consolidateGroupId || allMembers.length < 2) return card(first);
+      const selected = selectedVehicle(first);
+      const totalPallets = group.reduce((sum, entry) => sum + (entry.palletCount ?? 0), 0);
+      const unknownPallets = group.filter((entry) => entry.palletCount == null).length;
+      const warnings = [...new Set(group.flatMap((entry) => parseJson<string[]>(entry.warningsJson, [])))];
+      if (new Set(group.map((entry) => selectedVehicle(entry)?.vehicleTypeId ?? "")).size > 1) warnings.push("묶음 내 차량 배정이 서로 다릅니다. 차량을 확인하세요.");
+      if (allMembers.some((entry) => entry.status !== first.status)) warnings.push("이 묶음의 일부 품목이 다른 상태에 있습니다. 다른 상태 칸도 확인하세요.");
+      return <ScheduleGroupCard
+        key={`${first.consolidateGroupId}-${first.status}`}
+        date={date} groupId={first.consolidateGroupId} label={consolidateLabel(first.consolidateGroupId) ?? "묶음"}
+        status={first.status} selectedVehicleId={selected?.vehicleTypeId ?? null}
+        vehicleName={selected?.vehicleName ?? null} vehicleCount={selected?.vehicleCount ?? 1} vehicles={vehicleOptions} warnings={warnings}
+        totalLabel={unknownPallets ? `${formatNumber(totalPallets)} PLT + ${unknownPallets}건 미확인` : `합계 ${formatNumber(totalPallets)} PLT`}
+        items={group.map((entry) => {
+          const qtyUnit = entry.palletCount != null && entry.boxCount == null ? "plt" as const : "box" as const;
+          return { id: entry.id, locationName: entry.locationName, customerName: entry.customerName, productName: entry.productName,
+            quantity: qtyUnit === "plt" ? entry.palletCount ?? 0 : entry.boxCount ?? 0, qtyUnit,
+            qtyLabel: entry.boxCount != null && entry.palletCount != null ? `${formatNumber(entry.boxCount)} 박스 · ${formatNumber(entry.palletCount)} PLT`
+              : entry.boxCount != null ? `${formatNumber(entry.boxCount)} 박스` : entry.palletCount != null ? `${formatNumber(entry.palletCount)} PLT` : "-" };
+        })}
+      />;
+    });
+  }
+
   return (
     <div className="dispatch-page">
       <header className="dispatch-page-head">
@@ -234,19 +264,19 @@ export default async function HomePage({
           <section className="dispatch-column dispatch-column-review">
             <div className="dispatch-column-head"><div><i /><strong>추천 확인</strong><span>담당자 승인 전</span></div><b>{reviewEntries.length}</b></div>
             <div className="dispatch-card-list">
-              {reviewEntries.length ? reviewEntries.map(card) : <p className="dispatch-column-empty">확인할 추천이 없습니다.</p>}
+              {reviewEntries.length ? cards(reviewEntries) : <p className="dispatch-column-empty">확인할 추천이 없습니다.</p>}
             </div>
           </section>
           <section className="dispatch-column dispatch-column-confirmed">
             <div className="dispatch-column-head"><div><i /><strong>배차 확정</strong><span>오늘 출발 예정</span></div><b>{confirmedEntries.length}</b></div>
             <div className="dispatch-card-list">
-              {confirmedEntries.length ? confirmedEntries.map(card) : <p className="dispatch-column-empty">확정된 배차가 없습니다.</p>}
+              {confirmedEntries.length ? cards(confirmedEntries) : <p className="dispatch-column-empty">확정된 배차가 없습니다.</p>}
             </div>
           </section>
           <section className="dispatch-column dispatch-column-done">
             <div className="dispatch-column-head"><div><i /><strong>납품 완료</strong><span>처리 종료</span></div><b>{doneEntries.length}</b></div>
             <div className="dispatch-card-list">
-              {doneEntries.length ? doneEntries.map(card) : <p className="dispatch-column-empty">완료된 납품이 없습니다.</p>}
+              {doneEntries.length ? cards(doneEntries) : <p className="dispatch-column-empty">완료된 납품이 없습니다.</p>}
             </div>
           </section>
         </section>

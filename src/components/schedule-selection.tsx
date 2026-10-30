@@ -14,7 +14,7 @@ import {
 } from "@/app/schedule/actions";
 
 type SelectionContextValue = {
-  toggle: (id: string) => void;
+  toggle: (ids: string[]) => void;
   isSelected: (id: string) => boolean;
 };
 
@@ -45,11 +45,11 @@ export function ScheduleSelectionRoot({
 
   const value = useMemo<SelectionContextValue>(
     () => ({
-      toggle: (id: string) => {
+      toggle: (ids: string[]) => {
         setSelected((prev) => {
           const next = new Set(prev);
-          if (next.has(id)) next.delete(id);
-          else next.add(id);
+          const remove = ids.every((id) => next.has(id));
+          for (const id of ids) { if (remove) next.delete(id); else next.add(id); }
           return next;
         });
       },
@@ -192,10 +192,11 @@ export function ScheduleSelectionRoot({
   );
 }
 
-export function ScheduleSelectCheckbox({ id }: { id: string }) {
+export function ScheduleSelectCheckbox({ id, ids }: { id: string; ids?: string[] }) {
   const ctx = useScheduleSelection();
   if (!ctx) return null;
-  const checked = ctx.isSelected(id);
+  const selectedIds = ids ?? [id];
+  const checked = selectedIds.every((item) => ctx.isSelected(item));
 
   return (
     <label
@@ -205,7 +206,7 @@ export function ScheduleSelectCheckbox({ id }: { id: string }) {
       <input
         aria-label="납품 선택"
         checked={checked}
-        onChange={() => ctx.toggle(id)}
+        onChange={() => ctx.toggle(selectedIds)}
         type="checkbox"
       />
     </label>

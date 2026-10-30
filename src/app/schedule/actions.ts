@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { randomUUID } from "node:crypto";
 import type { RegionLookup } from "@/lib/delivery-excel";
 import {
   loadingRateForPallets,
@@ -208,8 +209,20 @@ export async function registerSchedule(formData: FormData) {
     }, recommended, selected, manualVehicle };
   });
 
+  const groupId = rows.length > 1 ? randomUUID() : null;
+  const totalUnits = rows.reduce((sum, row) => sum + capacityUnits(row.data.palletCount, row.data.boxCount), 0);
+  const chosen = rows[0].selected;
+  const shared = groupId && chosen ? {
+    ...chosen,
+    vehicleCount: vehicleCountForPallets(totalUnits, chosen.maxPallet),
+    loadingRate: loadingRateForPallets(totalUnits, chosen.maxPallet, vehicleCountForPallets(totalUnits, chosen.maxPallet)),
+  } : null;
   await prisma.$transaction([
-    prisma.scheduleEntry.createMany({ data: rows.map((row) => row.data) }),
+    prisma.scheduleEntry.createMany({ data: rows.map((row) => ({
+      ...row.data,
+      consolidateGroupId: groupId,
+      ...(groupId ? { selectedVehicleJson: shared ? JSON.stringify(shared) : null, logistics: shared?.vehicleName ?? null } : {}),
+    })) }),
     ...rows.map(({ recommended, selected, manualVehicle }) => prisma.appLog.create({ data: {
       userAction: "schedule_register",
       routeCode: deliveryDate,
@@ -230,7 +243,7 @@ export async function registerSchedule(formData: FormData) {
     : "차량 없음";
   go({
     date: deliveryDate,
-    ok: rows.length > 1 ? `${rows.length}개 품목 등록 · 차량을 확인하세요` : `등록 · ${vehicleLabel}`,
+    ok: rows.length > 1 ? `${rows.length}개 품목을 하나로 등록했습니다. 차량과 적재량을 확인하세요.` : `등록 · ${vehicleLabel}`,
   });
 }
 
@@ -249,6 +262,9 @@ export async function changeScheduleVehicle(formData: FormData) {
   if (!entry || !vehicle) {
     go({ date, error: "일정 또는 차량을 확인하세요." });
   }
+  if (entry.status === "DONE" || entry.status === "CANCELLED") {
+    go({ date, error: "완료된 일정은 차량을 변경할 수 없습니다." });
+  }
 
   const recommended = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
   const groupmates = entry.consolidateGroupId
@@ -256,6 +272,7 @@ export async function changeScheduleVehicle(formData: FormData) {
         where: {
           consolidateGroupId: entry.consolidateGroupId,
           deliveryDate: entry.deliveryDate,
+          status: { in: ["PLANNED", "CONFIRMED"] },
         },
       })
     : [entry];
@@ -428,6 +445,33 @@ export async function updateSchedule(formData: FormData) {
     }
   }
 
+  if (entry.consolidateGroupId) {
+    const members = await prisma.scheduleEntry.findMany({
+      where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: entry.deliveryDate, status: { in: ["PLANNED", "CONFIRMED"] } },
+    });
+    const total = members.reduce((sum, member) => sum + (member.id === id ? capacityUnits(nextPallet, boxCount) : capacityUnits(member.palletCount, member.boxCount)), 0);
+    const groupVehicle = oldSel ? vehicles.find((vehicle) => vehicle.id === oldSel.vehicleTypeId) : undefined;
+    const groupCount = groupVehicle ? vehicleCountForPallets(total, groupVehicle.maxPallet) : 1;
+    const shared = oldSel && groupVehicle ? {
+      ...oldSel, vehicleCount: groupCount,
+      loadingRate: loadingRateForPallets(total, groupVehicle.maxPallet, groupCount),
+    } : oldSel;
+    await prisma.$transaction([
+      prisma.scheduleEntry.update({ where: { id }, data: {
+        locationName: locationName.trim(), regionType: result.regionType, customerName, productName,
+        ...(productChanged ? { productCode: null } : {}), boxCount, palletCount: nextPallet,
+        recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
+        recommendationReason: result.reasonLines.join("\n"), warningsJson: JSON.stringify(result.warnings),
+      } }),
+      prisma.scheduleEntry.updateMany({ where: { id: { in: members.map((member) => member.id) } }, data: {
+        selectedVehicleJson: shared ? JSON.stringify(shared) : null, logistics: shared?.vehicleName ?? null,
+      } }),
+    ]);
+    await rebalanceDayFleet(entry.deliveryDate);
+    revalidatePath("/");
+    go({ date, ok: "품목을 수정하고 묶음 적재량을 다시 계산했습니다." });
+  }
+
   await prisma.scheduleEntry.update({
     where: { id },
     data: {
@@ -482,6 +526,43 @@ export async function markScheduleDone(formData: FormData) {
   if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go({ date, ok: "완료 처리했습니다." });
+}
+
+/** 묶음 카드의 현재 상태에 속한 일정만 함께 처리한다. */
+export async function changeScheduleGroupStatus(formData: FormData) {
+  const id = text(formData, "id");
+  const date = text(formData, "date");
+  const operation = text(formData, "operation");
+  const transitions: Record<string, { from: string; to: string }> = {
+    confirm: { from: "PLANNED", to: "CONFIRMED" },
+    done: { from: "CONFIRMED", to: "DONE" },
+    reopen: { from: "DONE", to: "CONFIRMED" },
+  };
+  const transition = transitions[operation];
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
+  if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date || !transition || entry.status !== transition.from) {
+    go({ date, error: "묶음의 현재 상태를 확인해 주세요." });
+  }
+  const result = await prisma.scheduleEntry.updateMany({
+    where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: transition.from },
+    data: { status: transition.to },
+  });
+  if (operation !== "confirm") await rebalanceDayFleet(date);
+  revalidatePath("/");
+  go({ date, ok: `${result.count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
+}
+
+export async function deleteScheduleGroup(formData: FormData) {
+  const id = text(formData, "id");
+  const date = text(formData, "date");
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
+  if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date) go({ date, error: "삭제할 묶음을 확인해 주세요." });
+  const result = await prisma.scheduleEntry.deleteMany({
+    where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: entry.status },
+  });
+  await rebalanceDayFleet(date);
+  revalidatePath("/");
+  go({ date, ok: `${result.count}건을 삭제했습니다.` });
 }
 
 export async function confirmSchedule(formData: FormData) {
