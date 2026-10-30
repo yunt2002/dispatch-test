@@ -1007,8 +1007,8 @@ body {
 .dispatch-job-product {
   margin-top: 2px;
   overflow: hidden;
-  color: #95928a;
-  font-size: 12px;
+  color: #68665f;
+  font-size: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2262,9 +2262,10 @@ body {
 .route-arrival { margin: 10px 0; font-size: 12px; }
 .route-arrival label { display: flex; align-items: center; gap: 8px; }
 .route-arrival input { width: 130px; }
-.dispatch-group-items { list-style: none; padding: 0; margin: 8px 0; font-size: 12px; }
+.dispatch-group-items { list-style: none; padding: 0; margin: 8px 0; font-size: 14px; line-height: 1.45; }
 .dispatch-group-items li { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #eceae5; }
 .dispatch-group-items li span { overflow-wrap: anywhere; }
+.dispatch-group-items li b { flex-shrink: 0; }
 .dispatch-group-edit { margin: 8px 0; font-size: 12px; }
 .dispatch-group-edit summary { cursor: pointer; font-weight: 700; }
 .dispatch-group-edit-form { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid #eceae5; }
