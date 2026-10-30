@@ -1545,6 +1545,14 @@ body {
   min-width: 0;
 }
 
+.dispatch-route-stop-items { margin-top: 4px; cursor: default; }
+.dispatch-route-stop-items summary { display: inline-block; color: #815732; font-weight: 700; cursor: pointer; }
+.dispatch-route-stop-items summary::before { content: "▸ "; }
+.dispatch-route-stop-items[open] summary::before { content: "▾ "; }
+.dispatch-route-stop-items small { display: block; color: #8b8981; }
+.dispatch-route-stop-item { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.dispatch-route-stop-item span { overflow-wrap: anywhere; }
+
 .dispatch-route-stop-placeholder {
   flex: 1;
   color: #8a877e;

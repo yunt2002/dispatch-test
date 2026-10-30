@@ -720,6 +720,8 @@ export function RouteSolvePanel({
               ) : null}
               <ol className="dispatch-route-stops">
                 {route.titles.map((title, index) => {
+                  const marker = markers.find((item) => item.id === route.stopIds[index]);
+                  const items = marker?.items ?? [];
                   const canDrag = route.stopIds.length > 1 && !busy && !result.stale && result.tripMode === tripMode;
                   const isDragging =
                     dragFrom?.vehicleId === route.vehicleId && dragFrom.index === index;
@@ -784,9 +786,14 @@ export function RouteSolvePanel({
                               ⋮⋮
                             </span>
                           ) : null}
-                          <span className="dispatch-route-stop-label">
-                            {index + 1}. {title}{departure ? ` · 예상 도착 ${result.stale || result.tripMode !== tripMode ? "경로 새로고침 필요" : arrivals[index] ?? "확인 불가"}` : ""}
-                          </span>
+                          <div className="dispatch-route-stop-label">
+                            <span>{index + 1}. {title}{departure ? ` · 예상 도착 ${result.stale || result.tripMode !== tripMode ? "경로 새로고침 필요" : arrivals[index] ?? "확인 불가"}` : ""}</span>
+                            {items.length > 1 ? <details className="dispatch-route-stop-items" draggable={false} onDragStart={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+                              <summary title="묶인 품목과 수량 확인">품목 보기</summary>
+                              {result.stale ? <small>현재 일정 기준</small> : null}
+                              {items.map((item) => <div className="dispatch-route-stop-item" key={item.id}><span>{item.productName}</span><b>{item.quantityLabel}</b></div>)}
+                            </details> : null}
+                          </div>
                         </>
                       )}
                     </li>

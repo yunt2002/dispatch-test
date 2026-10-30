@@ -1,7 +1,7 @@
 import { DateSwitcher } from "@/components/date-switcher";
 import { MapRouteWorkspace } from "@/components/map-route-workspace";
 import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
-import { formatSheetDate, todayISO } from "@/lib/format";
+import { formatNumber, formatSheetDate, todayISO } from "@/lib/format";
 import { geocodingStatus } from "@/lib/geocoding";
 import { prisma } from "@/lib/prisma";
 import { readRouteSnapshot, routeInputSignature } from "@/lib/route-snapshot";
@@ -41,7 +41,18 @@ export default async function MapRoutePage({
       parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
     return { ...marker, consolidateGroupId: entry.consolidateGroupId, customerName: entry.customerName,
       locationName: entry.locationName, vehicleId: selected?.vehicleTypeId ?? null };
-  })).map(({ stop, memberIds }) => ({ ...stop, title: memberIds.length > 1 ? `${stop.title} (${memberIds.length}품목)` : stop.title }));
+  })).map(({ stop, memberIds }) => ({
+    ...stop,
+    title: memberIds.length > 1 ? `${stop.title} (${memberIds.length}품목)` : stop.title,
+    items: memberIds.map((id) => {
+      const entry = entriesById.get(id)!;
+      const quantityLabel = [
+        entry.boxCount != null ? `${formatNumber(entry.boxCount)} 박스` : null,
+        entry.palletCount != null ? `${formatNumber(entry.palletCount)} PLT` : null,
+      ].filter(Boolean).join(" · ") || "수량 미확인";
+      return { id, productName: entry.productName?.trim() || "품명 미입력", quantityLabel };
+    }),
+  }));
   const geo = geocodingStatus();
   const boardHref = `/?date=${encodeURIComponent(date)}`;
   const [snapshot, signature] = await Promise.all([readRouteSnapshot(date), routeInputSignature(date)]);

@@ -5,6 +5,7 @@ export type DispatchMapMarker = {
   subtitle?: string;
   lat: number;
   lng: number;
+  items?: { id: string; productName: string; quantityLabel: string }[];
 };
 
 /** OR-Tools 제안 경로 (지도 폴리라인용) */
