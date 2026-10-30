@@ -13,6 +13,7 @@ import type { RoutePriorityId } from "@/lib/route-priority";
 import { sameOrder, suggestVisitOrder } from "@/lib/visit-order-suggest";
 import { defaultFuelEconomy } from "@/lib/vehicle-fuel-economy";
 import { estimateArrivalTimes } from "@/lib/route-arrivals";
+import { expandRouteStopOrder } from "@/lib/route-stop-groups";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -27,6 +28,7 @@ export type RouteSolveResult = {
     vehicleId: string;
     vehicleName: string;
     stopIds: string[];
+    stopMemberIds?: string[][];
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
@@ -259,6 +261,8 @@ export function RouteSolvePanel({
     const titleById = new Map(
       route.stopIds.map((id, index) => [id, route.titles[index] ?? id]),
     );
+    const membersById = new Map(route.stopIds.map((id, index) => [id, route.stopMemberIds?.[index] ?? [id]]));
+    const expandedStopIds = expandRouteStopOrder(route.stopIds, route.stopMemberIds, stopIds);
     const optimistic: RouteSolveResult = {
       ...baseResult,
       stale: true,
@@ -267,6 +271,7 @@ export function RouteSolvePanel({
           ? {
               ...item,
               stopIds,
+              stopMemberIds: stopIds.map((id) => membersById.get(id) ?? [id]),
               titles: stopIds.map((id) => titleById.get(id) ?? id),
             }
           : item,
@@ -276,7 +281,7 @@ export function RouteSolvePanel({
       const saveRes = await fetch("/api/route/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, vehicleId, stopIds }),
+        body: JSON.stringify({ date, vehicleId, stopIds: expandedStopIds }),
       });
       const saveData = (await saveRes.json()) as { ok?: boolean; error?: string };
       if (!saveRes.ok || !saveData.ok) {

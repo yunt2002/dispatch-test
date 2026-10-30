@@ -5,6 +5,9 @@ import { formatSheetDate, todayISO } from "@/lib/format";
 import { geocodingStatus } from "@/lib/geocoding";
 import { prisma } from "@/lib/prisma";
 import { readRouteSnapshot, routeInputSignature } from "@/lib/route-snapshot";
+import { groupRouteStops } from "@/lib/route-stop-groups";
+import { parseJson } from "@/lib/format";
+import type { VehicleRecommendation } from "@/lib/dispatch-group";
 
 export default async function MapRoutePage({
   searchParams,
@@ -30,11 +33,19 @@ export default async function MapRoutePage({
     orderBy: [{ createdAt: "desc" }, { locationName: "asc" }],
   });
   const activeEntries = entries.filter((entry) => entry.status !== "DONE");
-  const mapMarkers = await buildDispatchMapMarkers(activeEntries);
+  const rawMarkers = await buildDispatchMapMarkers(activeEntries);
+  const entriesById = new Map(activeEntries.map((entry) => [entry.id, entry]));
+  const mapMarkers = groupRouteStops(rawMarkers.map((marker) => {
+    const entry = entriesById.get(marker.id)!;
+    const selected = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null) ??
+      parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
+    return { ...marker, consolidateGroupId: entry.consolidateGroupId, customerName: entry.customerName,
+      locationName: entry.locationName, vehicleId: selected?.vehicleTypeId ?? null };
+  })).map(({ stop, memberIds }) => ({ ...stop, title: memberIds.length > 1 ? `${stop.title} (${memberIds.length}품목)` : stop.title }));
   const geo = geocodingStatus();
   const boardHref = `/?date=${encodeURIComponent(date)}`;
   const [snapshot, signature] = await Promise.all([readRouteSnapshot(date), routeInputSignature(date)]);
-  const initialResult = snapshot ? { ...snapshot.result, savedAt: snapshot.savedAt, stale: snapshot.signature !== signature } : null;
+  const initialResult = snapshot ? { ...snapshot.result, savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
 
   return (
     <div className="dispatch-page map-page">

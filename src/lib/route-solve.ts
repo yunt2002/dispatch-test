@@ -6,6 +6,7 @@ import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
 import { parseJson } from "@/lib/format";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { prisma } from "@/lib/prisma";
+import { groupRouteStops } from "@/lib/route-stop-groups";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -17,6 +18,7 @@ export type RouteSolveResult = {
     vehicleId: string;
     vehicleName: string;
     stopIds: string[];
+    stopMemberIds: string[][];
     titles: string[];
     totalDistanceKm: number;
     totalTimeMin: number;
@@ -96,6 +98,9 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
     vehicleId: string | null;
     visitOrder: number | null;
     createdAt: Date;
+    consolidateGroupId: string | null;
+    customerName: string | null;
+    locationName: string;
   };
 
   const unassignedDetails: { id: string; title: string; reason: string }[] = [];
@@ -126,6 +131,9 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       vehicleId: assigned?.vehicleTypeId ?? null,
       visitOrder: entry.visitOrder ?? null,
       createdAt: entry.createdAt,
+      consolidateGroupId: entry.consolidateGroupId,
+      customerName: entry.customerName,
+      locationName: entry.locationName,
     });
   }
 
@@ -181,10 +189,12 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       const vehicle = vehicleById.get(vehicleId)!;
       const capacity = vehicle.maxPallet && vehicle.maxPallet > 0 ? vehicle.maxPallet : 8;
       const load = groupStops.reduce((sum, s) => sum + s.demand, 0);
-      const stopIds = groupStops.map((s) => s.id);
-      const titles = groupStops.map((s) => s.title);
+      const visits = groupRouteStops(groupStops);
+      const stopIds = visits.map((visit) => visit.stop.id);
+      const stopMemberIds = visits.map((visit) => visit.memberIds);
+      const titles = visits.map((visit) => visit.memberIds.length > 1 ? `${visit.stop.title} (${visit.memberIds.length}품목)` : visit.stop.title);
 
-      const points = [depot, ...groupStops.map((s) => ({ lat: s.lat, lng: s.lng })), ...(tripMode === "roundtrip" ? [depot] : [])];
+      const points = [depot, ...visits.map(({ stop }) => ({ lat: stop.lat, lng: stop.lng })), ...(tripMode === "roundtrip" ? [depot] : [])];
       // 카카오 차종은 축·윤폭·윤거 기준이므로 톤수는 잠정 분류다.
       const carType = vehicle.maxWeight >= 2500 ? 2 : 1;
       const road = await fetchKakaoDrivingRoute(points, "RECOMMEND", carType);
@@ -196,6 +206,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
           vehicleId,
           vehicleName: vehicle.vehicleName,
           stopIds,
+          stopMemberIds,
           titles,
           totalDistanceKm: road.distanceKm,
           totalTimeMin: road.durationMin,
@@ -218,6 +229,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
         vehicleId,
         vehicleName: vehicle.vehicleName,
         stopIds,
+        stopMemberIds,
         titles,
         totalDistanceKm: km,
         totalTimeMin: Math.max(1, Math.round((km / 40) * 60)),
