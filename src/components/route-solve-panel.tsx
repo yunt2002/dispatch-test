@@ -66,6 +66,7 @@ const FALLBACK_DEPOT = {
 
 type Props = {
   date: string;
+  batchId: string | null;
   markers: DispatchMapMarker[];
   result?: RouteSolveResult | null;
   onResult?: (result: RouteSolveResult) => void;
@@ -81,6 +82,7 @@ function moveIndex(ids: string[], from: number, to: number): string[] {
 
 export function RouteSolvePanel({
   date,
+  batchId,
   markers,
   result: controlledResult,
   onResult,
@@ -159,7 +161,7 @@ export function RouteSolvePanel({
     const res = await fetch("/api/route/solve", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, tripMode: mode }),
+      body: JSON.stringify({ date, tripMode: mode, batchId }),
     });
     return (await res.json()) as RouteSolveResult;
   }
@@ -281,7 +283,7 @@ export function RouteSolvePanel({
       const saveRes = await fetch("/api/route/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, vehicleId, stopIds: expandedStopIds }),
+        body: JSON.stringify({ date, vehicleId, stopIds: expandedStopIds, batchId }),
       });
       const saveData = (await saveRes.json()) as { ok?: boolean; error?: string };
       if (!saveRes.ok || !saveData.ok) {
@@ -445,7 +447,7 @@ export function RouteSolvePanel({
     try {
       const response = await fetch("/api/route/snapshot", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, vehicleId, option }),
+        body: JSON.stringify({ date, vehicleId, option, batchId }),
       });
       if (!response.ok) {
         setAltError("선택한 경로를 저장하지 못했습니다. 일정을 확인하고 경로를 다시 계산하세요.");

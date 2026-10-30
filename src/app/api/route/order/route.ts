@@ -6,6 +6,7 @@ export async function POST(request: Request) {
     date?: string;
     vehicleId?: string;
     stopIds?: unknown;
+    batchId?: string | null;
   };
 
   const stopIds = Array.isArray(body.stopIds)
@@ -16,6 +17,7 @@ export async function POST(request: Request) {
     date: body.date ?? "",
     vehicleId: body.vehicleId ?? "",
     stopIds,
+    batchId: typeof body.batchId === "string" ? body.batchId : null,
   });
 
   if (!result.ok) {

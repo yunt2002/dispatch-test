@@ -7,6 +7,7 @@ import { parseJson } from "@/lib/format";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { prisma } from "@/lib/prisma";
 import { groupRouteStops } from "@/lib/route-stop-groups";
+import { resolveRouteScope } from "@/lib/dispatch-batches";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -70,13 +71,11 @@ function haversineKm(
  * 카카오 자동차 길찾기로 도로 거리·시간·폴리라인을 구한다.
  * (OR-Tools 없음 — 방문 순서는 visitOrder / 드래그 수동 조정)
  */
-export async function solveRoutesForDate(date: string, tripMode: "oneway" | "roundtrip" = "roundtrip"): Promise<RouteSolveResult> {
+export async function solveRoutesForDate(date: string, tripMode: "oneway" | "roundtrip" = "roundtrip", batchId?: string | null): Promise<RouteSolveResult> {
+  const scope = await resolveRouteScope(date, batchId);
   const [entries, vehicles] = await Promise.all([
     prisma.scheduleEntry.findMany({
-      where: {
-        deliveryDate: date,
-        status: { in: ["PLANNED", "CONFIRMED"] },
-      },
+      where: scope.where,
       orderBy: [{ visitOrder: "asc" }, { createdAt: "asc" }, { locationName: "asc" }],
     }),
     prisma.vehicleType.findMany({

@@ -3,6 +3,7 @@ import "server-only";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { resolveRouteScope } from "@/lib/dispatch-batches";
 
 function assignedVehicleId(entry: {
   selectedVehicleJson: string | null;
@@ -21,6 +22,7 @@ export async function saveVehicleVisitOrder(input: {
   date: string;
   vehicleId: string;
   stopIds: string[];
+  batchId?: string | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const date = input.date.trim();
   const vehicleId = input.vehicleId.trim();
@@ -36,11 +38,10 @@ export async function saveVehicleVisitOrder(input: {
     return { ok: false, error: "중복된 납품이 있습니다." };
   }
 
+  const scope = await resolveRouteScope(date, input.batchId);
+  if (!scope.valid) return { ok: false, error: "확정 배차를 찾을 수 없습니다." };
   const entries = await prisma.scheduleEntry.findMany({
-    where: {
-      deliveryDate: date,
-      status: { in: ["PLANNED", "CONFIRMED"] },
-    },
+    where: scope.where,
     select: {
       id: true,
       selectedVehicleJson: true,

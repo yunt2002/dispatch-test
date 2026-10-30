@@ -12,9 +12,10 @@ type Props = {
   markers: DispatchMapMarker[];
   boardHref: string;
   initialResult: RouteSolveResult | null;
+  batchId: string | null;
 };
 
-export function MapRouteWorkspace({ date, markers, boardHref, initialResult }: Props) {
+export function MapRouteWorkspace({ date, markers, boardHref, initialResult, batchId }: Props) {
   const [result, setResult] = useState<RouteSolveResult | null>(initialResult);
   const [mapExpanded, setMapExpanded] = useState(false);
 
@@ -74,6 +75,7 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult }: P
       <aside className="map-page-side">
         <RouteSolvePanel
           date={date}
+          batchId={batchId}
           markers={markers}
           onResult={setResult}
           result={result}

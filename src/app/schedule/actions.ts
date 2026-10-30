@@ -22,6 +22,7 @@ import { resolveLocationFromCustomer } from "@/lib/delivery-customers";
 import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
+import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -545,13 +546,15 @@ export async function changeScheduleGroupStatus(formData: FormData) {
   if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date || !transition || entry.status !== transition.from) {
     go(formData, { date, error: "묶음의 현재 상태를 확인해 주세요." });
   }
-  const result = await prisma.scheduleEntry.updateMany({
-    where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: transition.from },
-    data: { status: transition.to },
-  });
+  const count = operation === "confirm"
+    ? await confirmDispatchBatch(date, { consolidateGroupId: entry.consolidateGroupId })
+    : (await prisma.scheduleEntry.updateMany({
+      where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: transition.from },
+      data: { status: transition.to },
+    })).count;
   if (operation !== "confirm") await rebalanceDayFleet(date);
   revalidatePath("/");
-  go(formData, { date, ok: `${result.count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
+  go(formData, { date, ok: `${count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
 }
 
 export async function deleteScheduleGroup(formData: FormData) {
@@ -578,10 +581,8 @@ export async function confirmSchedule(formData: FormData) {
     go(formData, { date, error: "이미 완료된 일정입니다." });
   }
 
-  await prisma.scheduleEntry.update({
-    where: { id },
-    data: { status: "CONFIRMED" },
-  });
+  const count = await confirmDispatchBatch(entry.deliveryDate, { id });
+  if (!count) go(formData, { date, error: "확정할 추천 확인 일정이 없습니다." });
   await prisma.appLog.create({
     data: {
       userAction: "schedule_confirm",
@@ -597,15 +598,12 @@ export async function confirmSchedules(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const ids = [...new Set(formData.getAll("ids").map((value) => String(value).trim()).filter(Boolean))];
   if (!date || !ids.length) go(formData, { date, error: "확정할 납품을 선택하세요." });
-  const result = await prisma.scheduleEntry.updateMany({
-    where: { id: { in: ids }, deliveryDate: date, status: "PLANNED" },
-    data: { status: "CONFIRMED" },
-  });
-  if (result.count) {
-    await prisma.appLog.create({ data: { userAction: "schedule_confirm_bulk", routeCode: date, selectedResult: `${result.count}건` } });
+  const count = await confirmDispatchBatch(date, { id: { in: ids } });
+  if (count) {
+    await prisma.appLog.create({ data: { userAction: "schedule_confirm_bulk", routeCode: date, selectedResult: `${count}건` } });
   }
   revalidatePath("/");
-  go(formData, { date, ok: result.count ? `${result.count}건을 배차 확정했습니다.` : "확정할 추천 확인 항목이 없습니다." });
+  go(formData, { date, ok: count ? `${count}건을 배차 확정했습니다.` : "확정할 추천 확인 항목이 없습니다." });
 }
 
 export async function reopenSchedule(formData: FormData) {

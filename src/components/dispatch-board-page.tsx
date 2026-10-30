@@ -41,7 +41,7 @@ export default async function HomePage({
   searchParams,
   view,
 }: {
-  searchParams: Promise<{ date?: string; error?: string; ok?: string }>;
+  searchParams: Promise<{ date?: string; error?: string; ok?: string; batch?: string }>;
   view: "request" | "confirm";
 }) {
   const params = await searchParams;
@@ -269,6 +269,7 @@ export default async function HomePage({
         <section className={`dispatch-board ${view === "confirm" ? "dispatch-board-confirm" : "dispatch-board-request"}`} aria-label={`${formatSheetDate(date)} 배차 보드`}>
           <section className="dispatch-column dispatch-column-review">
             <div className="dispatch-column-head"><div><i /><strong>{view === "confirm" ? "확정 대기" : "배차 신청 내역"}</strong><span>차량과 납품 확인</span></div><b>{reviewEntries.length}</b></div>
+            {view === "request" ? <a className="dispatch-secondary-button request-map-link" href="#request-map">지도 보기 ↓</a> : null}
             <div className="dispatch-card-list">
               {reviewEntries.length ? cards(reviewEntries) : <p className="dispatch-column-empty">확인할 추천이 없습니다.</p>}
             </div>
@@ -349,7 +350,7 @@ export default async function HomePage({
           </section>
         </aside> : null}
       </div>
-      {view === "request" ? <section className="request-map-section" aria-label="납품 경로 확인"><MapRoutePage embedded searchParams={Promise.resolve({ date })} /></section> : null}
+      {view === "request" ? <section className="request-map-section" id="request-map" aria-label="납품 경로 확인" tabIndex={-1}><MapRoutePage embedded searchParams={Promise.resolve({ date, batch: params.batch })} /></section> : null}
     </div>
   );
 }

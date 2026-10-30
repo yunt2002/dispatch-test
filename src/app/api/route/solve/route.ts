@@ -2,19 +2,22 @@ import { NextResponse } from "next/server";
 import { solveRoutesForDate } from "@/lib/route-solve";
 import { todayISO } from "@/lib/format";
 import { routeInputSignature, writeRouteSnapshot } from "@/lib/route-snapshot";
+import { resolveRouteScope } from "@/lib/dispatch-batches";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
-  const body = (await request.json().catch(() => ({}))) as { date?: string; tripMode?: string };
+  const body = (await request.json().catch(() => ({}))) as { date?: string; tripMode?: string; batchId?: string | null };
   const date = body.date?.trim() || todayISO();
-  const before = await routeInputSignature(date);
-  const result = await solveRoutesForDate(date, body.tripMode === "oneway" ? "oneway" : "roundtrip");
-  const after = await routeInputSignature(date);
+  const batchId = typeof body.batchId === "string" ? body.batchId : null;
+  if (!(await resolveRouteScope(date, batchId)).valid) return NextResponse.json({ error: "확정 배차를 찾을 수 없습니다." }, { status: 404 });
+  const before = await routeInputSignature(date, batchId);
+  const result = await solveRoutesForDate(date, body.tripMode === "oneway" ? "oneway" : "roundtrip", batchId);
+  const after = await routeInputSignature(date, batchId);
   if (result.ok && before === after) {
     const savedAt = new Date().toISOString();
     try {
-      await writeRouteSnapshot(date, { result, signature: after, savedAt });
+      await writeRouteSnapshot(date, { result, signature: after, savedAt }, batchId);
       return NextResponse.json({ ...result, savedAt, stale: false });
     } catch {
       return NextResponse.json({ ...result, stale: false, snapshotError: true });

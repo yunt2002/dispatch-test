@@ -4,13 +4,14 @@ import { isRoutePriorityId } from "@/lib/route-priority";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
-    date?: string; vehicleId?: string; option?: {
+    date?: string; batchId?: string | null; vehicleId?: string; option?: {
       priority?: string; label?: string; distanceKm?: number; durationMin?: number;
       tollWon?: number | null; path?: { lat: number; lng: number }[];
       legDurationsSec?: number[] | null;
     };
   } | null;
   const { date, vehicleId, option } = body ?? {};
+  const batchId = typeof body?.batchId === "string" ? body.batchId : null;
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !vehicleId || !option ||
       !option.priority || !isRoutePriorityId(option.priority) || typeof option.label !== "string" || option.label.length > 40 ||
       typeof option.distanceKm !== "number" || !Number.isFinite(option.distanceKm) || option.distanceKm < 0 ||
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
       !option.path.every((p) => Number.isFinite(p.lat) && Math.abs(p.lat) <= 90 && Number.isFinite(p.lng) && Math.abs(p.lng) <= 180)) {
     return NextResponse.json({ error: "경로 정보가 올바르지 않습니다." }, { status: 400 });
   }
-  const [snapshot, signature] = await Promise.all([readRouteSnapshot(date), routeInputSignature(date)]);
+  const [snapshot, signature] = await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
   if (!snapshot || snapshot.signature !== signature || !snapshot.result.routes.some((route) => route.vehicleId === vehicleId)) {
     return NextResponse.json({ error: "일정이 변경되었습니다. 경로를 다시 계산하세요." }, { status: 409 });
   }
@@ -31,6 +32,6 @@ export async function POST(request: Request) {
     path: option.path!.map((point, index) => index === 0 ? { ...point, label: "출" } : point),
     priority: option.priority, priorityLabel: option.label,
   } : route);
-  await writeRouteSnapshot(date, snapshot);
+  await writeRouteSnapshot(date, snapshot, batchId);
   return NextResponse.json({ ok: true });
 }
