@@ -6,36 +6,40 @@ import { geocodeAddresses } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
-import { validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
+import { validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
 
-async function propose(items: SimulationItem[]): Promise<{ orders: Order[]; note: string }> {
+async function propose(items: SimulationItem[]): Promise<{ orders: Order[]; charterGroups: string[][] | null; note: string }> {
   const key = process.env.GROQ_API_KEY?.trim();
-  if (!key) return { orders: [], note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
+  if (!key) return { orders: [], charterGroups: null, note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
   let issue = "Groq 응답을 확인할 수 없습니다.";
   const models = [...new Set([process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b", "openai/gpt-oss-120b"])];
   for (const model of models) try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, temperature: 0, max_completion_tokens: 4096,
-        messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목을 모두 포함하고, 외부 용차/택배 품목 중 가까운 방문지를 가능한 한 자사 차량에 합쳐라. 차량 간 재배정 가능. 각 품목 id는 최대 1회. 좌표가 없으면 외부 품목은 선택하지 마라. 적재량 숫자가 있는 품목들의 합계는 1호차 4000kg 및 8PLT, 2호차 3500kg 및 8PLT를 초과하지 말아라. 값이 null이면 미확인이며 0이라고 가정하지 마라. 방문 순서대로 id를 정렬한다. 입력에 없는 id를 만들지 마라. 반드시 orders 배열에 1호차와 2호차 객체를 각각 하나씩 포함하고, 품목이 없는 차량은 ids를 빈 배열로 둔다. 각 id는 문자열이다. JSON 객체 {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}]}만 출력." },
-          { role: "user", content: JSON.stringify({ depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
+        messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 정보가 부족해도 안전한 확정이 아니라 현장 확인이 필요한 시뮬레이션 후보를 제안하는 것이므로, 좌표가 있는 용차/택배 물량의 합차를 적극 검토한다. 각 자사 차량 적재량 숫자의 합은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. charterGroups의 각 배열은 한 번의 용차 운행이다. 한 용차 묶음에는 반드시 같은 거래처와 같은 지역의 품목만 넣는다. 서로 다른 거래처는 절대 같은 용차에 넣지 마라. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. 모든 id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 하나씩 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
+          { role: "user", content: JSON.stringify({ depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
       signal: AbortSignal.timeout(20000), cache: "no-store",
     });
     if (!response.ok) throw new Error();
     const data = await response.json() as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[] };
+    const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[]; charterGroups?: unknown };
     const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
     const problem = validateSimulationOrders(items, orders);
     if (problem) { issue = problem; continue; }
-    return { orders, note: "Groq 제안 · 적재량과 납품 기한 확인이 필요한 시뮬레이션" };
+    const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
+    if (!groups) { issue = "AI가 용차 운행 묶음을 제안하지 않았습니다."; continue; }
+    const charterProblem = validateCharterGroups(items, orders, groups as string[][]);
+    if (charterProblem) { issue = charterProblem; continue; }
+    return { orders, charterGroups: groups as string[][], note: "Groq 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다." };
   } catch { issue = "Groq 제안 조회에 실패했습니다. 키와 연결을 확인하세요."; }
-  return { orders: [], note: `${issue} 다시 시도하세요.` };
+  return { orders: [], charterGroups: null, note: `${issue} 다시 시도하세요.` };
 }
 
 async function calculate(order: Order, items: SimulationItem[], price: number | null): Promise<SimulationRoute> {
@@ -86,7 +90,8 @@ export async function POST(request: Request) {
     const warnings = [...new Set(excluded.map((item) => `${item.customer}: 주소 미확인으로 기존 자사 납품에서 제외`))];
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
-    const result: SimulationResult = { items, original, proposed, remaining, note: ai.note, warnings };
+    const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;
+    const result: SimulationResult = { items, original, proposed, remaining, charterGroups, note: ai.note, warnings };
     return NextResponse.json(result);
   } catch { return NextResponse.json({ error: "엑셀을 읽거나 시뮬레이션하는 중 오류가 발생했습니다." }, { status: 500 }); }
 }

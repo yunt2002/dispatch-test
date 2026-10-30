@@ -29,13 +29,13 @@ export function DeliveryComparison() {
   const [date, setDate] = useState("2026-10-14"); const [file, setFile] = useState<File | null>(null);
   const [price, setPrice] = useState(""); const [priceSource, setPriceSource] = useState("경유 가격을 입력해 주세요.");
   const [result, setResult] = useState<SimulationResult | null>(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
-  const [originalTrips, setOriginalTrips] = useState(""); const [proposedTrips, setProposedTrips] = useState("");
+  const [originalTrips, setOriginalTrips] = useState("");
   const [packing, setPacking] = useState<Record<string, PackingMode>>({}); const [packingDirty, setPackingDirty] = useState(false);
   useEffect(() => { const controller = new AbortController(); fetch("/api/diesel-price", { signal: controller.signal }).then(async (r) => { if (!r.ok) throw new Error(); return r.json() as Promise<{ price: number; date: string }>; }).then((d) => { setPrice((current) => current || String(d.price)); setPriceSource(`오피넷 전국 평균 ${d.date} 기준 · 수정 가능`); }).catch(() => { if (!controller.signal.aborted) setPriceSource("오피넷 조회 실패 · 경유 가격을 직접 입력해 주세요."); }); return () => controller.abort(); }, []);
   async function run() {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
     setLoading(true); setError(""); const form = new FormData(); form.set("file", file); form.set("date", date); form.set("price", price); form.set("packing", JSON.stringify(packing));
-    try { const response = await fetch("/api/route/compare", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다."); const next = data as SimulationResult; setOriginalTrips(String(estimateCharterTrips(next.items))); setProposedTrips(String(estimateCharterTrips(next.remaining))); setPackingDirty(false); setResult(next); }
+    try { const response = await fetch("/api/route/compare", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다."); const next = data as SimulationResult; setOriginalTrips(String(estimateCharterTrips(next.items))); setPackingDirty(false); setResult(next); }
     catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
   const moved = result?.proposed.flatMap((route) => route.items.filter((item) => !item.vehicle).map((item) => ({ ...item, target: route.vehicle }))) ?? [];
@@ -44,7 +44,8 @@ export function DeliveryComparison() {
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
   const proposedHasCharter = !!result?.remaining.some((item) => /용차/.test(item.transport));
-  const comparison = result && complete && !packingDirty ? estimateSimulationCost({ originalVehicle: cost(result.original), proposedVehicle: cost(result.proposed), originalTrips, proposedTrips, originalHasCharter, proposedHasCharter }) : null;
+  const proposedTrips = result?.charterGroups == null ? null : result.charterGroups.length;
+  const comparison = result && complete && !packingDirty && proposedTrips != null ? estimateSimulationCost({ originalVehicle: cost(result.original), proposedVehicle: cost(result.proposed), originalTrips, proposedTrips: String(proposedTrips), originalHasCharter, proposedHasCharter }) : null;
   return <section className="comparison-section" aria-labelledby="simulation-title"><h2 id="simulation-title">AI 배차 시뮬레이션</h2>
     <p>용차·택배 물량을 자사 차량에 함께 실을 수 있는지 검토합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setResult(null); setPacking({}); setPackingDirty(false); }} /></label>
@@ -65,15 +66,18 @@ export function DeliveryComparison() {
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
         {comparison ? <><div className="comparison-result-totals"><p>기존 계획 <strong>{money(comparison.original)}</strong></p><p>AI 제안 <strong>{money(comparison.proposed)}</strong></p><p>차이 <strong>{comparison.saving > 0 ? `${money(comparison.saving)} 절감 예상` : comparison.saving < 0 ? `${money(-comparison.saving)} 증가 예상` : "차이 없음"}</strong></p></div>
           <p>자사 차량 경유비·통행료 + 용차비 기준 · 기존 {originalTrips}회 / AI {proposedTrips}회 × 200,000원</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 시뮬레이션을 다시 실행하세요." : "주소·경로·운행 횟수 또는 비용이 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
-        <p className="comparison-note">용차 횟수는 거래처·지역별 1회로 가정한 예시이며 실제 운행 횟수와 다를 수 있습니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다.</p>
+        <p className="comparison-note">기존 용차 횟수는 거래처·지역별 1회로 가정합니다. AI 용차 횟수는 아래 AI 제안 운행 묶음으로 자동 계산합니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다.</p>
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => setOriginalTrips(e.target.value)} /></label>
-          <label>AI 제안 용차 운행 횟수 <input type="number" min="0" step="1" value={proposedTrips} onChange={(e) => setProposedTrips(e.target.value)} /></label></div>
-        <p className="comparison-note">확인된 횟수로 수정할 수 있습니다. 용차가 남은 계획은 1회 이상, 없는 계획은 0회를 입력하세요.</p>
+          <p>AI 제안 용차 운행: <strong>{proposedTrips == null ? "제안 없음" : `${proposedTrips}회`}</strong></p></div>
+        <p className="comparison-note">실제 기존 운행 횟수를 알면 수정할 수 있습니다. 용차가 남은 계획은 1회 이상, 없는 계획은 0회를 입력하세요.</p>
       </div>
       <div className="comparison-plans"><Plan title="기존 배차 계획" routes={result.original} external={result.items.filter((item) => !item.vehicle)} /><Plan title="AI 시뮬레이션" routes={result.proposed} external={result.proposed.length ? result.remaining : undefined} /></div>
+      <h3>AI 용차 운행 제안 {proposedTrips == null ? "" : `(${proposedTrips}회)`}</h3>
+      {result.charterGroups == null ? <p>AI 용차 묶음을 만들지 못했습니다. 다시 시도하세요.</p> : result.charterGroups.length === 0 ? <p>AI가 용차 운행 없이 처리하는 안을 제안했습니다.</p> : <ol>{result.charterGroups.map((group, index) => <li key={index}><strong>용차 {index + 1}회:</strong> {group.items.map((item) => `${item.customer || "업체 미확인"} (${item.rowNumber}행 · ${item.product})`).join(" / ")}</li>)}</ol>}
+      <p className="dispatch-route-note-warn">AI가 묶은 용차는 차량 톤수·적재량, 납품 기한과 경유 가능 여부가 미확인인 후보입니다. 실제 운행과 1회 운임으로 확정된 결과가 아닙니다.</p>
       {complete ? <p><strong>자사 차량 운행 합계:</strong> 기존 {total(result.original)}분 / {money(cost(result.original))} · 제안 {total(result.proposed)}분 / {money(cost(result.proposed))} (경유비 + 통행료) · {total(result.proposed) === total(result.original) ? "시간 차이 없음" : `제안 ${Math.abs(total(result.proposed) - total(result.original))}분 ${total(result.proposed) > total(result.original) ? "증가" : "감소"}`}</p> : <p className="comparison-note">누락된 자사 납품이나 경로가 있으면 전체 자사 차량 운행 합계는 비교하지 않습니다.</p>}
       <h3>용차·택배에서 자사 차량으로 제안한 품목 ({moved.length})</h3>{moved.length ? <ul>{moved.map((i) => <li key={i.rowNumber}>{i.rowNumber}행 · {i.customer} · {i.product} · {i.transport} → {i.target}</li>)}</ul> : <p>제안된 이동 품목이 없습니다. 주소와 AI 응답 상태를 확인하세요.</p>}
-      <p className="comparison-note">위 비용은 입력한 용차 운행 횟수에 따른 가정입니다. 택배비·기사 인건비 등은 포함하지 않습니다. 특히 택배 품목이 자사 차량으로 이동한 경우 택배비 절감은 반영되지 않아 전체 비용의 우열을 확정할 수 없습니다. <a href="https://kdexp.com/service/charge/package_standard.do" target="_blank" rel="noreferrer">경동택배 표준운임 기준</a></p>
+      <p className="comparison-note">위 비용은 기존 횟수 가정과 AI가 제안한 용차 묶음 수를 기준으로 합니다. 택배비·기사 인건비 등은 포함하지 않습니다. 특히 택배 품목이 자사 차량으로 이동한 경우 택배비 절감은 반영되지 않아 전체 비용의 우열을 확정할 수 없습니다. <a href="https://kdexp.com/service/charge/package_standard.do" target="_blank" rel="noreferrer">경동택배 표준운임 기준</a></p>
       <p className="comparison-note">경로 시간·통행료는 조회 시점 기준이며 과거 운행 실적이 아닙니다. 운행 시간은 하차·대기 시간을 제외합니다. AI 제안은 최적해를 보장하지 않습니다.</p></> : null}
   </section>;
 }
