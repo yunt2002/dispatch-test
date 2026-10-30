@@ -2269,3 +2269,13 @@ body {
 .dispatch-group-edit summary { cursor: pointer; font-weight: 700; }
 .dispatch-group-edit-form { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid #eceae5; }
 .dispatch-group-edit-form label { display: grid; gap: 3px; }
+.product-combobox { position: relative; min-width: 0; }
+.product-combobox-input { position: relative; display: flex; align-items: center; }
+.product-combobox-input .dispatch-input { width: 100%; padding-right: 58px; }
+.product-combobox-clear, .product-combobox-toggle { position: absolute; display: grid; place-items: center; width: 27px; height: 28px; border: 0; background: transparent; color: #77736b; cursor: pointer; font-size: 17px; }
+.product-combobox-clear { right: 27px; }
+.product-combobox-toggle { right: 2px; font-size: 13px; }
+.product-combobox-list { position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; right: 0; max-height: 190px; overflow-y: auto; border: 1px solid #d8d2c8; border-radius: 7px; background: white; box-shadow: 0 6px 18px #0002; }
+.product-combobox-list [role="option"] { padding: 8px 10px; font-size: 12px; line-height: 1.4; cursor: pointer; overflow-wrap: anywhere; }
+.product-combobox-list [role="option"]:hover, .product-combobox-list .is-active { background: #f7ede4; }
+.product-combobox-list p { margin: 0; padding: 10px; color: #77736b; font-size: 12px; }

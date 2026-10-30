@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { registerSchedule } from "@/app/schedule/actions";
+import { ProductCombobox } from "@/components/product-combobox";
+import { resolveRegistrationProductFields } from "@/lib/registration-product-defaults";
 import {
   DELIVERY_CUSTOMERS,
   resolveLocationFromCustomer,
@@ -27,8 +29,8 @@ export function ScheduleRegisterDialog({
   const [customerName, setCustomerName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [suggestNote, setSuggestNote] = useState<string | null>(null);
-  const [locationLockedByCustomer, setLocationLockedByCustomer] = useState(false);
-  const [productDefaultsApplied, setProductDefaultsApplied] = useState(false);
+  const [customerManual, setCustomerManual] = useState(false);
+  const [locationManual, setLocationManual] = useState(false);
 
   const erpNames = useMemo(() => listErpProductNames(), []);
   const customerNames = useMemo(
@@ -59,8 +61,8 @@ export function ScheduleRegisterDialog({
     setCustomerName("");
     setLocationName("");
     setSuggestNote(null);
-    setLocationLockedByCustomer(false);
-    setProductDefaultsApplied(false);
+    setCustomerManual(false);
+    setLocationManual(false);
   }
 
   function openDialog() {
@@ -68,63 +70,30 @@ export function ScheduleRegisterDialog({
     setOpen(true);
   }
 
-  function applyLocationFromCustomer(name: string) {
-    if (!name) {
-      setLocationLockedByCustomer(false);
-      return;
-    }
-    const mapped = resolveLocationFromCustomer(name, locationOptions);
-    if (mapped) {
-      setLocationName(mapped);
-      setLocationLockedByCustomer(true);
-      setSuggestNote(`거래처 ${name} → 지역 ${mapped} 자동 매핑`);
-    }
-  }
-
-  /** 품명 → 지역·거래처 추천 (비어 있을 때만 채움). 거래처로 이미 지역을 고른 경우는 유지 */
+  /** 사용자가 직접 지정한 값은 유지하고 나머지 값만 품명에 맞춘다. */
   function onProductChange(name: string) {
     setProductName(name);
     const defaults = resolveDefaultsFromProduct(name);
-    if (productDefaultsApplied) {
-      const customer = defaults.customerName ?? "";
-      setCustomerName(customer);
-      setLocationName(customer ? (resolveLocationFromCustomer(customer, locationOptions) ?? defaults.locationName ?? "") : (defaults.locationName ?? ""));
-      setLocationLockedByCustomer(Boolean(customer));
-    }
-    if (!defaults.customerName && !defaults.locationName) {
-      if (!locationLockedByCustomer) setSuggestNote(null);
-      return;
-    }
-    if (defaults.customerName && !customerName) {
-      setCustomerName(defaults.customerName);
-      setProductDefaultsApplied(true);
-      if (!locationName || !locationLockedByCustomer) {
-        const mapped =
-          resolveLocationFromCustomer(defaults.customerName, locationOptions) ??
-          defaults.locationName;
-        if (mapped) {
-          setLocationName(mapped);
-          setLocationLockedByCustomer(true);
-        }
-      }
-    } else if (defaults.locationName && !locationName && !locationLockedByCustomer) {
-      setLocationName(defaults.locationName);
-    }
-    const parts = [
-      defaults.locationName ? `지역 ${defaults.locationName}` : null,
-      defaults.customerName ? `거래처 ${defaults.customerName}` : null,
-    ].filter(Boolean);
-    setSuggestNote(
-      parts.length
-        ? `품명 추천: ${parts.join(" · ")} · 거래처를 고르면 지역이 따라갑니다`
-        : null,
-    );
+    const { customerName: nextCustomer, locationName: nextLocation } = resolveRegistrationProductFields({
+      current: { customerName, locationName }, customerManual, locationManual,
+      suggestedCustomer: defaults.customerName, suggestedLocation: defaults.locationName,
+      locationForCustomer: (customer) => resolveLocationFromCustomer(customer, locationOptions),
+    });
+    if (!customerManual) setCustomerName(nextCustomer);
+    if (!locationManual) setLocationName(nextLocation);
+    const parts = [!customerManual && nextCustomer ? `거래처 ${nextCustomer}` : null, !locationManual && nextLocation ? `지역 ${nextLocation}` : null].filter(Boolean);
+    setSuggestNote(parts.length ? `자동 추천 적용: ${parts.join(" · ")}` : customerManual || locationManual ? "직접 선택한 거래처·지역을 유지합니다." : null);
   }
 
   function onCustomerChange(name: string) {
-    setProductDefaultsApplied(false);
+    setCustomerManual(Boolean(name));
     setCustomerName(name);
-    applyLocationFromCustomer(name);
+    if (!locationManual) {
+      const defaults = resolveDefaultsFromProduct(productName);
+      const mapped = name ? resolveLocationFromCustomer(name, locationOptions) : defaults.locationName;
+      setLocationName(mapped ?? "");
+      setSuggestNote(mapped ? `지역 ${mapped} 자동 추천` : null);
+    }
   }
 
   return (
@@ -179,21 +148,7 @@ export function ScheduleRegisterDialog({
                 </div>
                 <div className="dispatch-field">
                   <label htmlFor="productName">품명 (ERP)</label>
-                  <input
-                    className="dispatch-input"
-                    id="productName"
-                    list="erp-product-names"
-                    name="productName"
-                    onChange={(event) => onProductChange(event.target.value)}
-                    placeholder="제품 정리 ERP 명"
-                    required={extraProducts.length > 0}
-                    value={productName}
-                  />
-                  <datalist id="erp-product-names">
-                    {erpNames.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
+                  <ProductCombobox id="productName" names={erpNames} value={productName} onValueChange={onProductChange} required={extraProducts.length > 0} />
                 </div>
                 <div className="dispatch-field">
                   <label htmlFor="quantity">수량 *</label>
@@ -242,8 +197,7 @@ export function ScheduleRegisterDialog({
                     name="locationName"
                     onChange={(event) => {
                       setLocationName(event.target.value);
-                      setLocationLockedByCustomer(false);
-                      setProductDefaultsApplied(false);
+                      setLocationManual(Boolean(event.target.value));
                     }}
                     value={locationName}
                   >
@@ -276,7 +230,7 @@ export function ScheduleRegisterDialog({
                 <div className="dispatch-form-grid" key={productId}>
                   <div className="dispatch-field">
                     <label htmlFor={`productName-${productId}`}>추가 품명 {index + 2} *</label>
-                    <input className="dispatch-input" id={`productName-${productId}`} list="erp-product-names" name="productName" placeholder="제품 정리 ERP 명" required />
+                    <ProductCombobox id={`productName-${productId}`} names={erpNames} required />
                   </div>
                   <div className="dispatch-field">
                     <label htmlFor={`quantity-${productId}`}>수량 *</label>
