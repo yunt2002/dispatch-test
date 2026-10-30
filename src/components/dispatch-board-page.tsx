@@ -237,14 +237,7 @@ export default async function HomePage({
           <a className="dispatch-secondary-button" href={`${view === "request" ? "/confirm" : "/"}?date=${encodeURIComponent(date)}`}>{view === "request" ? "다음: 배차 확정" : "배차 신청으로"}</a>
           <a className="dispatch-secondary-button" href={`/api/schedule/export?date=${date}`}>이 달 내보내기</a>
           <a className="dispatch-secondary-button" href="/api/schedule/export?scope=all">전체 내보내기</a>
-          {view === "request" ? <ScheduleRegisterDialog
-            date={date}
-            regions={regions}
-            vehicles={vehicles.map((vehicle) => ({
-              id: vehicle.id,
-              vehicleName: vehicle.vehicleName,
-            }))}
-          /> : null}
+          {view === "request" ? <a className="dispatch-primary-button" href="#new-delivery">＋ 새 납품 등록</a> : null}
         </div>
       </header>
 
@@ -259,6 +252,8 @@ export default async function HomePage({
           <div><span>완료</span><strong>{doneEntries.length}</strong></div>
         </div>
       </div>
+
+      {view === "request" ? <section id="new-delivery" className="dispatch-inline-register-section"><ScheduleRegisterDialog key={date} inline date={date} regions={regions} vehicles={vehicles.map((vehicle) => ({ id: vehicle.id, vehicleName: vehicle.vehicleName }))} /></section> : null}
 
       <section className="dispatch-workflow" aria-label="업무 흐름">
         <b>업무 흐름</b>
@@ -287,7 +282,9 @@ export default async function HomePage({
             <div className="dispatch-card-list">
               {confirmedEntries.length ? cards(confirmedEntries) : <p className="dispatch-column-empty">확정된 배차가 없습니다.</p>}
             </div>
-            <div className="dispatch-column-head dispatch-completed-head"><div><i /><strong>납품 완료</strong><span>처리 종료</span></div><b>{doneEntries.length}</b></div>
+          </section> : null}
+          {view === "confirm" ? <section className="dispatch-column dispatch-column-done">
+            <div className="dispatch-column-head"><div><i /><strong>납품 완료</strong><span>처리 종료</span></div><b>{doneEntries.length}</b></div>
             <div className="dispatch-card-list">
               {doneEntries.length ? cards(doneEntries) : <p className="dispatch-column-empty">완료된 납품이 없습니다.</p>}
             </div>
