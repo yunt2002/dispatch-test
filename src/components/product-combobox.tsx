@@ -32,7 +32,7 @@ export function ProductCombobox({ id, names, value, onValueChange, required = fa
     if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
   }}>
     <div className="product-combobox-input">
-      <input className="dispatch-input" id={id} name="productName" placeholder="품명 검색 또는 선택" required={required} value={current}
+      <input className="dispatch-input" id={id} name="productName" autoComplete="off" placeholder="품명 검색 또는 선택" required={required} value={current}
         role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-options`}
         aria-activedescendant={open && options[active] ? `${id}-option-${active}` : undefined}
         onFocus={(event) => { setQuery(""); setActive(0); setOpen(true); event.currentTarget.select(); }}

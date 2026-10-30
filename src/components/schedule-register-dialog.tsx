@@ -133,7 +133,7 @@ export function ScheduleRegisterDialog({
                 ×
               </button>
             </div>
-            <form action={registerSchedule} className="dispatch-modal-body">
+            <form action={registerSchedule} autoComplete="off" className="dispatch-modal-body">
               <div className="dispatch-form-grid">
                 <div className="dispatch-field">
                   <label htmlFor="deliveryDate">납품일 *</label>
