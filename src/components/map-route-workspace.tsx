@@ -80,8 +80,7 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult }: P
         />
         <section className="dispatch-export-note">
           추천 순서·드래그로 같은 차량 안 순서를 저장합니다. 변경 후 경로 새로고침을 눌러 갱신하세요.
-          실패 시 직선 근사로 폴백합니다. 일정은 <a href={boardHref}>일정 · 배차</a>에서
-          등록·확정합니다.
+          실패 시 직선 근사로 폴백합니다. 일정은 <a href={boardHref}>배차 신청</a>에서 등록합니다.
         </section>
       </aside>
     </div>

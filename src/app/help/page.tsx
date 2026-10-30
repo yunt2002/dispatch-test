@@ -12,10 +12,10 @@ export default function HelpPage() {
         </div>
         <div className="dispatch-head-actions">
           <Link className="dispatch-secondary-button" href="/">
-            일정 · 배차로
+            배차 신청으로
           </Link>
-          <Link className="dispatch-secondary-button" href="/map">
-            경로 · 지도로
+          <Link className="dispatch-secondary-button" href="/confirm">
+            배차 확정으로
           </Link>
         </div>
       </header>

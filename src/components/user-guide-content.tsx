@@ -10,11 +10,11 @@ export const USER_GUIDE_SECTIONS = [
         </p>
         <ol>
           <li>
-            <strong>일정 · 배차</strong>에서 오늘 납품을 등록하고, 추천된 차량을 확인한 뒤
-            확정합니다. 가까운 건은 <strong>합차</strong>로 한 대에 묶을 수 있습니다.
+            <strong>배차 신청</strong>에서 납품을 등록하고, 차량과 경로를 확인합니다.
+            가까운 건은 <strong>합차</strong>로 한 대에 묶을 수 있습니다.
           </li>
           <li>
-            <strong>경로 · 지도</strong>에서 차량별 길을 그리고, 방문 순서를 조정합니다.
+            <strong>배차 확정</strong>에서 확정 대기 내역을 검토하고 배차를 확정합니다.
           </li>
           <li>
             납품이 끝나면 보드에서 <strong>완료</strong>로 옮깁니다.
@@ -38,10 +38,10 @@ export const USER_GUIDE_SECTIONS = [
             <strong>사용설명서</strong> — 지금 보고 있는 이 안내
           </li>
           <li>
-            <strong>일정 · 배차</strong> — 오늘(또는 선택한 날) 납품 목록과 차량 추천·확정
+            <strong>배차 신청</strong> — 납품 등록, 차량 추천과 경로·지도 확인
           </li>
           <li>
-            <strong>경로 · 지도</strong> — 지도에 납품지를 찍고 카카오로 도로 경로 계산
+            <strong>배차 확정</strong> — 왼쪽 확정 대기와 오른쪽 확정·완료 내역 확인
           </li>
           <li>
             <strong>설정</strong>
@@ -59,7 +59,7 @@ export const USER_GUIDE_SECTIONS = [
           </li>
         </ul>
         <p>
-          왼쪽 로고(<strong>Dispatch System</strong>)를 누르면 항상 일정 · 배차 홈으로
+          왼쪽 로고(<strong>Dispatch System</strong>)를 누르면 항상 배차 신청 홈으로
           돌아갑니다.
         </p>
       </>
@@ -67,11 +67,12 @@ export const USER_GUIDE_SECTIONS = [
   },
   {
     id: "board",
-    title: "3. 일정 · 배차 (기본 화면)",
+    title: "3. 배차 신청과 배차 확정",
     body: (
       <>
         <p>
-          납품 일정은 카드로 보이며, 처리 상태에 따라 왼쪽에서 오른쪽으로 이동합니다.
+          배차 신청에서 납품과 경로를 확인한 뒤 <strong>다음: 배차 확정</strong>을 누릅니다.
+          배차 확정 화면에서는 왼쪽의 확정 대기와 오른쪽의 확정·완료 내역을 확인합니다.
         </p>
         <ul>
           <li>
@@ -90,11 +91,12 @@ export const USER_GUIDE_SECTIONS = [
         </p>
         <p>위쪽 업무 흐름에는 선택한 날짜의 전체 등록 건수와 추천 확인·배차 확정·납품 완료 상태별 건수가 표시됩니다. 건수가 있는 항목이 강조됩니다.</p>
         <p>
-          보드 위 <strong>전체 선택 / 선택 배차 확정 / 선택 삭제 / 합차</strong>로 여러 건을 한꺼번에
+          보드 위 <strong>전체 선택 / 선택 삭제 / 합차</strong>로 여러 건을 한꺼번에
           다루고, 오른쪽 <strong>잔여 PLT · 차량</strong>에서 호차별{" "}
           <strong>박스 수·PLT·잔여 및 중량</strong>을 확인합니다. 배송 금액은 그 아래에 있습니다.
         </p>
         <p>차량별 중량은 배정된 일정의 합계와 차량 1대 기준 최대 중량으로 표시합니다. 합계가 기준을 넘으면 운행별 분할을 확인하세요. 미확인이나 추정 건수가 표시되면 실제 중량을 확인해야 합니다.</p>
+        <p>배차 확정 화면에서는 <strong>선택 배차 확정</strong> 또는 각 카드의 배차 확정을 누릅니다. 배차가 자동 확정되지는 않습니다.</p>
       </>
     ),
   },
@@ -220,8 +222,7 @@ export const USER_GUIDE_SECTIONS = [
       <>
         <ol>
           <li>
-            메뉴에서 <strong>경로 · 지도</strong>로 들어갑니다. (홈의 같은 이름 버튼도
-            동일)
+            <strong>배차 신청</strong> 화면 아래의 <strong>경로 · 지도</strong> 영역으로 이동합니다.
           </li>
           <li>
             왼쪽은 <strong>납품지 지도</strong>, 오른쪽은 <strong>경로 계산 패널</strong>

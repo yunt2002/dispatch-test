@@ -14,10 +14,11 @@ export type GroupCardItem = {
   qtyLabel: string; quantity: number; qtyUnit: "box" | "plt";
 };
 
-export function ScheduleGroupCard({ date, groupId, label, status, items, totalLabel, selectedVehicleId, vehicleName, vehicleCount, vehicles, warnings }: {
+export function ScheduleGroupCard({ date, groupId, label, status, items, totalLabel, selectedVehicleId, vehicleName, vehicleCount, vehicles, warnings, returnTo = "request", allowConfirm = true }: {
   date: string; groupId: string; label: string; status: string; items: GroupCardItem[];
   totalLabel: string; selectedVehicleId: string | null; vehicleName: string | null; vehicleCount: number;
   vehicles: ScheduleVehicleOption[]; warnings: string[];
+  returnTo?: "request" | "confirm"; allowConfirm?: boolean;
 }) {
   const first = items[0];
   const done = status === "DONE";
@@ -45,6 +46,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
         <span className="dispatch-vehicle-badge" aria-hidden="true">{vehicleName === "스타리아" ? "S" : vehicleName?.replace("차", "") || "—"}</span>
         <div className="dispatch-vehicle-copy">{done ? <strong>{vehicleName || "차량 미지정"}</strong> : (
           <form action={changeScheduleVehicle}>
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="id" value={first.id} /><input type="hidden" name="date" value={date} />
             <AutoSubmitSelect aria-label="묶음 차량 변경" className="dispatch-vehicle-select" defaultValue={selectedVehicleId ?? ""} key={`${groupId}-${selectedVehicleId ?? "none"}`} name="vehicleTypeId">
               {!selectedVehicleId ? <option value="">차량 선택</option> : null}
@@ -56,6 +58,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
       {warnings.length ? <details className="dispatch-warning"><summary>확인 사항 {warnings.length}개</summary><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details> : null}
       {!done ? <details className="dispatch-group-edit"><summary>품목별 수정</summary>
         {items.map((item) => <form action={updateSchedule} key={item.id} className="dispatch-group-edit-form">
+          <input type="hidden" name="returnTo" value={returnTo} />
           <input type="hidden" name="id" value={item.id} /><input type="hidden" name="date" value={date} />
           <label>거래처<input className="dispatch-input" name="customerName" defaultValue={item.customerName ?? ""} /></label>
           <label>지역<input className="dispatch-input" name="locationName" defaultValue={item.locationName} required /></label>
@@ -65,15 +68,17 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
         </form>)}
       </details> : null}
       <div className="dispatch-card-actions">
-        <form action={changeScheduleGroupStatus}>
+        {operation !== "confirm" || allowConfirm ? <form action={changeScheduleGroupStatus}>
+          <input type="hidden" name="returnTo" value={returnTo} />
           <input type="hidden" name="id" value={first.id} /><input type="hidden" name="date" value={date} /><input type="hidden" name="operation" value={operation} />
           <button className="dispatch-flow-button dispatch-card-action" type="submit">{actionLabel} · {items.length}건</button>
-        </form>
+        </form> : null}
         {!done ? <form action={splitConsolidateSchedules} onSubmit={(event) => { if (!confirm("묶음을 해제할까요? 차량은 그대로 둡니다.")) event.preventDefault(); }}>
           <input type="hidden" name="date" value={date} /><input type="hidden" name="groupId" value={groupId} />
+          <input type="hidden" name="returnTo" value={returnTo} />
           <button className="dispatch-secondary-button dispatch-card-action" type="submit">묶음 해제</button>
         </form> : null}
-        <ConfirmSubmit action={deleteScheduleGroup} buttonClassName="dispatch-delete-button dispatch-card-action" extraFields={{ date }} id={first.id} message={`이 묶음의 ${items.length}건을 모두 삭제할까요?`} />
+        <ConfirmSubmit action={deleteScheduleGroup} buttonClassName="dispatch-delete-button dispatch-card-action" extraFields={{ date, returnTo }} id={first.id} message={`이 묶음의 ${items.length}건을 모두 삭제할까요?`} />
       </div>
     </article>
   );

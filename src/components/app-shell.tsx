@@ -6,8 +6,8 @@ import { useState } from "react";
 
 const DAILY = [
   { href: "/help", label: "사용설명서", match: (p: string) => p.startsWith("/help") },
-  { href: "/", label: "일정 · 배차", match: (p: string) => p === "/" },
-  { href: "/map", label: "경로 · 지도", match: (p: string) => p.startsWith("/map") },
+  { href: "/", label: "배차 신청", match: (p: string) => p === "/" || p.startsWith("/map") },
+  { href: "/confirm", label: "배차 확정", match: (p: string) => p.startsWith("/confirm") },
 ];
 
 const SETTINGS = [

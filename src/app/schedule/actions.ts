@@ -23,13 +23,15 @@ import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 
-function go(params: Record<string, string | undefined>): never {
+function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) q.set(key, value);
   }
   const qs = q.toString();
-  redirect(qs ? `/?${qs}` : "/");
+  const base = formData.get("returnTo") === "confirm" ? "/confirm" : "/";
+  revalidatePath("/confirm");
+  redirect(qs ? `${base}?${qs}` : base);
 }
 
 function parsePositive(raw: string | undefined): number | null {
@@ -95,16 +97,16 @@ export async function registerSchedule(formData: FormData) {
   const vehicleTypeId = optionalText(formData, "vehicleTypeId");
 
   if (!deliveryDate) {
-    go({ error: "납품일은 필수입니다." });
+    go(formData, { error: "납품일은 필수입니다." });
   }
   if (!productNames.length || productNames.length !== quantities.length || quantities.length !== qtyUnits.length || quantities.some((quantity) => quantity == null) || qtyUnits.some((unit) => unit !== "box" && unit !== "plt")) {
-    go({
+    go(formData, {
       error: "모든 품목의 수량과 단위를 확인하세요.",
       date: deliveryDate,
     });
   }
   if (productNames.length > 1 && productNames.some((name) => !name)) {
-    go({ date: deliveryDate, error: "여러 품목을 등록할 때는 각 품명을 입력하세요." });
+    go(formData, { date: deliveryDate, error: "여러 품목을 등록할 때는 각 품명을 입력하세요." });
   }
 
   if (!locationName || !customerName) {
@@ -119,11 +121,11 @@ export async function registerSchedule(formData: FormData) {
   }
 
   if (productNames.length > 1 && !customerName) {
-    go({ date: deliveryDate, error: "여러 품목을 등록할 거래처를 선택하세요." });
+    go(formData, { date: deliveryDate, error: "여러 품목을 등록할 거래처를 선택하세요." });
   }
 
   if (!locationName) {
-    go({
+    go(formData, {
       error: "지역을 선택하거나, 거래처·품명으로 자동 매핑을 쓰세요.",
       date: deliveryDate,
     });
@@ -168,7 +170,7 @@ export async function registerSchedule(formData: FormData) {
   if (vehicleTypeId) {
     const picked = vehicles.find((vehicle) => vehicle.id === vehicleTypeId);
     if (!picked) {
-      go({ date: deliveryDate, error: "선택한 차량을 확인하세요." });
+      go(formData, { date: deliveryDate, error: "선택한 차량을 확인하세요." });
     }
     const vehicleCount = vehicleCountForPallets(storedPallet, picked.maxPallet);
     selected = {
@@ -241,7 +243,7 @@ export async function registerSchedule(formData: FormData) {
   const vehicleLabel = selected
     ? `${selected.vehicleName}${selected.vehicleCount > 1 ? ` ×${selected.vehicleCount}` : ""}${manualVehicle ? " (수동)" : ""}`
     : "차량 없음";
-  go({
+  go(formData, {
     date: deliveryDate,
     ok: rows.length > 1 ? `${rows.length}개 품목을 하나로 등록했습니다. 차량과 적재량을 확인하세요.` : `등록 · ${vehicleLabel}`,
   });
@@ -252,7 +254,7 @@ export async function changeScheduleVehicle(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const vehicleTypeId = text(formData, "vehicleTypeId");
   if (!vehicleTypeId) {
-    go({ date, error: "바꿀 차량을 선택하세요." });
+    go(formData, { date, error: "바꿀 차량을 선택하세요." });
   }
 
   const [entry, vehicle] = await Promise.all([
@@ -260,10 +262,10 @@ export async function changeScheduleVehicle(formData: FormData) {
     prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } }),
   ]);
   if (!entry || !vehicle) {
-    go({ date, error: "일정 또는 차량을 확인하세요." });
+    go(formData, { date, error: "일정 또는 차량을 확인하세요." });
   }
   if (entry.status === "DONE" || entry.status === "CANCELLED") {
-    go({ date, error: "완료된 일정은 차량을 변경할 수 없습니다." });
+    go(formData, { date, error: "완료된 일정은 차량을 변경할 수 없습니다." });
   }
 
   const recommended = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
@@ -325,7 +327,7 @@ export async function changeScheduleVehicle(formData: FormData) {
     entry.consolidateGroupId && groupmates.length > 1
       ? ` · 합차 ${groupmates.length}건`
       : "";
-  go({ date, ok: `${vehicle.vehicleName}${countLabel}${groupLabel}로 바꿨습니다.` });
+  go(formData, { date, ok: `${vehicle.vehicleName}${countLabel}${groupLabel}로 바꿨습니다.` });
 }
 
 function sameQty(a: number | null | undefined, b: number | null): boolean {
@@ -345,18 +347,18 @@ export async function updateSchedule(formData: FormData) {
   const quantity = parsePositive(optionalText(formData, "quantity") ?? undefined);
 
   if (!locationName) {
-    go({ date, error: "지역(위치)은 필수입니다." });
+    go(formData, { date, error: "지역(위치)은 필수입니다." });
   }
   if (quantity == null) {
-    go({ date, error: "수량을 입력하세요." });
+    go(formData, { date, error: "수량을 입력하세요." });
   }
 
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   if (!entry) {
-    go({ date, error: "일정을 확인하세요." });
+    go(formData, { date, error: "일정을 확인하세요." });
   }
   if (entry.status === "DONE") {
-    go({ date, error: "완료된 일정은 완료 취소 후 수정하세요." });
+    go(formData, { date, error: "완료된 일정은 완료 취소 후 수정하세요." });
   }
 
   const boxCount = qtyUnit === "box" ? quantity : null;
@@ -368,7 +370,7 @@ export async function updateSchedule(formData: FormData) {
   const productChanged = (productName ?? null) !== (entry.productName ?? null);
 
   if (!locationChanged && !qtyChanged && !customerChanged && !productChanged) {
-    go({ date, ok: "변경된 내용이 없습니다." });
+    go(formData, { date, ok: "변경된 내용이 없습니다." });
   }
 
   if (!locationChanged && !qtyChanged && !productChanged) {
@@ -385,7 +387,7 @@ export async function updateSchedule(formData: FormData) {
       },
     });
     revalidatePath("/");
-    go({ date, ok: "거래처를 수정했습니다." });
+    go(formData, { date, ok: "거래처를 수정했습니다." });
   }
 
   const deliveryDate = entry.deliveryDate;
@@ -469,7 +471,7 @@ export async function updateSchedule(formData: FormData) {
     ]);
     await rebalanceDayFleet(entry.deliveryDate);
     revalidatePath("/");
-    go({ date, ok: "품목을 수정하고 묶음 적재량을 다시 계산했습니다." });
+    go(formData, { date, ok: "품목을 수정하고 묶음 적재량을 다시 계산했습니다." });
   }
 
   await prisma.scheduleEntry.update({
@@ -507,12 +509,12 @@ export async function updateSchedule(formData: FormData) {
     const recLabel = result.recommended
       ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
       : "없음";
-    go({ date, ok: `수정 · 수동 차량 ${keptManualLabel} 유지 (추천 ${recLabel})` });
+    go(formData, { date, ok: `수정 · 수동 차량 ${keptManualLabel} 유지 (추천 ${recLabel})` });
   }
   const vehicleLabel = result.recommended
     ? `${result.recommended.vehicleName}${result.recommended.vehicleCount > 1 ? ` ×${result.recommended.vehicleCount}` : ""}`
     : "추천 없음";
-  go({ date, ok: `수정 · 추천 ${vehicleLabel}` });
+  go(formData, { date, ok: `수정 · 추천 ${vehicleLabel}` });
 }
 
 export async function markScheduleDone(formData: FormData) {
@@ -525,7 +527,7 @@ export async function markScheduleDone(formData: FormData) {
   });
   if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
-  go({ date, ok: "완료 처리했습니다." });
+  go(formData, { date, ok: "완료 처리했습니다." });
 }
 
 /** 묶음 카드의 현재 상태에 속한 일정만 함께 처리한다. */
@@ -541,7 +543,7 @@ export async function changeScheduleGroupStatus(formData: FormData) {
   const transition = transitions[operation];
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date || !transition || entry.status !== transition.from) {
-    go({ date, error: "묶음의 현재 상태를 확인해 주세요." });
+    go(formData, { date, error: "묶음의 현재 상태를 확인해 주세요." });
   }
   const result = await prisma.scheduleEntry.updateMany({
     where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: transition.from },
@@ -549,20 +551,20 @@ export async function changeScheduleGroupStatus(formData: FormData) {
   });
   if (operation !== "confirm") await rebalanceDayFleet(date);
   revalidatePath("/");
-  go({ date, ok: `${result.count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
+  go(formData, { date, ok: `${result.count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
 }
 
 export async function deleteScheduleGroup(formData: FormData) {
   const id = text(formData, "id");
   const date = text(formData, "date");
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date) go({ date, error: "삭제할 묶음을 확인해 주세요." });
+  if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date) go(formData, { date, error: "삭제할 묶음을 확인해 주세요." });
   const result = await prisma.scheduleEntry.deleteMany({
     where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: entry.status },
   });
   await rebalanceDayFleet(date);
   revalidatePath("/");
-  go({ date, ok: `${result.count}건을 삭제했습니다.` });
+  go(formData, { date, ok: `${result.count}건을 삭제했습니다.` });
 }
 
 export async function confirmSchedule(formData: FormData) {
@@ -570,10 +572,10 @@ export async function confirmSchedule(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   if (!entry) {
-    go({ date, error: "일정을 확인하세요." });
+    go(formData, { date, error: "일정을 확인하세요." });
   }
   if (entry.status === "DONE") {
-    go({ date, error: "이미 완료된 일정입니다." });
+    go(formData, { date, error: "이미 완료된 일정입니다." });
   }
 
   await prisma.scheduleEntry.update({
@@ -588,13 +590,13 @@ export async function confirmSchedule(formData: FormData) {
     },
   });
   revalidatePath("/");
-  go({ date, ok: "배차를 확정했습니다." });
+  go(formData, { date, ok: "배차를 확정했습니다." });
 }
 
 export async function confirmSchedules(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const ids = [...new Set(formData.getAll("ids").map((value) => String(value).trim()).filter(Boolean))];
-  if (!date || !ids.length) go({ date, error: "확정할 납품을 선택하세요." });
+  if (!date || !ids.length) go(formData, { date, error: "확정할 납품을 선택하세요." });
   const result = await prisma.scheduleEntry.updateMany({
     where: { id: { in: ids }, deliveryDate: date, status: "PLANNED" },
     data: { status: "CONFIRMED" },
@@ -603,7 +605,7 @@ export async function confirmSchedules(formData: FormData) {
     await prisma.appLog.create({ data: { userAction: "schedule_confirm_bulk", routeCode: date, selectedResult: `${result.count}건` } });
   }
   revalidatePath("/");
-  go({ date, ok: result.count ? `${result.count}건을 배차 확정했습니다.` : "확정할 추천 확인 항목이 없습니다." });
+  go(formData, { date, ok: result.count ? `${result.count}건을 배차 확정했습니다.` : "확정할 추천 확인 항목이 없습니다." });
 }
 
 export async function reopenSchedule(formData: FormData) {
@@ -616,7 +618,7 @@ export async function reopenSchedule(formData: FormData) {
   });
   if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
-  go({ date, ok: "완료를 취소했습니다." });
+  go(formData, { date, ok: "완료를 취소했습니다." });
 }
 
 export async function deleteSchedule(formData: FormData) {
@@ -626,7 +628,7 @@ export async function deleteSchedule(formData: FormData) {
   await prisma.scheduleEntry.delete({ where: { id } });
   if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
-  go({ date, ok: "삭제했습니다." });
+  go(formData, { date, ok: "삭제했습니다." });
 }
 
 /** 선택 삭제 또는 해당 납품일 전체 삭제 */
@@ -636,14 +638,14 @@ export async function deleteSchedules(formData: FormData) {
 
   if (scope === "day") {
     if (!date) {
-      go({ error: "납품일이 없어 전체 삭제할 수 없습니다." });
+      go(formData, { error: "납품일이 없어 전체 삭제할 수 없습니다." });
     }
     const result = await prisma.scheduleEntry.deleteMany({
       where: { deliveryDate: date, status: { not: "CANCELLED" } },
     });
     await rebalanceDayFleet(date);
     revalidatePath("/");
-    go({
+    go(formData, {
       date,
       ok: result.count
         ? `${result.count}건을 모두 삭제했습니다.`
@@ -656,10 +658,10 @@ export async function deleteSchedules(formData: FormData) {
     .map((value) => String(value).trim())
     .filter(Boolean);
   if (!ids.length) {
-    go({ date, error: "삭제할 항목을 선택하세요." });
+    go(formData, { date, error: "삭제할 항목을 선택하세요." });
   }
   if (!date) {
-    go({ error: "납품일이 없어 선택 삭제할 수 없습니다." });
+    go(formData, { error: "납품일이 없어 선택 삭제할 수 없습니다." });
   }
 
   const entries = await prisma.scheduleEntry.findMany({
@@ -667,7 +669,7 @@ export async function deleteSchedules(formData: FormData) {
     select: { id: true, deliveryDate: true },
   });
   if (!entries.length) {
-    go({ date, error: "삭제할 일정을 찾지 못했습니다." });
+    go(formData, { date, error: "삭제할 일정을 찾지 못했습니다." });
   }
 
   await prisma.scheduleEntry.deleteMany({
@@ -676,7 +678,7 @@ export async function deleteSchedules(formData: FormData) {
 
   await rebalanceDayFleet(date);
   revalidatePath("/");
-  go({
+  go(formData, {
     date,
     ok: `${entries.length}건을 삭제했습니다.`,
   });
@@ -690,15 +692,15 @@ export async function consolidateSchedules(formData: FormData) {
     .map((value) => String(value).trim())
     .filter(Boolean);
   if (!date) {
-    go({ error: "납품일이 필요합니다." });
+    go(formData, { error: "납품일이 필요합니다." });
   }
   const result = await consolidateEntries({ ids, date });
   if ("error" in result) {
-    go({ date, error: result.error });
+    go(formData, { date, error: result.error });
   }
   await rebalanceDayFleet(date);
   revalidatePath("/");
-  go({ date, ok: result.ok });
+  go(formData, { date, ok: result.ok });
 }
 
 /** 합차 그룹 해제 */
@@ -706,13 +708,13 @@ export async function splitConsolidateSchedules(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const groupId = text(formData, "groupId");
   if (!date) {
-    go({ error: "납품일이 필요합니다." });
+    go(formData, { error: "납품일이 필요합니다." });
   }
   const result = await splitConsolidateGroup({ groupId, date });
   if ("error" in result) {
-    go({ date, error: result.error });
+    go(formData, { date, error: result.error });
   }
   await rebalanceDayFleet(date);
   revalidatePath("/");
-  go({ date, ok: result.ok });
+  go(formData, { date, ok: result.ok });
 }

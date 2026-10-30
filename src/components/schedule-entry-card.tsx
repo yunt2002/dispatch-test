@@ -41,6 +41,8 @@ export function ScheduleEntryCard({
   vehicles,
   consolidateGroupId,
   consolidateLabel,
+  returnTo = "request",
+  allowConfirm = true,
 }: {
   id: string;
   date: string;
@@ -63,6 +65,8 @@ export function ScheduleEntryCard({
   vehicles: ScheduleVehicleOption[];
   consolidateGroupId?: string | null;
   consolidateLabel?: string | null;
+  returnTo?: "request" | "confirm";
+  allowConfirm?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [editCustomer, setEditCustomer] = useState(customerName ?? "");
@@ -87,6 +91,7 @@ export function ScheduleEntryCard({
     return (
       <article className="dispatch-job dispatch-job-editing">
         <form action={updateSchedule} id={`edit-${id}`}>
+          <input type="hidden" name="returnTo" value={returnTo} />
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="date" value={date} />
           <div className="dispatch-edit-grid">
@@ -190,6 +195,7 @@ export function ScheduleEntryCard({
             <strong>{vehicleLabel}</strong>
           ) : (
             <form action={changeScheduleVehicle}>
+              <input type="hidden" name="returnTo" value={returnTo} />
               <input type="hidden" name="id" value={id} />
               <input type="hidden" name="date" value={date} />
               <AutoSubmitSelect
@@ -234,23 +240,26 @@ export function ScheduleEntryCard({
         ) : null}
         {done ? (
           <form action={reopenSchedule}>
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="date" value={date} />
             <button className="dispatch-secondary-button dispatch-card-action" type="submit">완료 취소</button>
           </form>
         ) : confirmed ? (
           <form action={markScheduleDone}>
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="date" value={date} />
             <button className="dispatch-flow-button dispatch-flow-button-blue" type="submit">완료 처리</button>
           </form>
-        ) : (
+        ) : allowConfirm ? (
           <form action={confirmSchedule}>
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="id" value={id} />
             <input type="hidden" name="date" value={date} />
             <button className="dispatch-flow-button" type="submit">배차 확정</button>
           </form>
-        )}
+        ) : null}
         {consolidateGroupId ? (
           <form
             action={splitConsolidateSchedules}
@@ -261,6 +270,7 @@ export function ScheduleEntryCard({
             }}
           >
             <input type="hidden" name="date" value={date} />
+            <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="groupId" value={consolidateGroupId} />
             <button className="dispatch-secondary-button dispatch-card-action" type="submit">
               합차 해제
@@ -270,7 +280,7 @@ export function ScheduleEntryCard({
         <ConfirmSubmit
           action={deleteSchedule}
           buttonClassName="dispatch-delete-button dispatch-card-action"
-          extraFields={{ date }}
+          extraFields={{ date, returnTo }}
           id={id}
           message="이 일정을 삭제할까요?"
         />
