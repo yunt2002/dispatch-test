@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
-import { estimateCharterTrips, estimateSimulationCost } from "@/lib/simulation-cost";
+import { estimateCharterTrips, estimateSimulationCost, hasComparableRoutes } from "@/lib/simulation-cost";
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
 function ExternalDeliveries({ items }: { items: SimulationItem[] }) {
@@ -38,7 +38,7 @@ export function DeliveryComparison() {
     catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
   const moved = result?.proposed.flatMap((route) => route.items.filter((item) => !item.vehicle).map((item) => ({ ...item, target: route.vehicle }))) ?? [];
-  const complete = !!result && result.proposed.length === 2 && !result.warnings.length && [...result.original, ...result.proposed].every((route) => !route.items.length || route.minutes != null);
+  const complete = !!result && hasComparableRoutes(result);
   const total = (routes: SimulationRoute[]) => routes.reduce((n, r) => n + (r.minutes ?? 0), 0);
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
@@ -56,6 +56,7 @@ export function DeliveryComparison() {
     {result ? <><p>{result.items.length}품목 · {result.note}</p>{result.warnings.map((w) => <p className="dispatch-route-note-warn" key={w}>{w}</p>)}
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>예상 비용 비교</h3>
+        {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {comparison ? <><div className="comparison-result-totals"><p>기존 계획 <strong>{money(comparison.original)}</strong></p><p>AI 제안 <strong>{money(comparison.proposed)}</strong></p><p>차이 <strong>{comparison.saving > 0 ? `${money(comparison.saving)} 절감 예상` : comparison.saving < 0 ? `${money(-comparison.saving)} 증가 예상` : "차이 없음"}</strong></p></div>
           <p>자사 차량 경유비·통행료 + 용차비 기준 · 기존 {originalTrips}회 / AI {proposedTrips}회 × 200,000원</p></> : <p className="dispatch-route-note-warn">주소·경로·운행 횟수 또는 비용이 미확인이라 비교 금액을 계산할 수 없습니다.</p>}
         <p className="comparison-note">용차 횟수는 거래처·지역별 1회로 가정한 예시이며 실제 운행 횟수와 다를 수 있습니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다.</p>

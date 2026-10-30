@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { estimateSimulationCost, estimateCharterTrips } from "./simulation-cost";
+import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes } from "./simulation-cost";
 
 const input = { originalVehicle: 146164, proposedVehicle: 485394, originalTrips: "3", proposedTrips: "1", originalHasCharter: true, proposedHasCharter: true };
 test("용차 운행 횟수와 자사 차량 비용을 합산해 절감과 증가를 구한다", () => {
@@ -16,4 +16,10 @@ test("미확인 금액과 용차 잔여 품목에 모순되는 횟수는 결과�
 test("용차 횟수 예시는 거래처·지역별로 묶되 업체가 없는 행은 임의 합치지 않는다", () => {
   const item = (rowNumber: number, customer: string, location: string, transport = "용차") => ({ rowNumber, customer, location, transport, vehicle: null });
   assert.equal(estimateCharterTrips([item(1, "A", "광주"), item(2, "A", "광주"), item(3, "A", "김해"), item(4, "", ""), item(5, "", ""), item(6, "B", "서울", "택배")]), 4);
+});
+test("적재 초과 경고가 있어도 경로와 기존 품목이 모두 있으면 비용을 비교한다", () => {
+  const full = { items: [{ rowNumber: 1, vehicle: "1호차" }], original: [{ items: [{ rowNumber: 1 }], minutes: 100 }, { items: [], minutes: null }], proposed: [{ items: [{ rowNumber: 1 }], minutes: 200, over: true }, { items: [], minutes: null }] };
+  assert.equal(hasComparableRoutes(full), true);
+  assert.equal(hasComparableRoutes({ ...full, proposed: [{ items: [], minutes: null }, { items: [], minutes: null }] }), false);
+  assert.equal(hasComparableRoutes({ ...full, original: [{ items: [{ rowNumber: 1 }], minutes: null }, { items: [], minutes: null }] }), false);
 });
