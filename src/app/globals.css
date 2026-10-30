@@ -2285,6 +2285,17 @@ body {
 .dispatch-board-request { grid-template-columns: minmax(0, 1fr); }
 .dispatch-completed-head { margin-top: 24px; padding-top: 16px; border-top: 1px solid #d2cec5; }
 .request-map-section { margin-top: 28px; scroll-margin-top: 24px; }
+.comparison-section { margin-top: 24px; padding: 20px; border: 1px solid #ded9cf; border-radius: 12px; background: #fff; }
+.comparison-section h2 { font-size: 20px; margin: 0 0 8px; }
+.comparison-section h3 { font-size: 15px; }
+.comparison-section p, .comparison-section label, .comparison-section li { font-size: 13px; line-height: 1.6; }
+.comparison-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 14px 0; }
+.comparison-controls label { display: grid; gap: 4px; }
+.comparison-controls input, .comparison-controls select, .comparison-section input[type=number] { max-width: 240px; padding: 8px; border: 1px solid #d8d2c8; border-radius: 6px; }
+.comparison-note { color: #68665f; }
+.comparison-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.comparison-plan { padding: 12px; border: 1px solid #e6e1d9; border-radius: 8px; }
+.comparison-route + .comparison-route { border-top: 1px solid #eee9df; padding-top: 8px; }
 .request-map-link { display: inline-flex; margin-bottom: 10px; }
 .request-map-section .dispatch-page { padding: 0; }
 .request-map-heading { margin: 0 0 12px; }
