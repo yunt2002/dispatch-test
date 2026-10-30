@@ -2299,6 +2299,8 @@ body {
 .comparison-result-totals { display: flex; flex-wrap: wrap; gap: 20px; }
 .comparison-result-totals p { display: grid; gap: 3px; margin: 4px 0; }
 .comparison-result-totals strong { font-size: 20px; }
+.simulation-packing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee9df; }
+.simulation-packing-row select { padding: 6px; border: 1px solid #d8d2c8; border-radius: 6px; }
 .comparison-route + .comparison-route { border-top: 1px solid #eee9df; padding-top: 8px; }
 .request-map-link { display: inline-flex; margin-bottom: 10px; }
 .request-map-section .dispatch-page { padding: 0; }

@@ -8,6 +8,7 @@ import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
+import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -22,7 +23,7 @@ async function propose(items: SimulationItem[]): Promise<{ orders: Order[]; note
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, temperature: 0, max_completion_tokens: 4096,
         messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목을 모두 포함하고, 외부 용차/택배 품목 중 가까운 방문지를 가능한 한 자사 차량에 합쳐라. 차량 간 재배정 가능. 각 품목 id는 최대 1회. 좌표가 없으면 외부 품목은 선택하지 마라. 적재량 숫자가 있는 품목들의 합계는 1호차 4000kg 및 8PLT, 2호차 3500kg 및 8PLT를 초과하지 말아라. 값이 null이면 미확인이며 0이라고 가정하지 마라. 방문 순서대로 id를 정렬한다. 입력에 없는 id를 만들지 마라. 반드시 orders 배열에 1호차와 2호차 객체를 각각 하나씩 포함하고, 품목이 없는 차량은 ids를 빈 배열로 둔다. 각 id는 문자열이다. JSON 객체 {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}]}만 출력." },
-          { role: "user", content: JSON.stringify({ depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight })) }) }] }),
+          { role: "user", content: JSON.stringify({ depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
       signal: AbortSignal.timeout(20000), cache: "no-store",
     });
     if (!response.ok) throw new Error();
@@ -54,6 +55,8 @@ export async function POST(request: Request) {
   try {
     const form = await request.formData();
     const file = form.get("file"); const date = String(form.get("date") ?? "");
+    let packingOverrides: Record<string, unknown> = {};
+    try { const parsed = JSON.parse(String(form.get("packing") || "{}")); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) packingOverrides = parsed; } catch { return NextResponse.json({ error: "박스 적재 방식이 올바르지 않습니다." }, { status: 400 }); }
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()) as unknown as ExcelJS.Buffer);
@@ -67,9 +70,10 @@ export async function POST(request: Request) {
     const items: SimulationItem[] = rows.map((row) => {
       const address = addressFor(row.customer); const point = address ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const family = matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
+      const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
         lat: point?.lat ?? null, lng: point?.lng ?? null,
-        pallets: boxes != null && family?.boxesPerPallet ? Math.ceil(boxes / family.boxesPerPallet) : null,
+        packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
         weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
     });
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
