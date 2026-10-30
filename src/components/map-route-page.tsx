@@ -10,6 +10,7 @@ import { parseJson } from "@/lib/format";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { listDispatchBatches, resolveRouteScope } from "@/lib/dispatch-batches";
 import { RouteBatchSelect } from "@/components/route-batch-select";
+import { snapshotMatchesScope } from "@/lib/route-snapshot-scope";
 
 export default async function MapRoutePage({
   searchParams,
@@ -70,7 +71,8 @@ export default async function MapRoutePage({
   const geo = geocodingStatus();
   const boardHref = `/?date=${encodeURIComponent(date)}`;
   const [snapshot, signature] = await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
-  const initialResult = snapshot ? { ...snapshot.result, savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
+  const scopeChanged = !!snapshot && !snapshotMatchesScope(snapshot.result, activeEntries.map((entry) => entry.id));
+  const initialResult = snapshot && !scopeChanged ? { ...snapshot.result, savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
 
   return (
     <div className="dispatch-page map-page">
@@ -103,9 +105,10 @@ export default async function MapRoutePage({
       <RouteBatchSelect date={date} batchId={batchId} options={batchOptions} embedded={embedded} />
       <p className="map-page-geo">확정 배차를 선택하면 해당 묶음의 호차별 경로를 볼 수 있습니다. 처음 선택한 배차는 경로 계산을 눌러 주세요.</p>
       {batchId === "legacy" ? <p className="map-page-geo">이전 확정 건은 확정 당시의 묶음 정보가 없어 함께 표시됩니다.</p> : null}
+      {scopeChanged ? <p className="dispatch-route-note-warn">표시할 납품 목록이 바뀌어 이전 경로를 숨겼습니다. 경로 계산을 눌러 다시 확인하세요.</p> : null}
       {!scope.valid ? <p className="dispatch-route-note-warn">선택한 확정 배차를 찾을 수 없습니다. 목록에서 다시 선택하세요.</p> : null}
 
-      <MapRouteWorkspace key={`${date}:${batchId ?? "pending"}`} boardHref={boardHref} date={date} batchId={batchId} markers={mapMarkers} initialResult={initialResult} />
+      <MapRouteWorkspace key={`${date}:${batchId ?? "pending"}:${signature}:${snapshot?.savedAt ?? ""}`} boardHref={boardHref} date={date} batchId={batchId} markers={mapMarkers} initialResult={initialResult} />
     </div>
   );
 }

@@ -14,6 +14,9 @@ export async function POST(request: Request) {
   const before = await routeInputSignature(date, batchId);
   const result = await solveRoutesForDate(date, body.tripMode === "oneway" ? "oneway" : "roundtrip", batchId);
   const after = await routeInputSignature(date, batchId);
+  if (before !== after) {
+    return NextResponse.json({ ...result, ok: false, routes: [], unassigned: [], stale: true, note: "경로를 계산하는 동안 납품 목록이 바뀌었습니다. 다시 계산해 주세요." });
+  }
   if (result.ok && before === after) {
     const savedAt = new Date().toISOString();
     try {

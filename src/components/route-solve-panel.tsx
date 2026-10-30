@@ -163,7 +163,9 @@ export function RouteSolvePanel({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ date, tripMode: mode, batchId }),
     });
-    return (await res.json()) as RouteSolveResult;
+    const data = await res.json() as RouteSolveResult | { error?: string };
+    if (!res.ok) throw new Error(data.error || "경로 조회에 실패했습니다.");
+    return data as RouteSolveResult;
   }
 
   async function runSolve(mode = tripMode) {
