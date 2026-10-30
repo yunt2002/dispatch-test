@@ -2295,6 +2295,10 @@ body {
 .comparison-note { color: #68665f; }
 .comparison-plans { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
 .comparison-plan { padding: 12px; border: 1px solid #e6e1d9; border-radius: 8px; }
+.comparison-result { margin: 14px 0; padding: 16px; border: 1px solid #dbc9aa; border-radius: 8px; background: #fff8ed; }
+.comparison-result-totals { display: flex; flex-wrap: wrap; gap: 20px; }
+.comparison-result-totals p { display: grid; gap: 3px; margin: 4px 0; }
+.comparison-result-totals strong { font-size: 20px; }
 .comparison-route + .comparison-route { border-top: 1px solid #eee9df; padding-top: 8px; }
 .request-map-link { display: inline-flex; margin-bottom: 10px; }
 .request-map-section .dispatch-page { padding: 0; }
