@@ -6,7 +6,7 @@ export function ExcelImportForm({ excelCount }: { excelCount: number }) {
   return (
     <form
       action={uploadPlanExcel}
-      className="card p-4 settings-import-form"
+      className="card p-4"
       onSubmit={(event) => {
         if (excelCount <= 0) return;
         const ok = confirm(
@@ -18,7 +18,6 @@ export function ExcelImportForm({ excelCount }: { excelCount: number }) {
       <div className="grid-form">
         <div className="field">
           <label htmlFor="file">납품관리 Excel (.xlsx)</label>
-          <p className="settings-upload-hint">엑셀 파일을 선택해 일정으로 가져옵니다.</p>
           <input id="file" className="input" name="file" type="file" accept=".xlsx,.xls" required />
         </div>
         <div className="field">

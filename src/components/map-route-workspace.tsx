@@ -5,7 +5,7 @@ import { DispatchMap } from "@/components/kakao-map/dispatch-map";
 import type { DispatchMapMarker, DispatchMapRoute } from "@/components/kakao-map/types";
 import { RouteSolvePanel, type RouteSolveResult } from "@/components/route-solve-panel";
 
-const ROUTE_COLORS = ["#2456db", "#138278", "#d65b22", "#8047d8", "#b45309", "#0f766e"];
+const ROUTE_COLORS = ["#e85d04", "#1d4ed8", "#15803d", "#7c3aed", "#b45309", "#0f766e"];
 
 type Props = {
   date: string;
@@ -18,8 +18,6 @@ type Props = {
 export function MapRouteWorkspace({ date, markers, boardHref, initialResult, batchId }: Props) {
   const [result, setResult] = useState<RouteSolveResult | null>(initialResult);
   const [mapExpanded, setMapExpanded] = useState(false);
-  const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
-  const activeVehicle = selectedVehicle && result?.routes.some((route) => route.vehicleId === selectedVehicle) ? selectedVehicle : null;
 
   const routes: DispatchMapRoute[] = useMemo(() => {
     if (!result?.ok || !result.routes.length) return [];
@@ -60,28 +58,16 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult, bat
         color,
         path,
       };
-    }).filter((route) => !activeVehicle || route.vehicleId === activeVehicle);
-  }, [markers, result, activeVehicle]);
-
-  const visibleMarkers = useMemo(() => {
-    if (!activeVehicle || !result) return markers;
-    const route = result.routes.find((item) => item.vehicleId === activeVehicle);
-    const ids = new Set(route?.stopIds ?? []);
-    return markers.filter((marker) => ids.has(marker.id));
-  }, [activeVehicle, markers, result]);
+    });
+  }, [markers, result]);
 
   return (
-    <>
-    {result?.ok && result.routes.length ? <div className="route-vehicle-tabs" aria-label="차량별 경로 보기">
-      <button type="button" className={!activeVehicle ? "is-selected" : ""} aria-pressed={!activeVehicle} onClick={() => setSelectedVehicle(null)}><strong>전체 차량</strong><small>{result.routes.length}대 경로</small></button>
-      {result.routes.map((route, index) => <button type="button" key={route.vehicleId} className={activeVehicle === route.vehicleId ? "is-selected" : ""} aria-pressed={activeVehicle === route.vehicleId} onClick={() => setSelectedVehicle(route.vehicleId)}><strong><i style={{ background: ROUTE_COLORS[index % ROUTE_COLORS.length] }} />{route.vehicleName}</strong><small>{route.load}/{route.capacity} PLT · {route.stopIds.length}곳 · {route.totalDistanceKm}km · {route.totalTimeMin}분</small></button>)}
-    </div> : null}
     <div className={`map-page-workspace${mapExpanded ? " is-map-expanded" : ""}`}>
       <div className="map-page-map">
         <DispatchMap
           expanded={mapExpanded}
           height="100%"
-          markers={visibleMarkers}
+          markers={markers}
           onToggleExpand={() => setMapExpanded((open) => !open)}
           routes={routes}
         />
@@ -91,7 +77,6 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult, bat
           date={date}
           batchId={batchId}
           markers={markers}
-          selectedVehicleId={activeVehicle}
           onResult={setResult}
           result={result}
         />
@@ -101,6 +86,5 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult, bat
         </section>
       </aside>
     </div>
-    </>
   );
 }

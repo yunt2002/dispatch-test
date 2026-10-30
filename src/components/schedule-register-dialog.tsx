@@ -18,14 +18,12 @@ export function ScheduleRegisterDialog({
   date,
   regions,
   vehicles,
-  inline = false,
 }: {
   date: string;
   regions: { id: string; locationName: string }[];
   vehicles: { id: string; vehicleName: string }[];
-  inline?: boolean;
 }) {
-  const [open, setOpen] = useState(inline);
+  const [open, setOpen] = useState(false);
   const [productName, setProductName] = useState("");
   const [extraProducts, setExtraProducts] = useState<number[]>([]);
   const [nextProductId, setNextProductId] = useState(1);
@@ -49,13 +47,13 @@ export function ScheduleRegisterDialog({
   }, [regions]);
 
   useEffect(() => {
-    if (!open || inline) return;
+    if (!open) return;
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key === "Escape") setOpen(false);
     }
     document.addEventListener("keydown", closeOnEscape);
     return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [open, inline]);
+  }, [open]);
 
   function resetFields() {
     setProductName("");
@@ -101,22 +99,22 @@ export function ScheduleRegisterDialog({
 
   return (
     <>
-      {!inline ? <button className="dispatch-primary-button" onClick={openDialog} type="button">
+      <button className="dispatch-primary-button" onClick={openDialog} type="button">
         <span aria-hidden="true">＋</span> 새 납품 등록
-      </button> : null}
+      </button>
       {open ? (
         <div
-          className={inline ? "dispatch-inline-register-wrap" : "dispatch-modal-backdrop"}
+          className="dispatch-modal-backdrop"
           onMouseDown={(event) => {
-            if (!inline && event.currentTarget === event.target) setOpen(false);
+            if (event.currentTarget === event.target) setOpen(false);
           }}
           role="presentation"
         >
           <section
             aria-labelledby="schedule-register-title"
-            aria-modal={inline ? undefined : "true"}
-            className={inline ? "dispatch-inline-register" : "dispatch-modal"}
-            role={inline ? undefined : "dialog"}
+            aria-modal="true"
+            className="dispatch-modal"
+            role="dialog"
           >
             <div className="dispatch-modal-head">
               <div>
@@ -126,21 +124,21 @@ export function ScheduleRegisterDialog({
                   추천입니다.
                 </p>
               </div>
-              {!inline ? <button
+              <button
                 aria-label="닫기"
                 className="dispatch-modal-close"
                 onClick={() => setOpen(false)}
                 type="button"
               >
                 ×
-              </button> : null}
+              </button>
             </div>
             <form action={registerSchedule} autoComplete="off" className="dispatch-modal-body">
               <div className="dispatch-form-grid">
                 <div className="dispatch-field">
                   <label htmlFor="deliveryDate">납품일 *</label>
                   <input
-                    autoFocus={!inline}
+                    autoFocus
                     className="dispatch-input"
                     defaultValue={date}
                     id="deliveryDate"
@@ -255,13 +253,13 @@ export function ScheduleRegisterDialog({
                   "거래처를 고르면 지역이 매핑됩니다. 비워 두면 품명 기준으로도 추천합니다."}
               </p>
               <div className="dispatch-modal-actions">
-                {!inline ? <button
+                <button
                   className="dispatch-secondary-button"
                   onClick={() => setOpen(false)}
                   type="button"
                 >
                   취소
-                </button> : null}
+                </button>
                 <button className="dispatch-primary-button" type="submit">
                   등록
                 </button>
