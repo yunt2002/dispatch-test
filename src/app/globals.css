@@ -2286,6 +2286,10 @@ body {
 .dispatch-completed-head { margin-top: 24px; padding-top: 16px; border-top: 1px solid #d2cec5; }
 .request-map-section { margin-top: 28px; scroll-margin-top: 24px; }
 .comparison-section { margin-top: 24px; padding: 20px; border: 1px solid #ded9cf; border-radius: 12px; background: #fff; }
+.dispatch-transport-fee { margin: 10px 0; padding: 8px; background: #f8f5ee; border-radius: 6px; }
+.dispatch-transport-fee label { display: block; font-size: 12px; margin-bottom: 4px; }
+.dispatch-transport-fee div { display: flex; gap: 6px; }
+.dispatch-transport-fee input { min-width: 0; flex: 1; }
 .comparison-section h2 { font-size: 20px; margin: 0 0 8px; }
 .comparison-section h3 { font-size: 15px; }
 .comparison-section p, .comparison-section label, .comparison-section li { font-size: 13px; line-height: 1.6; }

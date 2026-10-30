@@ -8,10 +8,13 @@ import { AutoSubmitSelect } from "@/components/auto-submit-select";
 import { ConfirmSubmit } from "@/components/confirm-submit";
 import { ScheduleSelectCheckbox } from "@/components/schedule-selection";
 import type { ScheduleVehicleOption } from "@/components/schedule-entry-row";
+import { ScheduleTransportFee } from "@/components/schedule-transport-fee";
 
 export type GroupCardItem = {
   id: string; locationName: string; customerName: string | null; productName: string | null;
   qtyLabel: string; quantity: number; qtyUnit: "box" | "plt";
+  transportFee: string | null;
+  vehicleId: string | null;
 };
 
 export function ScheduleGroupCard({ date, groupId, label, status, items, totalLabel, selectedVehicleId, vehicleName, vehicleCount, vehicles, warnings, returnTo = "request", allowConfirm = true }: {
@@ -56,6 +59,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
         )}{vehicleCount > 1 ? <span>{vehicleCount}대 필요 · 배차 확인</span> : null}</div>
       </div>
       {warnings.length ? <details className="dispatch-warning"><summary>확인 사항 {warnings.length}개</summary><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details> : null}
+      {returnTo === "confirm" && items.some((item) => item.vehicleId) ? <details className="dispatch-group-edit"><summary>품목별 운송 금액</summary><p>운임을 한 번에 청구받은 묶음은 한 품목에만 금액을 입력하세요.</p>{items.map((item) => item.vehicleId ? <ScheduleTransportFee key={item.id} id={item.id} date={date} vehicleId={item.vehicleId} productName={item.productName} value={item.transportFee} /> : null)}</details> : null}
       {!done ? <details className="dispatch-group-edit"><summary>품목별 수정</summary>
         {items.map((item) => <form action={updateSchedule} key={item.id} className="dispatch-group-edit-form">
           <input type="hidden" name="returnTo" value={returnTo} />

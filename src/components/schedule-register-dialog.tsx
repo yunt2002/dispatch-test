@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { registerSchedule } from "@/app/schedule/actions";
 import { ProductCombobox } from "@/components/product-combobox";
+import { EXTERNAL_TRANSPORTS } from "@/lib/external-transport";
 import { resolveRegistrationProductFields } from "@/lib/registration-product-defaults";
 import {
   DELIVERY_CUSTOMERS,
@@ -223,6 +224,7 @@ export function ScheduleRegisterDialog({
                         {vehicle.vehicleName}
                       </option>
                     ))}
+                    {EXTERNAL_TRANSPORTS.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicleName}</option>)}
                   </select>
                 </div>
               </div>

@@ -20,6 +20,7 @@ import { matchRouteZone } from "@/lib/route-master";
 import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 import { groupScheduleCards } from "@/lib/schedule-card-groups";
 import MapRoutePage from "@/components/map-route-page";
+import { EXTERNAL_TRANSPORTS, externalTransport, transportFeeKey } from "@/lib/external-transport";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -69,6 +70,9 @@ export default async function HomePage({
   const today = todayISO();
   const date = params.date || (knownDates.includes(today) ? today : knownDates[0]) || today;
   const entries = await loadEntries(date);
+  const feeKeys = entries.flatMap((entry) => { const selected = selectedVehicle(entry); return selected ? [transportFeeKey(entry.id, selected.vehicleTypeId)] : []; });
+  const feeSettings = view === "confirm" && feeKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: feeKeys } }, select: { key: true, value: true } }) : [];
+  const fees = new Map(feeSettings.map((setting) => [setting.key, setting.value]));
 
   const reviewEntries = entries.filter((entry) => entry.status === "PLANNED");
   const confirmedEntries = entries.filter((entry) => entry.status === "CONFIRMED");
@@ -139,10 +143,10 @@ export default async function HomePage({
   const warnings = [
     ...new Set(activeEntries.flatMap((entry) => parseJson<string[]>(entry.warningsJson, []))),
   ].slice(0, 4);
-  const vehicleOptions = vehicles.map((vehicle) => ({
+  const vehicleOptions = [...vehicles.map((vehicle) => ({
     id: vehicle.id,
     vehicleName: vehicle.vehicleName,
-  }));
+  })), ...EXTERNAL_TRANSPORTS];
 
   function card(entry: ScheduleEntry) {
     const recommended = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
@@ -172,7 +176,7 @@ export default async function HomePage({
         qtyLabel={qtyLabel}
         qtyUnit={qtyUnit}
         quantity={quantity}
-        reason={reasonOneLine(entry.recommendationReason)}
+        reason={externalTransport(selected?.vehicleTypeId) ? "외부 운송 · 자사 차량 경로에서 제외" : reasonOneLine(entry.recommendationReason)}
         recommendedName={recommended?.vehicleName ?? null}
         recommendedVehicleTypeId={recommended?.vehicleTypeId ?? null}
         regionTypeLabel={regionTypeLabel(entry.regionType)}
@@ -180,6 +184,7 @@ export default async function HomePage({
         selectedName={selected?.vehicleName ?? null}
         selectedVehicleTypeId={selected?.vehicleTypeId ?? null}
         status={entry.status}
+        transportFee={selected ? fees.get(transportFeeKey(entry.id, selected.vehicleTypeId)) ?? null : null}
         vehicles={vehicleOptions}
         warnings={parseJson<string[]>(entry.warningsJson, [])}
         returnTo={view}
@@ -207,8 +212,11 @@ export default async function HomePage({
         vehicleName={selected?.vehicleName ?? null} vehicleCount={selected?.vehicleCount ?? 1} vehicles={vehicleOptions} warnings={warnings}
         totalLabel={unknownPallets ? `${formatNumber(totalPallets)} PLT + ${unknownPallets}건 미확인` : `합계 ${formatNumber(totalPallets)} PLT`}
         items={group.map((entry) => {
+          const itemVehicle = selectedVehicle(entry);
           const qtyUnit = entry.palletCount != null && entry.boxCount == null ? "plt" as const : "box" as const;
           return { id: entry.id, locationName: entry.locationName, customerName: entry.customerName, productName: entry.productName,
+            vehicleId: itemVehicle?.vehicleTypeId ?? null,
+            transportFee: itemVehicle ? fees.get(transportFeeKey(entry.id, itemVehicle.vehicleTypeId)) ?? null : null,
             quantity: qtyUnit === "plt" ? entry.palletCount ?? 0 : entry.boxCount ?? 0, qtyUnit,
             qtyLabel: entry.boxCount != null && entry.palletCount != null ? `${formatNumber(entry.boxCount)} 박스 · ${formatNumber(entry.palletCount)} PLT`
               : entry.boxCount != null ? `${formatNumber(entry.boxCount)} 박스` : entry.palletCount != null ? `${formatNumber(entry.palletCount)} PLT` : "-" };

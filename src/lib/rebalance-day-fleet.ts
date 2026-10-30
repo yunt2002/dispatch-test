@@ -7,6 +7,7 @@ import { capacityUnits } from "@/lib/consolidate";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
+import { externalTransport } from "@/lib/external-transport";
 
 async function loadRegions(): Promise<RegionLookup> {
   const regions = await prisma.regionMaster.findMany();
@@ -58,8 +59,9 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
   for (const entry of entries) {
     const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
     const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
+    if (externalTransport(oldSel?.vehicleTypeId)) continue;
     const manual = Boolean(
-      oldSel && oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId,
+      oldSel && (!oldRec || oldSel.vehicleTypeId !== oldRec.vehicleTypeId),
     );
     const confirmed = entry.status === "CONFIRMED";
 

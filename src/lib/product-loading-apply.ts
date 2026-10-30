@@ -4,6 +4,7 @@ import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { PRODUCT_FAMILIES } from "@/lib/product-loading";
 import { getDispatchSettings } from "@/lib/settings";
+import { externalTransport } from "@/lib/external-transport";
 
 export const PRODUCT_LOADING_VERSION = "2026-10-28-v1";
 
@@ -111,7 +112,7 @@ export async function applyProductLoadingIfNeeded() {
     const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
     const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
     const manual = Boolean(
-      oldSel && oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId,
+      oldSel && (externalTransport(oldSel.vehicleTypeId) || (oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId)),
     );
     await prisma.scheduleEntry.update({
       where: { id: entry.id },

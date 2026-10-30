@@ -23,6 +23,7 @@ import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { confirmDispatchBatch } from "@/lib/dispatch-batches";
+import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -169,10 +170,15 @@ export async function registerSchedule(formData: FormData) {
   let manualVehicle = false;
 
   if (vehicleTypeId) {
+    const external = externalTransport(vehicleTypeId);
     const picked = vehicles.find((vehicle) => vehicle.id === vehicleTypeId);
-    if (!picked) {
+    if (!picked && !external) {
       go(formData, { date: deliveryDate, error: "선택한 차량을 확인하세요." });
     }
+    if (external) {
+      selected = external;
+      manualVehicle = true;
+    } else if (picked) {
     const vehicleCount = vehicleCountForPallets(storedPallet, picked.maxPallet);
     selected = {
       vehicleTypeId: picked.id,
@@ -187,6 +193,7 @@ export async function registerSchedule(formData: FormData) {
     manualVehicle = Boolean(
       recommended && recommended.vehicleTypeId !== picked.id,
     );
+    }
   }
 
   if (selected) {
@@ -262,7 +269,8 @@ export async function changeScheduleVehicle(formData: FormData) {
     prisma.scheduleEntry.findUnique({ where: { id } }),
     prisma.vehicleType.findUnique({ where: { id: vehicleTypeId } }),
   ]);
-  if (!entry || !vehicle) {
+  const external = externalTransport(vehicleTypeId);
+  if (!entry || (!vehicle && !external)) {
     go(formData, { date, error: "일정 또는 차량을 확인하세요." });
   }
   if (entry.status === "DONE" || entry.status === "CANCELLED") {
@@ -285,28 +293,28 @@ export async function changeScheduleVehicle(formData: FormData) {
   );
   const vehicleCount = vehicleCountForPallets(
     totalPallets || entry.palletCount,
-    vehicle.maxPallet,
+    vehicle?.maxPallet,
   );
-  const selected: VehicleRecommendation = {
-    vehicleTypeId: vehicle.id,
-    vehicleName: vehicle.vehicleName,
+  const selected: VehicleRecommendation = external ?? {
+    vehicleTypeId: vehicle!.id,
+    vehicleName: vehicle!.vehicleName,
     vehicleCount,
-    maxPallet: vehicle.maxPallet,
-    maxWeight: vehicle.maxWeight,
+    maxPallet: vehicle!.maxPallet,
+    maxWeight: vehicle!.maxWeight,
     loadingRate: loadingRateForPallets(
       totalPallets || entry.palletCount,
-      vehicle.maxPallet,
+      vehicle!.maxPallet,
       vehicleCount,
     ),
-    primaryRegionType: vehicle.primaryRegionType,
-    boxPreferred: vehicle.boxPreferred,
+    primaryRegionType: vehicle!.primaryRegionType,
+    boxPreferred: vehicle!.boxPreferred,
   };
 
   await prisma.scheduleEntry.updateMany({
     where: { id: { in: groupmates.map((row) => row.id) } },
     data: {
       selectedVehicleJson: JSON.stringify(selected),
-      logistics: vehicle.vehicleName,
+      logistics: selected.vehicleName,
     },
   });
 
@@ -316,19 +324,35 @@ export async function changeScheduleVehicle(formData: FormData) {
       routeCode: date,
       recommendation: recommended?.vehicleName ?? null,
       selectedResult: entry.consolidateGroupId
-        ? `${vehicle.vehicleName} (합차 ${groupmates.length}건)`
-        : vehicle.vehicleName,
+        ? `${selected.vehicleName} (합차 ${groupmates.length}건)`
+        : selected.vehicleName,
     },
   });
 
   await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
-  const countLabel = vehicleCount > 1 ? ` ×${vehicleCount}` : "";
+  const countLabel = selected.vehicleCount > 1 ? ` ×${selected.vehicleCount}` : "";
   const groupLabel =
     entry.consolidateGroupId && groupmates.length > 1
       ? ` · 합차 ${groupmates.length}건`
       : "";
-  go(formData, { date, ok: `${vehicle.vehicleName}${countLabel}${groupLabel}로 바꿨습니다.` });
+  go(formData, { date, ok: `${selected.vehicleName}${countLabel}${groupLabel}로 바꿨습니다.` });
+}
+
+export async function saveScheduleTransportFee(formData: FormData) {
+  const id = text(formData, "id");
+  const date = text(formData, "date");
+  const vehicleId = text(formData, "vehicleId");
+  const raw = parseTransportFee(text(formData, "amount"));
+  if (raw === null) go(formData, { date, error: "운송 금액은 0원 이상 10억 원 이하의 정수로 입력하세요." });
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
+  const selected = entry && (parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null) ?? parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null));
+  if (!entry || entry.deliveryDate !== date || entry.status === "CANCELLED" || !selected || selected.vehicleTypeId !== vehicleId) go(formData, { date, error: "배차나 운송 수단이 변경되었습니다. 다시 확인하세요." });
+  const key = transportFeeKey(id, vehicleId);
+  if (raw) await prisma.appSetting.upsert({ where: { key }, create: { key, value: raw }, update: { value: raw } });
+  else await prisma.appSetting.deleteMany({ where: { key } });
+  revalidatePath("/");
+  go(formData, { date, ok: raw ? "운송 금액을 저장했습니다." : "운송 금액 입력을 지웠습니다." });
 }
 
 function sameQty(a: number | null | undefined, b: number | null): boolean {

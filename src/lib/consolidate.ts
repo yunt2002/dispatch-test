@@ -10,6 +10,7 @@ import {
 import { consolidateLabel } from "@/lib/consolidate-label";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { externalTransport } from "@/lib/external-transport";
 
 export function capacityUnits(
   pallet: number | null | undefined,
@@ -78,6 +79,9 @@ export async function consolidateEntries(input: {
   if (selected.some((e) => e.status === "DONE" || e.status === "CANCELLED")) {
     return { error: "완료·취소 건은 합차할 수 없습니다." };
   }
+  if (selected.some((entry) => externalTransport(parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null)?.vehicleTypeId))) {
+    return { error: "용차·택배 건은 합차 시 자사 차량으로 자동 변경될 수 있어 현재 합차할 수 없습니다. 같은 거래처 품목은 새 납품 등록에서 함께 등록하세요." };
+  }
 
   // 기존 합차 그룹의 일부만 골라도 그룹 전체로 확장 (잔여 고아 그룹 방지)
   const touchedGroupIds = [
@@ -97,6 +101,9 @@ export async function consolidateEntries(input: {
       if (!byId.has(s.id)) byId.set(s.id, s);
     }
     entries = [...byId.values()];
+  }
+  if (entries.some((entry) => externalTransport(parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null)?.vehicleTypeId))) {
+    return { error: "묶음에 용차·택배 건이 있어 자사 차량 합차를 진행할 수 없습니다. 차량을 먼저 확인하세요." };
   }
 
   const totalPallets = entries.reduce(

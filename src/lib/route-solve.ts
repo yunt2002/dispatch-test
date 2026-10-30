@@ -8,6 +8,7 @@ import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { prisma } from "@/lib/prisma";
 import { groupRouteStops } from "@/lib/route-stop-groups";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
+import { externalTransport } from "@/lib/external-transport";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -109,6 +110,12 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       entry.locationName?.trim() ||
       entry.customerName?.trim() ||
       "납품지";
+    const assigned = assignedVehicle(entry);
+    const external = externalTransport(assigned?.vehicleTypeId);
+    if (external) {
+      unassignedDetails.push({ id: entry.id, title, reason: `${external.vehicleName} · 자사 차량 경로 제외` });
+      continue;
+    }
     const marker = markerById.get(entry.id);
     if (!marker) {
       unassignedDetails.push({
@@ -118,7 +125,6 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       });
       continue;
     }
-    const assigned = assignedVehicle(entry);
     const demand =
       entry.palletCount != null && entry.palletCount > 0 ? entry.palletCount : 1;
     stops.push({
