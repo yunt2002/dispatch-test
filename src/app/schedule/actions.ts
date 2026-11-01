@@ -24,7 +24,7 @@ import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
-import { boxLoadingKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
+import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -61,6 +61,8 @@ export async function updateBoxLoading(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const mode = text(formData, "loadingMode");
   if (!isBoxLoadingMode(mode)) go(formData, { date, error: "박스 적재 방식을 확인하세요." });
+  const target = mode === "shared" ? text(formData, "loadingTarget") : "";
+  if (target.length > 120) go(formData, { date, error: "합적 대상은 120자 이내로 입력하세요." });
   const pallets = boxLoadingPallets(mode, text(formData, "extraPallets"));
   if (pallets == null) go(formData, { date, error: "별도 PLT 수량은 1 이상의 정수로 입력하세요." });
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
@@ -73,6 +75,7 @@ export async function updateBoxLoading(formData: FormData) {
   await prisma.$transaction([
     prisma.scheduleEntry.update({ where: { id }, data: { palletCount: pallets } }),
     prisma.appSetting.upsert({ where: { key: boxLoadingKey(id) }, create: { key: boxLoadingKey(id), value: mode }, update: { value: mode } }),
+    prisma.appSetting.upsert({ where: { key: boxLoadingTargetKey(id) }, create: { key: boxLoadingTargetKey(id), value: target }, update: { value: target } }),
     ...(updated ? [prisma.scheduleEntry.updateMany({ where: { id: { in: members.map((member) => member.id) } }, data: { selectedVehicleJson: JSON.stringify(updated) } })] : []),
   ]);
   await rebalanceDayFleet(entry.deliveryDate);
@@ -423,6 +426,7 @@ export async function updateSchedule(formData: FormData) {
   if ((entry.boxCount == null) !== (boxCount == null)) {
     if (boxCount != null) await prisma.appSetting.upsert({ where: { key: boxLoadingKey(id) }, create: { key: boxLoadingKey(id), value: "unknown" }, update: { value: "unknown" } });
     else await prisma.appSetting.deleteMany({ where: { key: boxLoadingKey(id) } });
+    await prisma.appSetting.deleteMany({ where: { key: boxLoadingTargetKey(id) } });
   }
 
   if (!locationChanged && !qtyChanged && !productChanged) {

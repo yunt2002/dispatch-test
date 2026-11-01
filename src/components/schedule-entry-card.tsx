@@ -49,6 +49,7 @@ export function ScheduleEntryCard({
   transportFee = null,
   boxLoadingMode,
   boxPallets,
+  boxLoadingTarget,
 }: {
   id: string;
   date: string;
@@ -76,6 +77,7 @@ export function ScheduleEntryCard({
   transportFee?: string | null;
   boxLoadingMode: BoxLoadingMode | null;
   boxPallets: number | null;
+  boxLoadingTarget: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [editCustomer, setEditCustomer] = useState(customerName ?? "");
@@ -234,7 +236,7 @@ export function ScheduleEntryCard({
       ) : null}
 
       {returnTo === "confirm" && selectedVehicleTypeId ? <ScheduleTransportFee id={id} date={date} vehicleId={selectedVehicleTypeId} value={transportFee} /> : null}
-      {returnTo === "confirm" && qtyUnit === "box" && !done ? <ScheduleBoxLoading id={id} date={date} mode={boxLoadingMode} pallets={boxPallets} returnTo={returnTo} /> : null}
+      {qtyUnit === "box" && !done ? <ScheduleBoxLoading id={id} date={date} mode={boxLoadingMode} pallets={boxPallets} target={boxLoadingTarget} returnTo={returnTo} /> : null}
 
       <div className="dispatch-card-actions">
         {!done ? (

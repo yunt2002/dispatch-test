@@ -21,7 +21,7 @@ import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 import { groupScheduleCards } from "@/lib/schedule-card-groups";
 import MapRoutePage from "@/components/map-route-page";
 import { EXTERNAL_TRANSPORTS, externalTransport, transportFeeKey } from "@/lib/external-transport";
-import { boxLoadingKey, isBoxLoadingMode } from "@/lib/schedule-box-loading";
+import { boxLoadingKey, boxLoadingTargetKey, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -74,9 +74,10 @@ export default async function HomePage({
   const feeKeys = entries.flatMap((entry) => { const selected = selectedVehicle(entry); return selected ? [transportFeeKey(entry.id, selected.vehicleTypeId)] : []; });
   const feeSettings = view === "confirm" && feeKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: feeKeys } }, select: { key: true, value: true } }) : [];
   const fees = new Map(feeSettings.map((setting) => [setting.key, setting.value]));
-  const boxKeys = entries.filter((entry) => entry.boxCount != null).map((entry) => boxLoadingKey(entry.id));
+  const boxKeys = entries.filter((entry) => entry.boxCount != null).flatMap((entry) => [boxLoadingKey(entry.id), boxLoadingTargetKey(entry.id)]);
   const boxSettings = boxKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: boxKeys } } }) : [];
   const boxModes = new Map(boxSettings.filter((setting) => isBoxLoadingMode(setting.value)).map((setting) => [setting.key, setting.value]));
+  const boxTargets = new Map(boxSettings.map((setting) => [setting.key, setting.value]));
 
   const reviewEntries = entries.filter((entry) => entry.status === "PLANNED");
   const confirmedEntries = entries.filter((entry) => entry.status === "CONFIRMED");
@@ -158,9 +159,7 @@ export default async function HomePage({
     const qtyUnit = entry.palletCount != null && entry.boxCount == null ? "plt" : "box";
     const quantity = qtyUnit === "plt" ? (entry.palletCount ?? 0) : (entry.boxCount ?? 0);
     const qtyLabel =
-      entry.boxCount != null && entry.palletCount != null
-        ? `${formatNumber(entry.boxCount)} 박스 · ${formatNumber(entry.palletCount)} PLT`
-        : entry.boxCount != null
+      entry.boxCount != null
           ? `${formatNumber(entry.boxCount)} 박스`
           : entry.palletCount != null
             ? `${formatNumber(entry.palletCount)} PLT`
@@ -181,6 +180,7 @@ export default async function HomePage({
         qtyUnit={qtyUnit}
         boxLoadingMode={isBoxLoadingMode(boxModes.get(boxLoadingKey(entry.id))) ? boxModes.get(boxLoadingKey(entry.id)) as import("@/lib/schedule-box-loading").BoxLoadingMode : null}
         boxPallets={entry.palletCount}
+        boxLoadingTarget={boxTargets.get(boxLoadingTargetKey(entry.id)) ?? ""}
         quantity={quantity}
         reason={externalTransport(selected?.vehicleTypeId) ? "외부 운송 · 자사 차량 경로에서 제외" : reasonOneLine(entry.recommendationReason)}
         recommendedName={recommended?.vehicleName ?? null}
@@ -217,7 +217,7 @@ export default async function HomePage({
         status={first.status} selectedVehicleId={selected?.vehicleTypeId ?? null}
         returnTo={view} allowConfirm={view === "confirm"}
         vehicleName={selected?.vehicleName ?? null} vehicleCount={selected?.vehicleCount ?? 1} vehicles={vehicleOptions} warnings={warnings}
-        totalLabel={unknownPallets ? `${formatNumber(totalPallets)} PLT + ${unknownPallets}건 미확인` : `합계 ${formatNumber(totalPallets)} PLT`}
+        totalLabel={unknownPallets || group.some((entry) => entry.boxCount != null && (!boxModes.get(boxLoadingKey(entry.id)) || boxModes.get(boxLoadingKey(entry.id)) === "unknown")) ? `적재 ${formatNumber(totalPallets)} PLT · 확인 필요` : `적재 ${formatNumber(totalPallets)} PLT`}
         items={group.map((entry) => {
           const itemVehicle = selectedVehicle(entry);
           const qtyUnit = entry.palletCount != null && entry.boxCount == null ? "plt" as const : "box" as const;
@@ -225,10 +225,10 @@ export default async function HomePage({
             vehicleId: itemVehicle?.vehicleTypeId ?? null,
             boxLoadingMode: isBoxLoadingMode(boxModes.get(boxLoadingKey(entry.id))) ? boxModes.get(boxLoadingKey(entry.id)) as import("@/lib/schedule-box-loading").BoxLoadingMode : null,
             boxPallets: entry.palletCount,
+            boxLoadingTarget: boxTargets.get(boxLoadingTargetKey(entry.id)) ?? "",
             transportFee: itemVehicle ? fees.get(transportFeeKey(entry.id, itemVehicle.vehicleTypeId)) ?? null : null,
             quantity: qtyUnit === "plt" ? entry.palletCount ?? 0 : entry.boxCount ?? 0, qtyUnit,
-            qtyLabel: entry.boxCount != null && entry.palletCount != null ? `${formatNumber(entry.boxCount)} 박스 · ${formatNumber(entry.palletCount)} PLT`
-              : entry.boxCount != null ? `${formatNumber(entry.boxCount)} 박스` : entry.palletCount != null ? `${formatNumber(entry.palletCount)} PLT` : "-" };
+            qtyLabel: entry.boxCount != null ? `${formatNumber(entry.boxCount)} 박스` : entry.palletCount != null ? `${formatNumber(entry.palletCount)} PLT` : "-" };
         })}
       />;
     });
