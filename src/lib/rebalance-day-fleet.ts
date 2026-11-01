@@ -104,7 +104,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
       locationName: entry.locationName,
       customerName: entry.customerName,
       boxCount: entry.boxCount,
-      palletCount: entry.boxCount != null ? null : entry.palletCount,
+      palletCount: entry.palletCount,
       productCode: entry.productCode,
       productName: entry.productName,
       vehicles,
@@ -113,10 +113,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
       remainingByVehicleId: { ...remaining },
     });
 
-    const nextPallet =
-      entry.boxCount != null
-        ? (result.palletCount ?? entry.palletCount)
-        : (result.palletCount ?? entry.palletCount);
+    const nextPallet = entry.palletCount;
     const nextRec = result.recommended;
     const used = capacityUnits(nextPallet, entry.boxCount);
 

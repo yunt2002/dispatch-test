@@ -15,6 +15,8 @@ import { ConfirmSubmit } from "@/components/confirm-submit";
 import type { ScheduleVehicleOption } from "@/components/schedule-entry-row";
 import { ScheduleSelectCheckbox } from "@/components/schedule-selection";
 import { ScheduleTransportFee } from "@/components/schedule-transport-fee";
+import { ScheduleBoxLoading } from "@/components/schedule-box-loading";
+import type { BoxLoadingMode } from "@/lib/schedule-box-loading";
 import {
   DELIVERY_CUSTOMERS,
   resolveLocationFromCustomer,
@@ -45,6 +47,8 @@ export function ScheduleEntryCard({
   returnTo = "request",
   allowConfirm = true,
   transportFee = null,
+  boxLoadingMode,
+  boxPallets,
 }: {
   id: string;
   date: string;
@@ -70,6 +74,8 @@ export function ScheduleEntryCard({
   returnTo?: "request" | "confirm";
   allowConfirm?: boolean;
   transportFee?: string | null;
+  boxLoadingMode: BoxLoadingMode | null;
+  boxPallets: number | null;
 }) {
   const [editing, setEditing] = useState(false);
   const [editCustomer, setEditCustomer] = useState(customerName ?? "");
@@ -228,6 +234,7 @@ export function ScheduleEntryCard({
       ) : null}
 
       {returnTo === "confirm" && selectedVehicleTypeId ? <ScheduleTransportFee id={id} date={date} vehicleId={selectedVehicleTypeId} value={transportFee} /> : null}
+      {returnTo === "confirm" && qtyUnit === "box" && !done ? <ScheduleBoxLoading id={id} date={date} mode={boxLoadingMode} pallets={boxPallets} returnTo={returnTo} /> : null}
 
       <div className="dispatch-card-actions">
         {!done ? (

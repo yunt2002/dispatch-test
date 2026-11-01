@@ -21,6 +21,7 @@ import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 import { groupScheduleCards } from "@/lib/schedule-card-groups";
 import MapRoutePage from "@/components/map-route-page";
 import { EXTERNAL_TRANSPORTS, externalTransport, transportFeeKey } from "@/lib/external-transport";
+import { boxLoadingKey, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -73,6 +74,9 @@ export default async function HomePage({
   const feeKeys = entries.flatMap((entry) => { const selected = selectedVehicle(entry); return selected ? [transportFeeKey(entry.id, selected.vehicleTypeId)] : []; });
   const feeSettings = view === "confirm" && feeKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: feeKeys } }, select: { key: true, value: true } }) : [];
   const fees = new Map(feeSettings.map((setting) => [setting.key, setting.value]));
+  const boxKeys = entries.filter((entry) => entry.boxCount != null).map((entry) => boxLoadingKey(entry.id));
+  const boxSettings = boxKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: boxKeys } } }) : [];
+  const boxModes = new Map(boxSettings.filter((setting) => isBoxLoadingMode(setting.value)).map((setting) => [setting.key, setting.value]));
 
   const reviewEntries = entries.filter((entry) => entry.status === "PLANNED");
   const confirmedEntries = entries.filter((entry) => entry.status === "CONFIRMED");
@@ -80,7 +84,7 @@ export default async function HomePage({
   const activeEntries = entries.filter((entry) => entry.status !== "DONE");
 
   const looseBoxEntries = activeEntries.filter(
-    (entry) => entry.boxCount != null && entry.palletCount == null,
+    (entry) => entry.boxCount != null && (entry.palletCount == null || entry.palletCount === 0),
   );
   const looseBoxCount = looseBoxEntries.reduce((sum, entry) => sum + (entry.boxCount ?? 0), 0);
 
@@ -175,6 +179,8 @@ export default async function HomePage({
         productName={entry.productName}
         qtyLabel={qtyLabel}
         qtyUnit={qtyUnit}
+        boxLoadingMode={isBoxLoadingMode(boxModes.get(boxLoadingKey(entry.id))) ? boxModes.get(boxLoadingKey(entry.id)) as import("@/lib/schedule-box-loading").BoxLoadingMode : null}
+        boxPallets={entry.palletCount}
         quantity={quantity}
         reason={externalTransport(selected?.vehicleTypeId) ? "외부 운송 · 자사 차량 경로에서 제외" : reasonOneLine(entry.recommendationReason)}
         recommendedName={recommended?.vehicleName ?? null}
@@ -186,7 +192,7 @@ export default async function HomePage({
         status={entry.status}
         transportFee={selected ? fees.get(transportFeeKey(entry.id, selected.vehicleTypeId)) ?? null : null}
         vehicles={vehicleOptions}
-        warnings={parseJson<string[]>(entry.warningsJson, [])}
+        warnings={[...parseJson<string[]>(entry.warningsJson, []), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])]}
         returnTo={view}
         allowConfirm={view === "confirm"}
       />
@@ -202,6 +208,7 @@ export default async function HomePage({
       const totalPallets = group.reduce((sum, entry) => sum + (entry.palletCount ?? 0), 0);
       const unknownPallets = group.filter((entry) => entry.palletCount == null).length;
       const warnings = [...new Set(group.flatMap((entry) => parseJson<string[]>(entry.warningsJson, [])))];
+      if (group.some((entry) => entry.boxCount != null && (!boxModes.get(boxLoadingKey(entry.id)) || boxModes.get(boxLoadingKey(entry.id)) === "unknown"))) warnings.push("박스 적재 방식·공간 확인 필요. 기존 납품의 PLT는 확인 전까지 유지합니다.");
       if (new Set(group.map((entry) => selectedVehicle(entry)?.vehicleTypeId ?? "")).size > 1) warnings.push("묶음 내 차량 배정이 서로 다릅니다. 차량을 확인하세요.");
       if (allMembers.some((entry) => entry.status !== first.status)) warnings.push("이 묶음의 일부 품목이 다른 상태에 있습니다. 다른 상태 칸도 확인하세요.");
       return <ScheduleGroupCard
@@ -216,6 +223,8 @@ export default async function HomePage({
           const qtyUnit = entry.palletCount != null && entry.boxCount == null ? "plt" as const : "box" as const;
           return { id: entry.id, locationName: entry.locationName, customerName: entry.customerName, productName: entry.productName,
             vehicleId: itemVehicle?.vehicleTypeId ?? null,
+            boxLoadingMode: isBoxLoadingMode(boxModes.get(boxLoadingKey(entry.id))) ? boxModes.get(boxLoadingKey(entry.id)) as import("@/lib/schedule-box-loading").BoxLoadingMode : null,
+            boxPallets: entry.palletCount,
             transportFee: itemVehicle ? fees.get(transportFeeKey(entry.id, itemVehicle.vehicleTypeId)) ?? null : null,
             quantity: qtyUnit === "plt" ? entry.palletCount ?? 0 : entry.boxCount ?? 0, qtyUnit,
             qtyLabel: entry.boxCount != null && entry.palletCount != null ? `${formatNumber(entry.boxCount)} 박스 · ${formatNumber(entry.palletCount)} PLT`
@@ -336,7 +345,7 @@ export default async function HomePage({
             })}
             {looseBoxCount > 0 ? (
               <p className="dispatch-loose-note">
-                낱개 박스 {formatNumber(looseBoxCount)} · PLT 미환산 · 별도 보관
+                추가 PLT가 없는 박스 {formatNumber(looseBoxCount)}개 · 실제 적재 공간·고정 확인 필요
               </p>
             ) : null}
           </section>

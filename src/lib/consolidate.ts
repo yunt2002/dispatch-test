@@ -11,15 +11,9 @@ import { consolidateLabel } from "@/lib/consolidate-label";
 import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { externalTransport } from "@/lib/external-transport";
+import { capacityUnits } from "@/lib/schedule-box-loading";
 
-export function capacityUnits(
-  pallet: number | null | undefined,
-  boxCount: number | null | undefined,
-) {
-  if (pallet != null && pallet > 0) return pallet;
-  if (boxCount != null && boxCount > 0) return 1;
-  return 0;
-}
+export { capacityUnits };
 
 function shortGroupLabel(groupId: string) {
   return groupId.slice(-4).toUpperCase();
@@ -110,9 +104,6 @@ export async function consolidateEntries(input: {
     (sum, e) => sum + capacityUnits(e.palletCount, e.boxCount),
     0,
   );
-  if (totalPallets <= 0) {
-    return { error: "PLT(또는 박스) 수량이 없어 합차할 수 없습니다." };
-  }
 
   // 이미 같은 그룹이면 차량만 재맞춤
   const existingGroups = [

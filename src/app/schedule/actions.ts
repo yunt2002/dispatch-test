@@ -24,6 +24,7 @@ import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
+import { boxLoadingKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -55,7 +56,31 @@ async function loadRegions(): Promise<RegionLookup> {
   );
 }
 
-/** 당일 차량별 잔여 PLT (한도 − 배정 합). PLT 없고 박스만 있으면 1칸으로 본다. */
+export async function updateBoxLoading(formData: FormData) {
+  const id = text(formData, "id");
+  const date = optionalText(formData, "date") ?? undefined;
+  const mode = text(formData, "loadingMode");
+  if (!isBoxLoadingMode(mode)) go(formData, { date, error: "박스 적재 방식을 확인하세요." });
+  const pallets = boxLoadingPallets(mode, text(formData, "extraPallets"));
+  if (pallets == null) go(formData, { date, error: "별도 PLT 수량은 1 이상의 정수로 입력하세요." });
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
+  if (!entry || entry.boxCount == null || entry.status === "DONE" || entry.status === "CANCELLED") go(formData, { date, error: "수정 가능한 박스 납품을 확인하세요." });
+  const members = entry.consolidateGroupId ? await prisma.scheduleEntry.findMany({ where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: entry.deliveryDate, status: { in: ["PLANNED", "CONFIRMED"] } } }) : [entry];
+  const selected = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
+  const total = members.reduce((sum, member) => sum + (member.id === id ? pallets : capacityUnits(member.palletCount, member.boxCount)), 0);
+  const count = selected ? vehicleCountForPallets(total, selected.maxPallet) : 1;
+  const updated = selected ? { ...selected, vehicleCount: count, loadingRate: loadingRateForPallets(total, selected.maxPallet, count) } : null;
+  await prisma.$transaction([
+    prisma.scheduleEntry.update({ where: { id }, data: { palletCount: pallets } }),
+    prisma.appSetting.upsert({ where: { key: boxLoadingKey(id) }, create: { key: boxLoadingKey(id), value: mode }, update: { value: mode } }),
+    ...(updated ? [prisma.scheduleEntry.updateMany({ where: { id: { in: members.map((member) => member.id) } }, data: { selectedVehicleJson: JSON.stringify(updated) } })] : []),
+  ]);
+  await rebalanceDayFleet(entry.deliveryDate);
+  revalidatePath("/");
+  go(formData, { date: entry.deliveryDate, ok: "박스 적재 방식을 저장했습니다. 공간과 고정 상태를 확인하세요." });
+}
+
+/** 당일 차량별 잔여 PLT (한도 − 입력된 추가 PLT 합). */
 async function remainingPalletsByVehicle(deliveryDate: string) {
   const [vehicles, entries] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
@@ -69,12 +94,7 @@ async function remainingPalletsByVehicle(deliveryDate: string) {
       parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null) ??
       parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
     if (!selected) continue;
-    const units =
-      entry.palletCount != null && entry.palletCount > 0
-        ? entry.palletCount
-        : entry.boxCount != null && entry.boxCount > 0
-          ? 1
-          : 0;
+    const units = capacityUnits(entry.palletCount, entry.boxCount);
     if (units <= 0) continue;
     used.set(selected.vehicleTypeId, (used.get(selected.vehicleTypeId) ?? 0) + units);
   }
@@ -151,7 +171,7 @@ export async function registerSchedule(formData: FormData) {
   const qtyUnit = qtyUnits[index];
   const quantity = quantities[index]!;
   const boxCount = qtyUnit === "box" ? quantity : null;
-  const palletCount = qtyUnit === "plt" ? quantity : null;
+  const palletCount = qtyUnit === "plt" ? quantity : 0;
   const result = recommendForQuantity({
     locationName: resolvedLocation,
     customerName,
@@ -164,7 +184,7 @@ export async function registerSchedule(formData: FormData) {
     remainingByVehicleId,
   });
 
-  const storedPallet = qtyUnit === "plt" ? palletCount : result.palletCount;
+  const storedPallet = palletCount;
   const recommended = result.recommended;
   let selected = recommended;
   let manualVehicle = false;
@@ -201,6 +221,7 @@ export async function registerSchedule(formData: FormData) {
     remainingByVehicleId[selected.vehicleTypeId] = Math.max(0, (remainingByVehicleId[selected.vehicleTypeId] ?? 0) - used);
   }
   return { data: {
+      id: randomUUID(),
       deliveryDate,
       locationName: resolvedLocation,
       regionType: result.regionType,
@@ -233,6 +254,7 @@ export async function registerSchedule(formData: FormData) {
       consolidateGroupId: groupId,
       ...(groupId ? { selectedVehicleJson: shared ? JSON.stringify(shared) : null, logistics: shared?.vehicleName ?? null } : {}),
     })) }),
+    ...rows.filter((row) => row.data.boxCount != null).map((row) => prisma.appSetting.create({ data: { key: boxLoadingKey(row.data.id), value: "unknown" } })),
     ...rows.map(({ recommended, selected, manualVehicle }) => prisma.appLog.create({ data: {
       userAction: "schedule_register",
       routeCode: deliveryDate,
@@ -387,7 +409,7 @@ export async function updateSchedule(formData: FormData) {
   }
 
   const boxCount = qtyUnit === "box" ? quantity : null;
-  const palletCount = qtyUnit === "plt" ? quantity : null;
+  const palletCount = qtyUnit === "plt" ? quantity : entry.boxCount != null ? entry.palletCount : 0;
   const locationChanged = locationName.trim() !== entry.locationName;
   const qtyChanged =
     qtyUnit === "plt" ? !sameQty(entry.palletCount, palletCount) : !sameQty(entry.boxCount, boxCount);
@@ -396,6 +418,11 @@ export async function updateSchedule(formData: FormData) {
 
   if (!locationChanged && !qtyChanged && !customerChanged && !productChanged) {
     go(formData, { date, ok: "변경된 내용이 없습니다." });
+  }
+
+  if ((entry.boxCount == null) !== (boxCount == null)) {
+    if (boxCount != null) await prisma.appSetting.upsert({ where: { key: boxLoadingKey(id) }, create: { key: boxLoadingKey(id), value: "unknown" }, update: { value: "unknown" } });
+    else await prisma.appSetting.deleteMany({ where: { key: boxLoadingKey(id) } });
   }
 
   if (!locationChanged && !qtyChanged && !productChanged) {
@@ -436,7 +463,7 @@ export async function updateSchedule(formData: FormData) {
     remainingByVehicleId,
   });
 
-  const nextPallet = qtyUnit === "plt" ? palletCount : result.palletCount;
+  const nextPallet = palletCount;
   const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
   const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
   // 담당자가 추천과 다른 차를 고른 경우: 추천만 갱신하고 선택 차량은 유지

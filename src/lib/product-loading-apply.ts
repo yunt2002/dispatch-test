@@ -102,7 +102,7 @@ export async function applyProductLoadingIfNeeded() {
     const rec = recommendForQuantity({
       locationName: entry.locationName,
       boxCount: entry.boxCount,
-      palletCount: entry.boxCount != null ? null : entry.palletCount,
+      palletCount: entry.palletCount,
       productCode: entry.productCode,
       productName: entry.productName,
       vehicles,
@@ -117,7 +117,7 @@ export async function applyProductLoadingIfNeeded() {
     await prisma.scheduleEntry.update({
       where: { id: entry.id },
       data: {
-        palletCount: entry.boxCount != null ? rec.palletCount : entry.palletCount,
+        palletCount: entry.palletCount,
         recommendedVehicleJson: rec.recommended ? JSON.stringify(rec.recommended) : null,
         selectedVehicleJson: manual
           ? entry.selectedVehicleJson

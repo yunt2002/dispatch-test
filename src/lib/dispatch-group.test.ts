@@ -23,6 +23,11 @@ function vehicle(partial: Partial<VehicleType> & Pick<VehicleType, "id" | "vehic
 }
 
 describe("dispatch groups", () => {
+  it("등록 담당자가 박스의 추가 PLT를 0으로 지정하면 품목 기준표로 다시 환산하지 않는다", () => {
+    const result = recommendForQuantity({ locationName: "인천", boxCount: 20, palletCount: 0, productName: "BD HIP SENSOR MAGNET ASSY", vehicles: [vehicle({ id: "v2", vehicleName: "2호차" })], regions: new Map([["인천", { regionType: "METROPOLITAN", preferredVehicleTypeId: "v2" }]]) });
+    assert.equal(result.palletCount, 0);
+    assert.equal(result.recommended?.vehicleName, "2호차");
+  });
   it("recommends 2호차 for metropolitan without inventing PLT", () => {
     const rows: NormalizedShipment[] = [
       {

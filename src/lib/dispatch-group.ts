@@ -394,12 +394,12 @@ export function recommendForQuantity(input: {
   const kgPerPallet = input.kgPerPallet ?? null;
   const boxCount = input.boxCount != null && input.boxCount > 0 ? input.boxCount : 0;
   let totalPallets =
-    input.palletCount != null && input.palletCount > 0 ? input.palletCount : null;
+    input.palletCount != null && input.palletCount >= 0 ? input.palletCount : null;
   let palletKnown = totalPallets != null;
   const warnings: string[] = [];
   const reasonLines: string[] = [];
   const family = matchProductLoading(input.productCode, input.productName);
-  if (family?.boxesPerPallet == null && family) {
+  if (family?.boxesPerPallet == null && family && input.palletCount == null) {
     warnings.push(`${family.familyName}: 낱개 박스 — PLT 환산 없음 · 별도 보관 · 자리 1칸`);
   }
   const zone = matchRouteZone({
@@ -489,7 +489,7 @@ export function recommendForQuantity(input: {
       return input.remainingByVehicleId[id] ?? 0;
     };
     // 박스만 있고 PLT 미환산이면 자리 1칸으로 본다
-    const need = needPallets > 0 ? needPallets : 1;
+    const need = Math.max(0, needPallets);
 
     const isEmergency = (vehicle: VehicleType) =>
       vehicle.priorityType === "EMERGENCY" || vehicle.primaryRegionType === "EMERGENCY";
