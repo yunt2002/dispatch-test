@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
     const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 4, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 5, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -155,14 +155,14 @@ export async function POST(request: Request) {
     else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
     else {
       const oldRegional = mode === "refresh" ? stored?.regional : undefined;
-      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : { ...regionalPlan, note: "권역별 자사 차량 1대, 초과 물량은 용차로 가정했습니다. 초과 자사 품목은 각각 별도 용차로 계산했으므로 실제 적재 및 운임을 확인하세요." };
+      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : { ...regionalPlan, note: "경상·전라는 분리하고, 가까운 다른 권역은 차고 기준 직선거리 우회 40km 이내일 때 경유 후보로 묶었습니다. 실제 도로·운행 순서와 적재를 확인하세요. 초과 자사 품목은 각각 별도 용차로 가정했습니다." };
       if (plan?.charterGroups) {
         const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalOrders(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
         if (problem) regional.error = problem;
         else {
           const routes = await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
           const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
-          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}` };
+          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : ""}` };
           if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
           else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
         }

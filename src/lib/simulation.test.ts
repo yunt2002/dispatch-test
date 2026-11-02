@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem } from "./simulation";
-import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalOrders } from "./simulation-regions";
+import { buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
@@ -52,6 +52,22 @@ test("한 권역 초과분과 권역 미확인 물량은 다른 자사 차량에
   assert.deepEqual(plan.orders[1].ids, []);
   assert.deepEqual(plan.charterGroups.flat().sort(), ["22", "23"]);
   assert.equal(validateCharterGroups(plan.items, plan.orders, plan.charterGroups), null);
+});
+test("비슷한 방향의 충청 경유지와 경상 납품지는 가배정하되 경상과 전라는 분리한다", () => {
+  const east: SimulationItem = { ...item(31, "1호차"), customer: "경상", region: "regional", regionalGroup: "경상권", lat: 35.5, lng: 128.5, pallets: null, weight: null };
+  const waypoint: SimulationItem = { ...item(32, "2호차"), customer: "충청", region: "regional", regionalGroup: "충청권", lat: 36.45, lng: 127.95, pallets: 1, weight: 100 };
+  const west: SimulationItem = { ...item(33, "2호차"), customer: "전라", region: "regional", regionalGroup: "전라권", lat: 35.2, lng: 126.9, pallets: 1, weight: 100 };
+  assert.equal(similarCorridor(east, waypoint), true);
+  assert.equal(similarCorridor(east, west), false);
+  const plan = buildRegionalPlan([east, waypoint]);
+  assert.equal(validateRegionalOrders(plan.items, plan.orders), null);
+  const eastRoute = plan.orders.find((order) => order.ids.includes('31'))!;
+  assert.ok(eastRoute.ids.includes('32'));
+  assert.ok(!eastRoute.ids.includes('33'));
+  assert.equal(plan.items.find((row) => row.rowNumber === 31)?.pallets, null);
+  const all = buildRegionalPlan([east, waypoint, west]);
+  assert.equal(validateRegionalOrders(all.items, all.orders), null);
+  assert.notEqual(all.orders.find((order) => order.ids.includes('31')), all.orders.find((order) => order.ids.includes('33')));
 });
 test("AI 용차 묶음이 누락·중복돼도 보수적 대체 묶음은 남은 용차만 정확히 포함한다", () => {
   const source = [item(1, "1호차"), { ...item(2, null), customer: "A", location: "서울" }, { ...item(3, null), customer: "A", location: "서울" }, { ...item(4, null), customer: "A", location: "" }, { ...item(5, null), customer: "A", location: "" }, { ...item(6, null), transport: "택배" }];

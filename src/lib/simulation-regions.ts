@@ -1,4 +1,5 @@
 import { fallbackCharterGroups, type SimulationItem } from "./simulation";
+import { DEFAULT_DEPOT } from "./depot";
 
 export type SimulationRegion = "capital" | "regional" | "unknown";
 
@@ -30,6 +31,23 @@ export function regionalScenarioItems(items: SimulationItem[]): SimulationItem[]
     : item);
 }
 
+function distance(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = Math.PI / 180;
+  const lat = (b.lat - a.lat) * rad, lng = (b.lng - a.lng) * rad;
+  const h = Math.sin(lat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(lng / 2) ** 2;
+  return 12742 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** 서로 다른 권역은 차고에서 두 점을 경유하는 직선거리 우회분이 40km 이내일 때만 후보로 본다. */
+export function similarCorridor(a: SimulationItem, b: SimulationItem): boolean {
+  if (!a.regionalGroup || !b.regionalGroup || a.lat == null || a.lng == null || b.lat == null || b.lng == null) return false;
+  if (a.regionalGroup === b.regionalGroup) return true;
+  const groups = new Set([a.regionalGroup, b.regionalGroup]);
+  if (groups.has("제주권") || (groups.has("경상권") && groups.has("전라권"))) return false;
+  const p = { lat: a.lat, lng: a.lng }, q = { lat: b.lat, lng: b.lng };
+  return Math.min(distance(DEFAULT_DEPOT, p), distance(DEFAULT_DEPOT, q)) + distance(p, q) - Math.max(distance(DEFAULT_DEPOT, p), distance(DEFAULT_DEPOT, q)) <= 40;
+}
+
 export function validateRegionalOrders(items: SimulationItem[], orders: { vehicle: string; ids: string[] }[]): string | null {
   const assigned = new Set(orders.flatMap((order) => order.ids));
   if (items.some((item) => item.region !== "regional" && assigned.has(String(item.rowNumber)))) return "지방이 아닌 물량은 지방 집중안의 자사 차량에 배정할 수 없습니다.";
@@ -37,7 +55,8 @@ export function validateRegionalOrders(items: SimulationItem[], orders: { vehicl
   for (const order of orders) {
     const groups = new Set(order.ids.map((id) => items.find((item) => String(item.rowNumber) === id)?.regionalGroup ?? null));
     if (groups.has(null)) return "배정된 납품지의 세부 권역을 확인해 주세요.";
-    if (groups.size > 1) return "한 차량에 서로 다른 지방 권역을 배정할 수 없습니다.";
+    const rows = order.ids.map((id) => items.find((item) => String(item.rowNumber) === id)!);
+    if (rows.some((item, i) => rows.slice(i + 1).some((other) => !similarCorridor(item, other)))) return "멀리 떨어진 권역을 한 차량에 배정할 수 없습니다.";
     for (const group of groups) {
       if (group && used.has(group)) return "같은 지방 권역을 여러 자사 차량에 나누지 않습니다. 초과 물량은 용차를 확인하세요.";
       if (group) used.add(group);
@@ -50,7 +69,7 @@ export function validateRegionalOrders(items: SimulationItem[], orders: { vehicl
 export function buildRegionalPlan(input: SimulationItem[]) {
   const items = input.map((item) => item.vehicle && item.region !== "unknown"
     ? { ...item, transport: "용차 (기존 자사 차량)", vehicle: null } : { ...item });
-  const candidates = items.filter((item) => item.region === "regional" && item.regionalGroup && item.lat != null && item.lng != null && item.pallets != null && Number.isFinite(item.pallets) && item.pallets >= 0 && item.weight != null && Number.isFinite(item.weight) && item.weight >= 0 && /용차/.test(item.transport));
+  const candidates = items.filter((item) => item.region === "regional" && item.regionalGroup && item.lat != null && item.lng != null && (item.pallets == null || (Number.isFinite(item.pallets) && item.pallets >= 0)) && (item.weight == null || (Number.isFinite(item.weight) && item.weight >= 0)) && /용차/.test(item.transport));
   const groups = [...new Set(candidates.map((item) => item.regionalGroup!))];
   type Order = { vehicle: string; ids: string[] };
   let best: { orders: Order[]; score: number } | null = null;
@@ -59,16 +78,33 @@ export function buildRegionalPlan(input: SimulationItem[]) {
     if (first && first === second) continue;
     const orders: Order[] = ["1호차", "2호차"].map((vehicle, i) => {
       const group = i === 0 ? first : second;
+      // 미확인 값은 하한 합계에서만 제외한다. 적재 가능 확정이 아닌 가배정이다.
       let pallets = 0, weight = 0;
       const ids: string[] = [];
       const choices = candidates.filter((item) => item.regionalGroup === group).sort((a, b) => Number(/기존 자사/.test(b.transport)) - Number(/기존 자사/.test(a.transport)) || a.rowNumber - b.rowNumber);
       for (const item of choices) {
-        if (pallets + item.pallets! <= 8 && weight + item.weight! <= (i === 0 ? 4000 : 3500)) {
-          pallets += item.pallets!; weight += item.weight!; ids.push(String(item.rowNumber));
+        if (pallets + (item.pallets ?? 0) <= 8 && weight + (item.weight ?? 0) <= (i === 0 ? 4000 : 3500)) {
+          pallets += item.pallets ?? 0; weight += item.weight ?? 0; ids.push(String(item.rowNumber));
         }
       }
       return { vehicle, ids };
     });
+    // 다른 차량의 권역을 건드리지 않고 경로가 비슷한 나머지 납품지를 덧붙인다.
+    for (const [i, order] of orders.entries()) {
+      const otherIds = new Set(orders[1 - i].ids);
+      const otherGroups = new Set(candidates.filter((item) => otherIds.has(String(item.rowNumber))).map((item) => item.regionalGroup));
+      const assigned = new Set(orders.flatMap((o) => o.ids));
+      const selected = candidates.filter((item) => order.ids.includes(String(item.rowNumber)));
+      if (!selected.length) continue;
+      let pallets = selected.reduce((sum, item) => sum + (item.pallets ?? 0), 0);
+      let weight = selected.reduce((sum, item) => sum + (item.weight ?? 0), 0);
+      for (const item of candidates) {
+        if (assigned.has(String(item.rowNumber)) || otherGroups.has(item.regionalGroup) || selected.some((prior) => !similarCorridor(prior, item))) continue;
+        if (pallets + (item.pallets ?? 0) > 8 || weight + (item.weight ?? 0) > (i === 0 ? 4000 : 3500)) continue;
+        pallets += item.pallets ?? 0; weight += item.weight ?? 0;
+        order.ids.push(String(item.rowNumber)); assigned.add(String(item.rowNumber)); selected.push(item);
+      }
+    }
     const selected = orders.flatMap((o) => o.ids).map((id) => items.find((item) => String(item.rowNumber) === id)!);
     const score = selected.reduce((sum, item) => sum + (/기존 자사/.test(item.transport) ? 100000 : 1000) + (item.pallets ?? 0), 0) + (orders[0].ids.length ? 0.01 : 0);
     if (!best || score > best.score) best = { orders, score };
