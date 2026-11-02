@@ -4,8 +4,13 @@ export type PackingMode = "unknown" | "shared" | "loose" | "pallet";
 export type SimulationItem = ComparisonShipment & { vehicle: "1호차" | "2호차" | null; lat: number | null; lng: number | null; pallets: number | null; weight: number | null; packing: PackingMode; region?: "capital" | "regional" | "unknown"; regionalGroup?: string | null };
 export type SimulationRoute = { vehicle: string; items: SimulationItem[]; pallets: number; weight: number; unknownPallets: number; unknownWeight: number; distance: number | null; minutes: number | null; toll: number | null; fuel: number | null; over: boolean };
 export type CharterGroup = { items: SimulationItem[] };
-export type RegionalScenario = { routes: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[]; note: string; error?: string };
-export type SimulationResult = { items: SimulationItem[]; original: SimulationRoute[]; proposed: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[] | null; regional?: RegionalScenario; note: string; warnings: string[]; savedAt?: string; routeUpdatedAt?: string; candidateCount?: number; comparisonNote?: string; planSource?: string; restored?: boolean };
+export type RegionalScenario = { routes: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[]; note: string; error?: string; savedAt?: string; routeUpdatedAt?: string };
+export type SimulationResult = { items: SimulationItem[]; original: SimulationRoute[]; proposed: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[] | null; regional?: RegionalScenario; note: string; warnings: string[]; savedAt?: string; routeUpdatedAt?: string; inputFingerprint?: string; candidateCount?: number; comparisonNote?: string; planSource?: string; restored?: boolean };
+
+/** 지방안만 재시도할 때 기존 계획과 일반 AI안의 값과 조회 시각을 보존한다. */
+export function replaceRegionalScenario(stored: SimulationResult, regional: RegionalScenario, inputFingerprint: string): SimulationResult {
+  return { ...stored, regional, inputFingerprint, restored: false };
+}
 
 /** AI가 반환한 ID를 검증한다. 자사 품목은 반드시 포함하고, 외부 품목은 0~1회만 포함한다. */
 export function validateSimulationOrders(items: SimulationItem[], orders: { vehicle: string; ids: string[] }[]): string | null {

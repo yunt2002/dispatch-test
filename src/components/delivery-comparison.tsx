@@ -51,6 +51,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const [date, setDate] = useState(initialDate); const [file, setFile] = useState<File | null>(null);
   const [price, setPrice] = useState(""); const [priceSource, setPriceSource] = useState("경유 가격을 입력해 주세요.");
   const [result, setResult] = useState<SimulationResult | null>(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
+  const [lastAction, setLastAction] = useState("");
   const [originalTrips, setOriginalTrips] = useState("");
   const [packing, setPacking] = useState<Record<string, PackingMode>>({}); const [packingDirty, setPackingDirty] = useState(false);
   useEffect(() => { const controller = new AbortController(); fetch("/api/diesel-price", { signal: controller.signal }).then(async (r) => { if (!r.ok) throw new Error(); return r.json() as Promise<{ price: number; date: string }>; }).then((d) => { setPrice((current) => current || String(d.price)); setPriceSource(`오피넷 전국 평균 ${d.date} 기준 · 수정 가능`); }).catch(() => { if (!controller.signal.aborted) setPriceSource("오피넷 조회 실패 · 경유 가격을 직접 입력해 주세요."); }); return () => controller.abort(); }, []);
@@ -65,11 +66,11 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     setOriginalTrips(typeof saved?.originalTrips === "string" && /^\d*$/.test(saved.originalTrips) ? saved.originalTrips : "");
     if (typeof saved?.price === "string" && Number(saved.price) > 0) { setPrice(saved.price); setPriceSource("이 브라우저에 저장한 경유 가격 · 수정 가능"); }
   }
-  async function run(mode: "load" | "regenerate" | "refresh" = "load") {
+  async function run(mode: "load" | "regenerate" | "refresh" | "regional" = "load") {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
     if (!date) { setError("납품일을 선택해 주세요."); return; }
     setLoading(true); setError(""); const form = new FormData(); form.set("file", file); form.set("date", date); form.set("price", price); form.set("packing", JSON.stringify(packing)); form.set("mode", mode);
-    try { const response = await fetch("/api/route/compare", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다."); const next = data as SimulationResult; const trips = originalTrips || String(estimateCharterTrips(next.items)); setOriginalTrips(trips); savePreferences(file, date, { packing, originalTrips: trips, price }); setPackingDirty(false); setResult(next); }
+    try { const response = await fetch("/api/route/compare", { method: "POST", body: form }); const data = await response.json(); if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다."); const next = data as SimulationResult; const trips = originalTrips || String(estimateCharterTrips(next.items)); setOriginalTrips(trips); savePreferences(file, date, { packing, originalTrips: trips, price }); setPackingDirty(false); setResult(next); setLastAction(mode === "regional" ? "지방 집중안만 새로 생성" : mode === "refresh" ? "저장된 배차 유지 · 경로만 새로 조회" : next.restored ? "저장된 결과 불러옴" : "새 배차안 생성"); }
     catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
   const moved = result?.proposed.flatMap((route) => route.items.filter((item) => !item.vehicle).map((item) => ({ ...item, target: route.vehicle }))) ?? [];
@@ -99,11 +100,18 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { const value = e.target.value; setPrice(value); setPriceSource("직접 입력한 경유 가격 · 수정 가능"); setResult(null); savePreferences(file, date, { packing, originalTrips, price: value }); }} placeholder="직접 입력" /></label>
       <button type="button" className="dispatch-secondary-button" disabled={loading} onClick={() => void run("load")}>{loading ? "처리 중…" : "배차안 불러오기 / 만들기"}</button>
-      {result ? <><button type="button" className="dispatch-secondary-button" disabled={loading || packingDirty} onClick={() => void run("refresh")}>현재 안의 경로 새로고침</button><button type="button" className="dispatch-secondary-button" disabled={loading} onClick={() => void run("regenerate")}>AI 배차안 다시 만들기</button></> : null}</div>
+      {result ? <><button type="button" className="dispatch-secondary-button" disabled={loading || packingDirty} onClick={() => void run("refresh")}>현재 안의 경로 새로고침</button><button type="button" className="dispatch-secondary-button" disabled={loading || packingDirty} onClick={() => void run("regional")}>지방 집중안만 다시 만들기</button><button type="button" className="dispatch-secondary-button" disabled={loading} onClick={() => void run("regenerate")}>AI 배차안 다시 만들기</button></> : null}</div>
     <p className="comparison-note">{priceSource} · 사람 계획은 엑셀 행 순서 · 자사 차량 왕복, 임시 연비 7.1km/L</p>
     <p className="comparison-note">같은 조건은 저장된 안을 불러옵니다. 교통 정보만 갱신하려면 경로 새로고침을 누르세요.</p>
     {error ? <p className="dispatch-route-note-warn">{error}</p> : null}
-    {result ? <><p>{result.items.length}품목 · {result.restored ? "저장된 배차안" : "새 배차안"}</p>
+    {result ? <><p>{result.items.length}품목 · {lastAction || (result.restored ? "저장된 배차안" : "새 배차안")}</p>
+      <div className="simulation-run-info" aria-label="결과 기준">
+        <strong>이 결과의 기준</strong>
+        <p>파일 {file?.name || "확인 불가"} · 납품일 {date} · 경유 {price ? `${Number(price).toLocaleString("ko-KR")}원/L` : "미입력"} · 박스 적재 설정 {Object.keys(packing).length}품목{packingDirty ? " (변경 전 결과)" : ""} · 조건 식별번호 {result.inputFingerprint || "미확인"}</p>
+        <p>기존·AI 배차안 생성 {result.savedAt ? new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 기존·AI 경로 조회 {result.routeUpdatedAt ? new Date(result.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"}</p>
+        <p>지방 집중안 생성 {result.regional?.savedAt ? new Date(result.regional.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 지방 집중 경로 조회 {result.regional?.routeUpdatedAt ? new Date(result.regional.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"}</p>
+        <p>조건 식별번호는 파일 내용·납품일·경유 가격·적재 설정·주소・계산 버전을 구분합니다. 기존 용차 횟수는 화면에서 변경하며 식별번호에 포함되지 않습니다.</p>
+      </div>
       {result.warnings.map((w) => <p className="dispatch-route-note-warn" key={w}>{w}</p>)}
       {packingDirty ? <p className="dispatch-route-note-warn">적재 방식을 변경했습니다. 아래는 이전 결과입니다. 배차안을 불러오거나 다시 만드세요.</p> : null}
       <div className="comparison-result" aria-label="예상 비용 비교">

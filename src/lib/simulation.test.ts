@@ -1,10 +1,30 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem } from "./simulation";
+import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
+import { groqException, groqHttpError } from "./groq-errors";
 import { buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("Groq 요청 제한, 인증, 서버, 시간 초과와 형식 오류를 구분한다", () => {
+  assert.match(groqHttpError(429), /요청 한도/);
+  assert.match(groqHttpError(401), /인증/);
+  assert.match(groqHttpError(503), /서버 오류/);
+  assert.match(groqException(new DOMException("timeout", "TimeoutError")), /시간 초과/);
+  assert.match(groqException(new SyntaxError()), /형식/);
+});
+test("지방안만 재시도하면 기존·일반 AI안과 기존 경로 시각을 유지한다", () => {
+  const original = [{ vehicle: "1호차", minutes: 467 }] as SimulationResult["original"];
+  const proposed = [{ vehicle: "2호차", minutes: 500 }] as SimulationResult["proposed"];
+  const old = { items, original, proposed, remaining: [], charterGroups: [], note: "기존 AI", warnings: [], savedAt: "2026-11-02T00:00:00Z", routeUpdatedAt: "2026-11-02T01:00:00Z" } as SimulationResult;
+  const regional = { routes: [], remaining: [], charterGroups: [], note: "새 지방안", savedAt: "2026-11-03T00:00:00Z" };
+  const result = replaceRegionalScenario(old, regional, "abc");
+  assert.deepEqual(result.original, old.original);
+  assert.deepEqual(result.proposed, old.proposed);
+  assert.equal(result.savedAt, old.savedAt);
+  assert.equal(result.routeUpdatedAt, old.routeUpdatedAt);
+  assert.deepEqual(result.regional, regional);
+});
 test("지방 집중 AI 후보는 두 차량 배정·수도권 제외·택배 유지·알려진 적재 한도를 검사한다", () => {
   const a = { ...item(1, null), customer: "A", location: "김해", region: "regional" as const, regionalGroup: "경상권" };
   const b = { ...item(2, null), customer: "B", location: "창원", region: "regional" as const, regionalGroup: "경상권", lat: 37.05 };

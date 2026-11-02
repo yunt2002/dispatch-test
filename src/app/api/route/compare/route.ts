@@ -6,12 +6,13 @@ import { geocodeAddresses } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
-import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
+import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
+import { groqException, groqHttpError } from "@/lib/groq-errors";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -20,7 +21,7 @@ type ProposedPlan = { orders: Order[]; charterGroups: string[][] | null; note: s
 async function propose(items: SimulationItem[], objective: string, regionalOnly = false): Promise<ProposedPlan> {
   const key = process.env.GROQ_API_KEY?.trim();
   if (!key) return { orders: [], charterGroups: null, note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
-  let issue = "Groq 응답을 확인할 수 없습니다.";
+  const issues: string[] = [];
   const models = [...new Set([process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b", "openai/gpt-oss-120b"])];
   for (const model of models) try {
     const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -30,23 +31,23 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
           { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
       signal: AbortSignal.timeout(20000), cache: "no-store",
     });
-    if (!response.ok) throw new Error();
+    if (!response.ok) { issues.push(groqHttpError(response.status)); continue; }
     const data = await response.json() as { choices?: { message?: { content?: string } }[] };
     const content = data.choices?.[0]?.message?.content ?? "";
     const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[]; charterGroups?: unknown };
     const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
     const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
-    if (problem) { issue = problem; continue; }
+    if (problem) { issues.push(`후보 검증 실패: ${problem}`); continue; }
     const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
     if (charterProblem && regionalOnly) {
       const fallback = fallbackCharterGroups(items, orders);
       if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model, note: "Groq 차량 배정 · AI 용차 묶음 오류로 같은 거래처·지역 기준 용차 횟수를 가정했습니다. 실제 운행 확인 필요." };
     }
-    if (charterProblem) { issue = charterProblem; continue; }
+    if (charterProblem) { issues.push(`후보 검증 실패: ${charterProblem}`); continue; }
     return { orders, charterGroups: groups as string[][], model, note: "Groq 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다." };
-  } catch { issue = "Groq 제안 조회에 실패했습니다. 키와 연결을 확인하세요."; }
-  return { orders: [], charterGroups: null, note: `${issue} 다시 시도하세요.` };
+  } catch (error) { issues.push(groqException(error)); }
+  return { orders: [], charterGroups: null, note: [...new Set(issues)].join(" / ") || "Groq 응답을 확인할 수 없습니다." };
 }
 
 async function calculate(order: Order, items: SimulationItem[], price: number | null): Promise<SimulationRoute> {
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const mode = String(form.get("mode") || "load");
-    if (!["load", "regenerate", "refresh"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
+    if (!["load", "regenerate", "refresh", "regional"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
     const bytes = Buffer.from(await file.arrayBuffer());
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
     const sheet = findComparisonSheet(workbook, date);
@@ -89,10 +90,10 @@ export async function POST(request: Request) {
       const value = JSON.parse(setting.value) as SimulationResult;
       if (Array.isArray(value.items) && Array.isArray(value.original) && Array.isArray(value.proposed) && Array.isArray(value.charterGroups) && typeof value.savedAt === "string") stored = value;
     } catch { /* 오래된 결과는 다시 생성한다. */ }
-    if (mode === "load" && stored) return NextResponse.json({ ...stored, restored: true });
-    if (mode === "refresh" && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
-    const addresses = [...new Set(rows.map((row) => addressFor(row.customer)).filter((a): a is string => !!a))]; const points = await geocodeAddresses(addresses);
-    const items: SimulationItem[] = rows.map((row) => {
+    if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
+    if ((mode === "refresh" || mode === "regional") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
+    const addresses = [...new Set(rows.map((row) => addressFor(row.customer)).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
+    const items: SimulationItem[] = mode === "regional" && stored ? stored.items : rows.map((row) => {
       const address = addressFor(row.customer); const point = address ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const family = matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
@@ -112,23 +113,24 @@ export async function POST(request: Request) {
     const missingRegionalOwn = regionalItems.filter((item) => item.vehicle && (item.lat == null || item.lng == null));
     const regionalEligible = regionalItems.filter((item) => !item.vehicle || item.lat != null);
     const regionalPlan = buildRegionalPlan(regionalEligible);
-    const regionalAttempts = mode !== "refresh" && !uncertainOwn.length && !missingRegionalOwn.length
-      ? Promise.all(["두 차량을 지방에 배정하며 용차 횟수를 줄이기", "두 차량을 지방에 배정하며 운행 동선을 줄이기"].map((objective) => propose(regionalPlan.items, objective, true))) : null;
     let ai: ProposedPlan;
     let original: SimulationRoute[];
     let proposed: SimulationRoute[];
     let candidateCount = stored?.candidateCount ?? 0;
     let comparisonNote = stored?.comparisonNote ?? "";
     let savedAt = stored?.savedAt ?? new Date().toISOString();
-    if (mode === "refresh" && stored) {
+    if ((mode === "refresh" || mode === "regional") && stored) {
       const orders = stored.proposed.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) }));
       const groups = stored.charterGroups!.map((group) => group.items.map((item) => String(item.rowNumber)));
       const problem = validateSimulationOrders(eligible, orders) || validateCharterGroups(eligible, orders, groups);
       if (problem) return NextResponse.json({ error: `저장된 배차안을 다시 확인해 주세요: ${problem}` }, { status: 409 });
       ai = { orders, charterGroups: groups, note: stored.note, model: stored.planSource };
-      [original, proposed] = await Promise.all([Promise.all(originals.map((order) => calculate(order, eligible, price))), Promise.all(orders.map((order) => calculate(order, eligible, price)))]);
-      if ([...original, ...proposed].some((route) => route.items.length && route.distance == null)) return NextResponse.json({ error: "카카오 경로 조회에 실패해 저장된 결과를 유지했습니다. 다시 시도하세요." }, { status: 502 });
-      if (!comparisonNote.includes("후보 선택 당시의 비교 기준")) comparisonNote = `${comparisonNote} 후보 선택 당시의 비교 기준이며 경로만 갱신했습니다.`;
+      if (mode === "regional") { original = stored.original; proposed = stored.proposed; }
+      else {
+        [original, proposed] = await Promise.all([Promise.all(originals.map((order) => calculate(order, eligible, price))), Promise.all(orders.map((order) => calculate(order, eligible, price)))]);
+        if ([...original, ...proposed].some((route) => route.items.length && route.distance == null)) return NextResponse.json({ error: "카카오 경로 조회에 실패해 저장된 결과를 유지했습니다. 다시 시도하세요." }, { status: 502 });
+        if (!comparisonNote.includes("후보 선택 당시의 비교 기준")) comparisonNote = `${comparisonNote} 후보 선택 당시의 비교 기준이며 경로만 갱신했습니다.`;
+      }
     } else {
       const attempts = await Promise.all(["용차 운행 줄이기", "차량 경로 이동 최소화", "기존 배정 유지하며 가까운 납품 합차"].map((objective) => propose(eligible, objective)));
       const unique = new Map<string, ProposedPlan>();
@@ -157,7 +159,7 @@ export async function POST(request: Request) {
     else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
     else {
       const oldRegional = mode === "refresh" ? stored?.regional : undefined;
-      const attempts = regionalAttempts ? await regionalAttempts : [];
+      const attempts = mode !== "refresh" ? await Promise.all(["두 차량을 지방에 배정하며 용차 횟수를 줄이기", "두 차량을 지방에 배정하며 운행 동선을 줄이기"].map((objective) => propose(regionalPlan.items, objective, true))) : [];
       const candidates = [...new Map(attempts.filter((attempt) => attempt.charterGroups).map((attempt) => [JSON.stringify([attempt.orders, attempt.charterGroups]), attempt])).values()];
       const calculated = await Promise.all(candidates.map(async (candidate) => ({ candidate, routes: await Promise.all(candidate.orders.map((order) => calculate(order, regionalPlan.items, price))) })));
       const selected = chooseSimulationCandidate(calculated.map(({ candidate, routes }) => ({ routes, charterCount: candidate.charterGroups!.length, courierMovedIds: [] })));
@@ -169,15 +171,16 @@ export async function POST(request: Request) {
         else {
           const routes = chosen && mode !== "refresh" ? chosen.routes : await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
           const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
-          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : ""}` };
+          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), savedAt: mode === "refresh" ? oldRegional?.savedAt : new Date().toISOString(), routeUpdatedAt: new Date().toISOString(), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : ""}` };
           if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
           else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
         }
       } else regional.error = `1·2호차가 모두 지방을 운행하는 유효한 AI 후보를 만들지 못했습니다. ${attempts.find((attempt) => attempt.note)?.note || "납품지·적재 정보와 AI 연결을 확인하세요."}`;
     }
-    const result: SimulationResult = { items, original, proposed, remaining, charterGroups, regional, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), candidateCount, comparisonNote, planSource: ai.model ?? stored?.planSource };
+    if (mode === "regional" && regional.error) return NextResponse.json({ error: `지방 집중안 재시도 실패: ${regional.error} 기존 결과는 유지됩니다.` }, { status: 422 });
+    const result: SimulationResult = mode === "regional" && stored ? replaceRegionalScenario(stored, regional, signature.slice(0, 12)) : { items, original, proposed, remaining, charterGroups, regional, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), inputFingerprint: signature.slice(0, 12), candidateCount, comparisonNote, planSource: ai.model ?? stored?.planSource };
     const value = JSON.stringify(result);
-    if (mode === "refresh" && setting) {
+    if ((mode === "refresh" || mode === "regional") && setting) {
       const updated = await prisma.appSetting.updateMany({ where: { key, value: setting.value }, data: { value } });
       if (!updated.count) return NextResponse.json({ error: "다른 사용자가 배차안을 변경했습니다. 저장된 배차안을 다시 불러오세요." }, { status: 409 });
     } else if (mode === "load" && !setting) {
