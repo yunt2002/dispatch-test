@@ -63,7 +63,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
       </div>
       {warnings.length ? <details className="dispatch-warning"><summary>확인 사항 {warnings.length}개</summary><ul>{warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details> : null}
       {returnTo === "confirm" && items.some((item) => item.vehicleId) ? <details className="dispatch-group-edit"><summary>품목별 운송 금액</summary><p>운임을 한 번에 청구받은 묶음은 한 품목에만 금액을 입력하세요.</p>{items.map((item) => item.vehicleId ? <ScheduleTransportFee key={item.id} id={item.id} date={date} vehicleId={item.vehicleId} productName={item.productName} value={item.transportFee} /> : null)}</details> : null}
-      {!done ? items.filter((item) => item.qtyUnit === "box").map((item) => <div key={item.id}><span>{item.productName || "품명 미입력"}</span><ScheduleBoxLoading id={item.id} date={date} mode={item.boxLoadingMode} pallets={item.boxPallets} target={item.boxLoadingTarget} returnTo={returnTo} /></div>) : null}
+      {!done && items.some((item) => item.qtyUnit === "box") ? <details className="dispatch-group-edit"><summary>품목별 박스 적재</summary>{items.filter((item) => item.qtyUnit === "box").map((item) => <div className="dispatch-group-box-item" key={item.id}><span>{item.productName || "품명 미입력"}</span><ScheduleBoxLoading id={item.id} date={date} mode={item.boxLoadingMode} pallets={item.boxPallets} target={item.boxLoadingTarget} returnTo={returnTo} /></div>)}</details> : null}
       {!done ? <details className="dispatch-group-edit"><summary>품목별 수정</summary>
         {items.map((item) => <form action={updateSchedule} key={item.id} className="dispatch-group-edit-form">
           <input type="hidden" name="returnTo" value={returnTo} />

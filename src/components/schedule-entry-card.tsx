@@ -194,10 +194,9 @@ export function ScheduleEntryCard({
             ) : null}
           </div>
         </div>
-        <b>{qtyLabel}</b>
       </div>
       <div className="dispatch-job-client">{customerName || "거래처 미입력"}</div>
-      <div className="dispatch-job-product">{productName || "품명 미입력"}</div>
+      <div className="dispatch-job-item"><span className="dispatch-job-product">{productName || "품명 미입력"}</span><b>{qtyLabel}</b></div>
 
       <div className="dispatch-vehicle-row">
         <span className="dispatch-vehicle-badge" aria-hidden="true">{vehicleShort}</span>
