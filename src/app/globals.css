@@ -2342,20 +2342,16 @@ body {
 .simulation-chart-row { display: grid; grid-template-columns: 72px minmax(30px, 1fr) auto; gap: 10px; align-items: center; margin: 12px 0; font-size: 14px; }
 .simulation-chart-row strong { white-space: nowrap; font-size: 16px; }
 .simulation-chart-row strong small { display: block; margin-top: 3px; color: #595d5a; font-size: 12px; font-weight: 500; text-align: right; }
-.simulation-summary-intro { margin: 16px 0 8px; font-weight: 700; }
-.simulation-summary-intro span { display: block; color: #625e56; font-weight: 400; }
-.simulation-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px; margin-bottom: 16px; }
-.simulation-summary-card { min-width: 0; padding: 14px; border: 1px solid #e4d6c1; border-radius: 8px; background: #fff; }
-.simulation-summary-card h4 { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px; margin: 0 0 10px; font-size: 16px; }
-.simulation-summary-card h4 small { color: #645e55; font-size: 12px; font-weight: 500; }
-.simulation-summary-card dl { display: grid; gap: 8px; margin: 0; }
-.simulation-summary-card dl div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.simulation-summary-card dt { color: #56534d; font-size: 13px; }
-.simulation-summary-card dd { margin: 0; text-align: right; }
-.simulation-summary-card dd strong { display: block; font-size: 16px; }
-.simulation-summary-card dd small { display: block; color: #4c5c57; font-size: 12px; }
-.simulation-summary-card .simulation-summary-reason { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid #eee7dc; color: #56534d; font-size: 13px; }
-.simulation-summary-card .simulation-summary-unavailable { color: #a43d27; }
+.simulation-ranking { padding: 10px 12px; border-radius: 8px; background: #f7f5f0; }
+.simulation-ranking-caption { display: block; margin-bottom: 7px; color: #5b5b54; font-size: 13px; font-weight: 600; }
+.simulation-ranking-values { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.simulation-ranking-part { display: inline-flex; align-items: center; gap: 6px; }
+.simulation-ranking-item { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; padding: 5px 8px; border-left: 3px solid #8e999c; border-radius: 4px; background: #fff; font-size: 13px; }
+.simulation-ranking-item strong { font-size: 14px; white-space: nowrap; }
+.simulation-ranking-item.is-ai { border-color: #ed6b3d; }
+.simulation-ranking-item.is-regional { border-color: #286895; }
+.simulation-ranking-symbol { color: #494a45; font-size: 18px; font-weight: 700; }
+.simulation-ranking > small { display: block; margin-top: 6px; color: #67635a; }
 .simulation-chart-track { height: 14px; border-radius: 8px; background: #eeeae3; overflow: hidden; }
 .simulation-charter-summary { margin: 8px 0 2px; font-size: 15px !important; }
 .simulation-charter-summary strong { font-size: 16px; }
