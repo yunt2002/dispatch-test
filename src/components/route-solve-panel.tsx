@@ -27,6 +27,7 @@ export type RouteSolveResult = {
   routes: {
     vehicleId: string;
     vehicleName: string;
+    isCharter?: boolean;
     stopIds: string[];
     stopMemberIds?: string[][];
     titles: string[];
@@ -376,7 +377,7 @@ export function RouteSolvePanel({
     return [
       { lat: depot.lat, lng: depot.lng },
       ...stops.map((stop) => ({ lat: stop.lat, lng: stop.lng })),
-      ...(result?.tripMode === "oneway" ? [] : [{ lat: depot.lat, lng: depot.lng }]),
+      ...(route.isCharter || result?.tripMode === "oneway" ? [] : [{ lat: depot.lat, lng: depot.lng }]),
     ];
   }
 
@@ -637,6 +638,7 @@ export function RouteSolvePanel({
           </label>
           <p className="dispatch-route-meta">{manualPrice ? "직접 입력한 경유 가격" : priceStatus}{manualPrice && marketPrice ? <button type="button" className="dispatch-route-suggest-btn" onClick={() => setManualPrice(false)}>전국 평균 적용</button> : null}</p>
           <p className="dispatch-route-meta">{result.tripMode === "oneway" ? "편도: 회사 → 마지막 납품지" : "왕복: 회사 → 납품지 → 회사"} 기준 예상액 · 통행료 차종은 톤수에 따른 잠정 분류이며 실제 차종과 요금을 확인하세요. 실제 주유 가격과 연비는 다를 수 있습니다.</p>
+          {result.routes.some((route) => route.isCharter) ? <p className="dispatch-route-meta">용차는 운행 구간 설정과 관계없이 회사 → 납품지 편도 참고 경로입니다. 실제 출발지·차종·운임은 확인이 필요합니다.</p> : null}
 
           {result.routes.map((route) => {
             const defaultEfficiency = defaultFuelEconomy(route.vehicleName);
@@ -649,7 +651,7 @@ export function RouteSolvePanel({
                 <strong>
                   {route.vehicleName}
                   <span>
-                    {route.load}/{route.capacity} PLT · {route.totalDistanceKm}km ·{" "}
+                    {route.isCharter ? "편도 참고 경로" : `${route.load}/${route.capacity} PLT`} · {route.totalDistanceKm}km ·{" "}
                     {route.totalTimeMin}분
                     {route.priorityLabel ? ` · ${route.priorityLabel}` : ""}
                   </span>
@@ -665,7 +667,7 @@ export function RouteSolvePanel({
                       추천 순서
                     </button>
                   ) : null}
-                  <button
+                  {!route.isCharter ? <button
                     className="dispatch-route-suggest-btn"
                     disabled={busy || Boolean(result.stale) || result.tripMode !== tripMode || altLoadingId === route.vehicleId}
                     onClick={() => void onOpenAlternatives(route.vehicleId)}
@@ -676,17 +678,17 @@ export function RouteSolvePanel({
                       : altVehicleId === route.vehicleId
                         ? "닫기"
                         : "다른 경로"}
-                  </button>
+                  </button> : null}
                 </div>
               </div>
-              <div className="route-costs">
+              {!route.isCharter ? <div className="route-costs">
                 <span>예상 통행료: <b>{route.tollWon == null ? "확인 불가" : `${route.tollWon.toLocaleString("ko-KR")}원`}</b></span>
                 <label>연비 (km/L)
                   <input className="dispatch-input" type="number" min="0" step="0.1" value={efficiency} placeholder="입력" onChange={(e) => setEfficiencies((prev) => ({ ...prev, [route.vehicleId]: e.target.value }))} />
                 </label>
                 {defaultEfficiency && efficiencies[route.vehicleId] === undefined ? <small>{defaultEfficiency.note}</small> : null}
                 <span>예상 경유비: <b>{Number(effectiveDieselPrice) > 0 && Number(efficiency) > 0 ? `${Math.round(route.totalDistanceKm / Number(efficiency) * Number(effectiveDieselPrice)).toLocaleString("ko-KR")}원` : "가격·연비 입력 필요"}</b></span>
-              </div>
+              </div> : <p className="dispatch-route-meta">차종 미확인으로 통행료·연료비는 표시하지 않습니다. 실제 용차 운임은 배차 확정에서 입력하세요.</p>}
               <div className="route-arrival">
                 <label>출발시간 <input className="dispatch-input" type="time" value={departure} onChange={(event) => setDepartures((prev) => ({ ...prev, [route.vehicleId]: event.target.value }))} /></label>
                 <p className="dispatch-route-meta">조회 시점 교통 기준 · 하차·대기시간 미포함 · 출발시간은 화면을 나가면 초기화</p>

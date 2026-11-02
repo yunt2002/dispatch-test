@@ -20,6 +20,7 @@ export type RouteSolveResult = {
   routes: {
     vehicleId: string;
     vehicleName: string;
+    isCharter?: boolean;
     stopIds: string[];
     stopMemberIds: string[][];
     titles: string[];
@@ -113,7 +114,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       "납품지";
     const assigned = assignedVehicle(entry);
     const external = externalTransport(assigned?.vehicleTypeId);
-    if (external) {
+    if (external && assigned?.vehicleTypeId !== "external:charter") {
       unassignedDetails.push({ id: entry.id, title, reason: `${external.vehicleName} · 자사 차량 경로 제외` });
       continue;
     }
@@ -158,7 +159,12 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
   }
 
   const grouped = new Map<string, Stop[]>();
-  for (const stop of stops) {
+  const charterStops = stops.filter((stop) => stop.vehicleId === "external:charter");
+  // 실제 용차 운행 묶음은 알 수 없으므로 같은 등록 묶음·납품지만 합친다.
+  for (const visit of groupRouteStops(charterStops)) {
+    grouped.set(`charter:${visit.stop.id}`, charterStops.filter((stop) => visit.memberIds.includes(stop.id)));
+  }
+  for (const stop of stops.filter((item) => item.vehicleId !== "external:charter")) {
     if (!stop.vehicleId || !vehicleById.has(stop.vehicleId)) {
       unassignedDetails.push({
         id: stop.id,
@@ -191,17 +197,18 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
 
   const routes = await Promise.all(
     [...grouped.entries()].map(async ([vehicleId, groupStops]) => {
-      const vehicle = vehicleById.get(vehicleId)!;
-      const capacity = vehicle.maxPallet && vehicle.maxPallet > 0 ? vehicle.maxPallet : 8;
+      const isCharter = vehicleId.startsWith("charter:");
+      const vehicle = vehicleById.get(vehicleId);
+      const capacity = vehicle?.maxPallet && vehicle.maxPallet > 0 ? vehicle.maxPallet : 8;
       const load = groupStops.reduce((sum, s) => sum + s.demand, 0);
       const visits = groupRouteStops(groupStops);
       const stopIds = visits.map((visit) => visit.stop.id);
       const stopMemberIds = visits.map((visit) => visit.memberIds);
       const titles = visits.map((visit) => visit.memberIds.length > 1 ? `${visit.stop.title} (${visit.memberIds.length}품목)` : visit.stop.title);
 
-      const points = [depot, ...visits.map(({ stop }) => ({ lat: stop.lat, lng: stop.lng })), ...(tripMode === "roundtrip" ? [depot] : [])];
+      const points = [depot, ...visits.map(({ stop }) => ({ lat: stop.lat, lng: stop.lng })), ...(!isCharter && tripMode === "roundtrip" ? [depot] : [])];
       // 카카오 차종은 축·윤폭·윤거 기준이므로 톤수는 잠정 분류다.
-      const carType = vehicle.maxWeight >= 2500 ? 2 : 1;
+      const carType = (vehicle?.maxWeight ?? 0) >= 2500 ? 2 : 1;
       const road = await fetchKakaoDrivingRoute(points, "RECOMMEND", carType);
 
       if (road) {
@@ -209,7 +216,8 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
         usedKakao = true;
         return {
           vehicleId,
-          vehicleName: vehicle.vehicleName,
+          vehicleName: isCharter ? `용차 · ${titles[0]}` : vehicle!.vehicleName,
+          isCharter,
           stopIds,
           stopMemberIds,
           titles,
@@ -232,7 +240,8 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       km = Math.round(km * 10) / 10;
       return {
         vehicleId,
-        vehicleName: vehicle.vehicleName,
+        vehicleName: isCharter ? `용차 · ${titles[0]}` : vehicle!.vehicleName,
+        isCharter,
         stopIds,
         stopMemberIds,
         titles,

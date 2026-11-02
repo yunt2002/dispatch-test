@@ -20,7 +20,7 @@ export function AllConfirmedMap({ date, embedded, markers, batches }: { date: st
         const href = `${embedded ? "/" : "/map"}?${params.toString()}${embedded ? "#request-map" : ""}`;
         return <li key={batch.id}><div><strong>{batch.label}</strong><span>{batch.count}건 · {batch.status === "ready" ? "저장된 경로 표시 중" : batch.status === "stale" ? "일정 변경 · 경로 재확인 필요" : "저장된 경로 없음"}</span></div><a href={href} className="dispatch-secondary-button">{batch.status === "ready" ? "상세 보기" : "경로 확인"}</a></li>;
       })}</ul> : <p className="dispatch-route-note">선택한 날짜에 확정된 납품이 없습니다.</p>}
-      <p className="dispatch-route-note">납품지 마커에는 용차·택배도 포함될 수 있으며, 자사 차량 경로에서는 제외됩니다. 경로 선이 없는 묶음은 해당 묶음을 열어 경로 계산을 눌러 주세요.</p>
+      <p className="dispatch-route-note">용차는 회사에서 납품지까지 편도 참고 경로로 표시하며, 택배는 차량 경로에서 제외됩니다. 경로 선이 없는 묶음은 해당 묶음을 열어 경로 계산을 눌러 주세요.</p>
     </section></aside>
   </div>;
 }

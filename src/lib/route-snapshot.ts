@@ -15,7 +15,7 @@ export async function routeInputSignature(date: string, batchId?: string | null)
     }),
     prisma.vehicleType.findMany({ select: { id: true, updatedAt: true }, orderBy: { id: "asc" } }),
   ]);
-  return createHash("sha256").update(JSON.stringify({ entries, vehicles })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ version: 2, entries, vehicles })).digest("hex");
 }
 
 function snapshotKey(date: string, batchId?: string | null) { return `route_snapshot:v2:${date}:${batchId || "pending"}`; }

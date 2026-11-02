@@ -182,7 +182,7 @@ export default async function HomePage({
         boxPallets={entry.palletCount}
         boxLoadingTarget={boxTargets.get(boxLoadingTargetKey(entry.id)) ?? ""}
         quantity={quantity}
-        reason={externalTransport(selected?.vehicleTypeId) ? "외부 운송 · 자사 차량 경로에서 제외" : reasonOneLine(entry.recommendationReason)}
+        reason={selected?.vehicleTypeId === "external:charter" ? "용차 · 회사에서 납품지까지 편도 경로 확인 가능" : externalTransport(selected?.vehicleTypeId) ? "택배 · 차량 경로에서 제외" : reasonOneLine(entry.recommendationReason)}
         recommendedName={recommended?.vehicleName ?? null}
         recommendedVehicleTypeId={recommended?.vehicleTypeId ?? null}
         regionTypeLabel={regionTypeLabel(entry.regionType)}
