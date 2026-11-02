@@ -75,7 +75,6 @@ declare namespace kakao.maps {
     close(): void;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace event {
     function addListener(target: Marker, type: string, handler: () => void): void;
   }

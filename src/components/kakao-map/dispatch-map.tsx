@@ -35,7 +35,7 @@ export function DispatchMap({
   const mapsRef = useRef<typeof kakao.maps | null>(null);
   const autoRetryDoneRef = useRef(false);
 
-  const [status, setStatus] = useState<"loading" | "ready" | "no-key" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "no-key" | "error">(() => getKakaoMapAppKey() ? "loading" : "no-key");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [retryToken, setRetryToken] = useState(0);
 
@@ -66,15 +66,9 @@ export function DispatchMap({
 
   // SDK + 지도 인스턴스 로드 (마커와 분리 — 데이터 바뀔 때마다 재로드하지 않음)
   useEffect(() => {
-    if (!getKakaoMapAppKey()) {
-      setStatus("no-key");
-      return;
-    }
+    if (!getKakaoMapAppKey()) return;
 
     let active = true;
-    setStatus("loading");
-    setErrorMessage(null);
-
     (async () => {
       try {
         const maps = await loadKakaoMaps();
@@ -121,7 +115,6 @@ export function DispatchMap({
     return () => {
       active = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- retryToken만으로 재로드
   }, [retryToken]);
 
   // 마커·경로 갱신
