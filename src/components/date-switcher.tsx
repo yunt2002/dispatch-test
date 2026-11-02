@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useId } from "react";
 import { formatSheetDate } from "@/lib/format";
 
 export function DateSwitcher({
@@ -13,6 +14,7 @@ export function DateSwitcher({
   basePath?: string;
 }) {
   const router = useRouter();
+  const id = useId();
   const options = dates.includes(value) ? dates : [value, ...dates];
 
   function go(next: string) {
@@ -23,13 +25,13 @@ export function DateSwitcher({
 
   return (
     <div className="date-switcher">
-      <label className="date-switcher-label" htmlFor="list-date">
+      <label className="date-switcher-label" htmlFor={dates.length ? `${id}-list` : `${id}-date`}>
         납품일
       </label>
       <div className="date-switcher-controls">
         {dates.length ? (
           <select
-            id="list-date"
+            id={`${id}-list`}
             className="select date-switcher-select"
             value={value}
             onChange={(event) => go(event.target.value)}
@@ -42,6 +44,7 @@ export function DateSwitcher({
           </select>
         ) : null}
         <input
+          id={`${id}-date`}
           aria-label="다른 날짜"
           className="input date-switcher-input"
           type="date"

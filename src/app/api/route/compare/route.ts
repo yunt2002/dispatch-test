@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
-import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
+import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
 
 export const maxDuration = 60;
@@ -161,10 +161,16 @@ export async function POST(request: Request) {
       const oldRegional = mode === "refresh" ? stored?.regional : undefined;
       const attempts = mode !== "refresh" ? await Promise.all(["두 차량을 지방에 배정하며 용차 횟수를 줄이기", "두 차량을 지방에 배정하며 운행 동선을 줄이기"].map((objective) => propose(regionalPlan.items, objective, true))) : [];
       const candidates = [...new Map(attempts.filter((attempt) => attempt.charterGroups).map((attempt) => [JSON.stringify([attempt.orders, attempt.charterGroups]), attempt])).values()];
+      if (mode !== "refresh" && !candidates.length) {
+        const fallback = buildRegionalFallback(regionalPlan.items);
+        if (fallback && !validateSimulationOrders(regionalPlan.items, fallback.orders) && !validateRegionalCandidate(regionalPlan.items, fallback.orders) && !validateCharterGroups(regionalPlan.items, fallback.orders, fallback.charterGroups)) {
+          candidates.push({ ...fallback, note: `AI 지방 집중 후보를 만들지 못해 규칙 기반 참고안을 표시합니다.${fallback.limited ? " 계산 시간을 제한하기 위해 우선 40품목만 자사 차량 후보로 검토했습니다." : ""} ${[...new Set(attempts.map((attempt) => attempt.note).filter(Boolean))].join(" / ")} 실제 적재·운임 확인이 필요합니다.` });
+        }
+      }
       const calculated = await Promise.all(candidates.map(async (candidate) => ({ candidate, routes: await Promise.all(candidate.orders.map((order) => calculate(order, regionalPlan.items, price))) })));
       const selected = chooseSimulationCandidate(calculated.map(({ candidate, routes }) => ({ routes, charterCount: candidate.charterGroups!.length, courierMovedIds: [] })));
       const chosen = selected.index == null ? null : calculated[selected.index];
-      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : chosen ? { ...chosen.candidate, note: `AI 보조 후보 ${candidates.length}개 · ${selected.note} ${chosen.candidate.note}` } : null;
+      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : chosen ? { ...chosen.candidate, note: `${chosen.candidate.model ? `AI 보조 후보 ${candidates.length}개` : "규칙 기반 대체안"} · ${selected.note} ${chosen.candidate.note}` } : null;
       if (plan?.charterGroups) {
         const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalCandidate(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
         if (problem) regional.error = problem;

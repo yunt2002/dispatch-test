@@ -2,10 +2,23 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
-import { buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
+import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("지방 대체안은 서로 다른 납품지를 두 차량에 배정하고 남은 용차를 빠짐없이 처리한다", () => {
+  const a = { ...item(11, null), customer: "A", location: "광주", region: "regional" as const, regionalGroup: "전라권", lat: 35.2, lng: 126.9 };
+  const b = { ...item(12, null), customer: "B", location: "김해", region: "regional" as const, regionalGroup: "경상권", lat: 35.3, lng: 128.9 };
+  const capital = { ...item(13, null), customer: "C", location: "평택", region: "capital" as const };
+  const input = [a, b, capital];
+  const fallback = buildRegionalFallback(input)!;
+  assert.ok(fallback);
+  assert.equal(validateSimulationOrders(input, fallback.orders), null);
+  assert.equal(validateRegionalCandidate(input, fallback.orders), null);
+  assert.equal(validateCharterGroups(input, fallback.orders, fallback.charterGroups), null);
+  assert.ok(fallback.charterGroups.flat().includes("13"));
+  assert.equal(buildRegionalFallback([a, { ...a, rowNumber: 14 }]), null);
+});
 test("Groq 요청 제한, 인증, 서버, 시간 초과와 형식 오류를 구분한다", () => {
   assert.match(groqHttpError(429), /요청 한도/);
   assert.match(groqHttpError(401), /인증/);

@@ -83,6 +83,32 @@ export function validateRegionalCandidate(items: SimulationItem[], orders: { veh
   return null;
 }
 
+/** AI 응답이 없을 때만 사용하는 참고용 후보. 품목을 나누지 않고 두 차량 조건을 검사한다. */
+export function buildRegionalFallback(items: SimulationItem[]) {
+  const eligible = items.filter((item) => item.region === "regional" && item.regionalGroup && item.lat != null && item.lng != null && /용차/.test(item.transport));
+  const candidates = [...eligible].sort((a, b) => Number(/기존 자사/.test(b.transport)) - Number(/기존 자사/.test(a.transport)) || a.rowNumber - b.rowNumber).slice(0, 40);
+  let best: { orders: { vehicle: string; ids: string[] }[]; score: number } | null = null;
+  for (let i = 0; i < candidates.length; i++) for (let j = 0; j < candidates.length; j++) {
+    if (i === j) continue;
+    const orders = [{ vehicle: "1호차", ids: [String(candidates[i].rowNumber)] }, { vehicle: "2호차", ids: [String(candidates[j].rowNumber)] }];
+    if (validateRegionalCandidate(items, orders)) continue;
+    for (const item of candidates) {
+      const id = String(item.rowNumber);
+      if (orders.some((order) => order.ids.includes(id))) continue;
+      for (const order of orders) {
+        order.ids.push(id);
+        if (!validateRegionalCandidate(items, orders)) break;
+        order.ids.pop();
+      }
+    }
+    const assigned = new Set(orders.flatMap((order) => order.ids));
+    const score = candidates.filter((item) => assigned.has(String(item.rowNumber))).reduce((sum, item) => sum + (/기존 자사/.test(item.transport) ? 100000 : 1000) + (item.pallets ?? 0), 0);
+    if (!best || score > best.score) best = { orders, score };
+  }
+  if (!best) return null;
+  return { orders: best.orders, charterGroups: fallbackCharterGroups(items, best.orders), limited: eligible.length > candidates.length };
+}
+
 /** 품목을 쪼개지 않고 권역별 한 대에 배정하며, 남은 자사 물량은 용차로 전환한다. */
 export function buildRegionalPlan(input: SimulationItem[]) {
   const items = input.map((item) => item.vehicle && item.region !== "unknown"
