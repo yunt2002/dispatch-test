@@ -246,7 +246,7 @@ export function ScheduleRegisterDialog({
                   <button className="dispatch-secondary-button" type="button" onClick={() => setExtraProducts((items) => items.filter((id) => id !== productId))}>품목 삭제</button>
                 </div>
               ))}
-              <button className="dispatch-secondary-button" type="button" onClick={() => { setExtraProducts((items) => [...items, nextProductId]); setNextProductId((id) => id + 1); }}>+ 품목 추가</button>
+              <button className="dispatch-secondary-button dispatch-add-product" type="button" onClick={() => { setExtraProducts((items) => [...items, nextProductId]); setNextProductId((id) => id + 1); }}>+ 품목 추가</button>
               {extraProducts.length > 0 ? <p className="dispatch-form-note">같은 거래처의 품목을 한 카드로 묶어 등록합니다. 차량과 총 적재량을 확인하세요.</p> : null}
               <p className="dispatch-form-note">
                 {suggestNote ??

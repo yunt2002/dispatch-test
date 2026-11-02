@@ -2029,6 +2029,8 @@ body {
   padding: 18px 20px 20px;
 }
 
+.dispatch-add-product { margin-top: 12px; }
+
 .dispatch-form-note {
   margin: 12px 0 0;
   padding: 9px 11px;
