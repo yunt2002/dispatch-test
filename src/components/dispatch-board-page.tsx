@@ -243,9 +243,6 @@ export default async function HomePage({
           <p>{view === "request" ? "납품과 차량을 준비하고 아래 지도에서 경로를 확인하세요." : "확정 대기를 확인하고, 확정된 납품을 오른쪽에서 관리하세요."}</p>
         </div>
         <div className="dispatch-head-actions">
-          <a className="dispatch-secondary-button" href={`${view === "request" ? "/confirm" : "/"}?date=${encodeURIComponent(date)}`}>{view === "request" ? "다음: 배차 확정" : "배차 신청으로"}</a>
-          <a className="dispatch-secondary-button" href={`/api/schedule/export?date=${date}`}>이 달 내보내기</a>
-          <a className="dispatch-secondary-button" href="/api/schedule/export?scope=all">전체 내보내기</a>
           {view === "request" ? <ScheduleRegisterDialog
             date={date}
             regions={regions}
@@ -254,6 +251,11 @@ export default async function HomePage({
               vehicleName: vehicle.vehicleName,
             }))}
           /> : null}
+          <a className="dispatch-secondary-button dispatch-next-link" href={`${view === "request" ? "/confirm" : "/"}?date=${encodeURIComponent(date)}`}>{view === "request" ? "다음: 배차 확정" : "배차 신청으로"}</a>
+          <div className="dispatch-export-actions" role="group" aria-label="엑셀 내보내기">
+            <a className="dispatch-secondary-button" href={`/api/schedule/export?date=${date}`}>이 달 내보내기</a>
+            <a className="dispatch-secondary-button" href="/api/schedule/export?scope=all">전체 내보내기</a>
+          </div>
         </div>
       </header>
 
@@ -284,7 +286,7 @@ export default async function HomePage({
       <div className={`dispatch-workspace${view === "confirm" ? " dispatch-workspace-confirm" : ""}`}>
         <ScheduleSelectionRoot date={date} returnTo={view} allowConfirm={view === "confirm"} entryIds={(view === "request" ? reviewEntries : entries).map((entry) => entry.id)}>
         <section className={`dispatch-board ${view === "confirm" ? "dispatch-board-confirm" : "dispatch-board-request"}`} aria-label={`${formatSheetDate(date)} 배차 보드`}>
-          <section className="dispatch-column dispatch-column-review">
+          <section className={`dispatch-column dispatch-column-review${view === "request" && !reviewEntries.length ? " dispatch-column-compact" : ""}`}>
             <div className="dispatch-column-head"><div><i /><strong>{view === "confirm" ? "확정 대기" : "배차 신청 내역"}</strong><span>차량과 납품 확인</span></div><b>{reviewEntries.length}</b></div>
             {view === "request" ? <a className="dispatch-secondary-button request-map-link" href="#request-map">지도 보기 ↓</a> : null}
             <div className="dispatch-card-list">
