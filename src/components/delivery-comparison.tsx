@@ -120,7 +120,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
         {!comparison && complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? regionalTime : null} regionalProvisional={regionalUncertain} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}
         <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 용차 1회 20만 원 가정이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
-        <p className="comparison-note">지방 집중안은 경상권·전라권을 분리하며 비슷한 방향의 납품지는 직선거리 기준으로 경유 후보에 포함합니다. 적재 미확인 품목은 가배정이며 실제 적재와 도로 경로를 확인해야 합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 유지합니다.</p>
+        <p className="comparison-note">지방 집중안은 AI 후보 중 1·2호차 모두 지방 물량이 있고 알려진 적재 한도와 권역 조건을 만족하는 안을 검증합니다. 경상권·전라권을 분리하고 비슷한 방향은 직선거리 기준으로 검토합니다. 적재 미확인 품목은 가배정이며 실제 적재와 도로 경로를 확인해야 합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 유지합니다.</p>
         {regionalUncertain ? <p className="dispatch-route-note-warn">지방 집중안은 적재 정보가 미확인된 가배정 참고값입니다. 실제 적재 가능 여부, 용차 횟수와 비용은 확인 후 달라질 수 있습니다.</p> : null}
         {regional?.error ? <p className="dispatch-route-note-warn">지방 집중안 계산 불가: {regional.error}</p> : null}
         {regional && !regional.error && regional.note ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}

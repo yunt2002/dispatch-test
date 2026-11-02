@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
-import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalOrders } from "@/lib/simulation-regions";
+import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -27,7 +27,7 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, temperature: 0, max_completion_tokens: 4096,
         messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 정보가 부족해도 안전한 확정이 아니라 현장 확인이 필요한 시뮬레이션 후보를 제안하는 것이므로, 좌표가 있는 용차/택배 물량의 합차를 적극 검토한다. 각 자사 차량 적재량 숫자의 합은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. charterGroups의 각 배열은 한 번의 용차 운행이다. 한 용차 묶음에는 반드시 같은 거래처와 같은 지역의 품목만 넣는다. 서로 다른 거래처는 절대 같은 용차에 넣지 마라. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. 모든 id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 하나씩 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
-          { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차에는 region이 regional인 품목만 배정한다. 수도권 품목은 용차 또는 기존 택배로 유지한다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
+          { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
       signal: AbortSignal.timeout(20000), cache: "no-store",
     });
     if (!response.ok) throw new Error();
@@ -35,7 +35,7 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
     const content = data.choices?.[0]?.message?.content ?? "";
     const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[]; charterGroups?: unknown };
     const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
-    const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalOrders(items, orders) : null);
+    const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
     if (problem) { issue = problem; continue; }
     const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
     const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 5, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 6, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -112,6 +112,8 @@ export async function POST(request: Request) {
     const missingRegionalOwn = regionalItems.filter((item) => item.vehicle && (item.lat == null || item.lng == null));
     const regionalEligible = regionalItems.filter((item) => !item.vehicle || item.lat != null);
     const regionalPlan = buildRegionalPlan(regionalEligible);
+    const regionalAttempts = mode !== "refresh" && !uncertainOwn.length && !missingRegionalOwn.length
+      ? Promise.all(["두 차량을 지방에 배정하며 용차 횟수를 줄이기", "두 차량을 지방에 배정하며 운행 동선을 줄이기"].map((objective) => propose(regionalPlan.items, objective, true))) : null;
     let ai: ProposedPlan;
     let original: SimulationRoute[];
     let proposed: SimulationRoute[];
@@ -155,18 +157,23 @@ export async function POST(request: Request) {
     else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
     else {
       const oldRegional = mode === "refresh" ? stored?.regional : undefined;
-      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : { ...regionalPlan, note: "경상·전라는 분리하고, 가까운 다른 권역은 차고 기준 직선거리 우회 40km 이내일 때 경유 후보로 묶었습니다. 실제 도로·운행 순서와 적재를 확인하세요. 초과 자사 품목은 각각 별도 용차로 가정했습니다." };
+      const attempts = regionalAttempts ? await regionalAttempts : [];
+      const candidates = [...new Map(attempts.filter((attempt) => attempt.charterGroups).map((attempt) => [JSON.stringify([attempt.orders, attempt.charterGroups]), attempt])).values()];
+      const calculated = await Promise.all(candidates.map(async (candidate) => ({ candidate, routes: await Promise.all(candidate.orders.map((order) => calculate(order, regionalPlan.items, price))) })));
+      const selected = chooseSimulationCandidate(calculated.map(({ candidate, routes }) => ({ routes, charterCount: candidate.charterGroups!.length, courierMovedIds: [] })));
+      const chosen = selected.index == null ? null : calculated[selected.index];
+      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : chosen ? { ...chosen.candidate, note: `AI 보조 후보 ${candidates.length}개 · ${selected.note} ${chosen.candidate.note}` } : null;
       if (plan?.charterGroups) {
-        const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalOrders(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
+        const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalCandidate(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
         if (problem) regional.error = problem;
         else {
-          const routes = await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
+          const routes = chosen && mode !== "refresh" ? chosen.routes : await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
           const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
           regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : ""}` };
           if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
           else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
         }
-      } else regional.error = plan?.note || "지방 집중 AI안을 만들지 못했습니다. 다시 시도하세요.";
+      } else regional.error = `1·2호차가 모두 지방을 운행하는 유효한 AI 후보를 만들지 못했습니다. ${attempts.find((attempt) => attempt.note)?.note || "납품지·적재 정보와 AI 연결을 확인하세요."}`;
     }
     const result: SimulationResult = { items, original, proposed, remaining, charterGroups, regional, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), candidateCount, comparisonNote, planSource: ai.model ?? stored?.planSource };
     const value = JSON.stringify(result);

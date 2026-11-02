@@ -65,6 +65,24 @@ export function validateRegionalOrders(items: SimulationItem[], orders: { vehicl
   return null;
 }
 
+/** AI 후보는 두 차량의 지방 배정과 알려진 적재 한도를 서버에서 재검증한다. */
+export function validateRegionalCandidate(items: SimulationItem[], orders: { vehicle: string; ids: string[] }[]): string | null {
+  if (orders.length !== 2 || orders.some((order) => !order.ids.length)) return "1·2호차 각각에 지방 납품지를 배정해야 합니다.";
+  const assigned = new Set(orders.flatMap((order) => order.ids));
+  if (items.some((item) => assigned.has(String(item.rowNumber)) && (item.region !== "regional" || !/용차/.test(item.transport)))) return "자사 차량에는 지방 용차 물량만 배정할 수 있습니다. 기존 택배는 유지합니다.";
+  for (const order of orders) {
+    const rows = order.ids.map((id) => items.find((item) => String(item.rowNumber) === id));
+    if (rows.some((item) => !item || !item.regionalGroup)) return "배정된 납품지의 권역을 확인해 주세요.";
+    const selected = rows as SimulationItem[];
+    if (selected.some((item, index) => selected.slice(index + 1).some((other) => !similarCorridor(item, other)))) return "멀리 떨어진 권역을 한 차량에 배정할 수 없습니다.";
+    if (selected.reduce((sum, item) => sum + (item.pallets ?? 0), 0) > 8 || selected.reduce((sum, item) => sum + (item.weight ?? 0), 0) > (order.vehicle === "1호차" ? 4000 : 3500)) return `${order.vehicle}의 알려진 적재 한도를 초과합니다.`;
+  }
+  const first = orders[0].ids.map((id) => items.find((item) => String(item.rowNumber) === id)!);
+  const second = orders[1].ids.map((id) => items.find((item) => String(item.rowNumber) === id)!);
+  if (first.some((a) => second.some((b) => (a.customer.trim() && a.location.trim() && a.customer.trim() === b.customer.trim() && a.location.trim() === b.location.trim()) || (a.lat != null && a.lng != null && b.lat != null && b.lng != null && Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lng - b.lng) < 0.0005)))) return "같은 납품지의 품목을 임의로 두 차량에 나눌 수 없습니다.";
+  return null;
+}
+
 /** 품목을 쪼개지 않고 권역별 한 대에 배정하며, 남은 자사 물량은 용차로 전환한다. */
 export function buildRegionalPlan(input: SimulationItem[]) {
   const items = input.map((item) => item.vehicle && item.region !== "unknown"

@@ -1,10 +1,25 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem } from "./simulation";
-import { buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalOrders } from "./simulation-regions";
+import { buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("지방 집중 AI 후보는 두 차량 배정·수도권 제외·택배 유지·알려진 적재 한도를 검사한다", () => {
+  const a = { ...item(1, null), customer: "A", location: "김해", region: "regional" as const, regionalGroup: "경상권" };
+  const b = { ...item(2, null), customer: "B", location: "창원", region: "regional" as const, regionalGroup: "경상권", lat: 37.05 };
+  const capital = { ...item(3, null), region: "capital" as const, regionalGroup: null };
+  const courier = { ...item(4, null), region: "regional" as const, regionalGroup: "경상권", transport: "택배" };
+  const orders = [{ vehicle: "1호차", ids: ["1"] }, { vehicle: "2호차", ids: ["2"] }];
+  assert.equal(validateRegionalCandidate([a, b, capital, courier], orders), null);
+  assert.match(validateRegionalCandidate([a, b], [{ ...orders[0], ids: [] }, orders[1]])!, /각각/);
+  assert.ok(validateRegionalCandidate([a, b, capital], [{ ...orders[0], ids: ["1", "3"] }, orders[1]]));
+  assert.ok(validateRegionalCandidate([a, b, courier], [{ ...orders[0], ids: ["1", "4"] }, orders[1]]));
+  assert.ok(validateRegionalCandidate([{ ...a, weight: 4001 }, b], orders));
+  assert.equal(validateRegionalCandidate([{ ...a, weight: null, pallets: null }, b], orders), null);
+  assert.ok(validateRegionalCandidate([a, { ...b, customer: "A", location: "김해" }], orders));
+  assert.ok(validateRegionalCandidate([a, { ...b, lat: a.lat, lng: a.lng }], orders));
+});
 test("수도권과 지방 분류는 광주 혼동을 피하고 아산을 지방으로 본다", () => {
   assert.equal(simulationRegion("평택", null), "capital");
   assert.equal(simulationRegion("아산", "충청남도 아산시"), "regional");
