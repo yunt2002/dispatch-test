@@ -25,6 +25,7 @@ import { getDispatchSettings } from "@/lib/settings";
 import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
 import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
+import { transitionScheduleStatus } from "@/lib/schedule-status-transition";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -579,11 +580,11 @@ export async function markScheduleDone(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  await prisma.scheduleEntry.update({
-    where: { id },
-    data: { status: "DONE" },
-  });
-  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
+  if (!entry || (date && entry.deliveryDate !== date) || !await transitionScheduleStatus(prisma.scheduleEntry, id, entry.deliveryDate, "done")) {
+    revalidatePath("/");
+    go(formData, { date, error: "이미 처리되었거나 납품 상태가 변경되었습니다. 화면을 다시 확인하세요." });
+  }
+  await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go(formData, { date, ok: "완료 처리했습니다." });
 }
@@ -609,6 +610,10 @@ export async function changeScheduleGroupStatus(formData: FormData) {
       where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: transition.from },
       data: { status: transition.to },
     })).count;
+  if (!count) {
+    revalidatePath("/");
+    go(formData, { date, error: "이미 처리되었거나 묶음의 상태가 변경되었습니다. 화면을 다시 확인하세요." });
+  }
   if (operation !== "confirm") await rebalanceDayFleet(date);
   revalidatePath("/");
   go(formData, { date, ok: `${count}건을 ${operation === "confirm" ? "배차 확정" : operation === "done" ? "완료 처리" : "완료 취소"}했습니다.` });
@@ -667,11 +672,11 @@ export async function reopenSchedule(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  await prisma.scheduleEntry.update({
-    where: { id },
-    data: { status: "CONFIRMED" },
-  });
-  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
+  if (!entry || (date && entry.deliveryDate !== date) || !await transitionScheduleStatus(prisma.scheduleEntry, id, entry.deliveryDate, "reopen")) {
+    revalidatePath("/");
+    go(formData, { date, error: "이미 처리되었거나 납품 상태가 변경되었습니다. 화면을 다시 확인하세요." });
+  }
+  await rebalanceDayFleet(entry.deliveryDate);
   revalidatePath("/");
   go(formData, { date, ok: "완료를 취소했습니다." });
 }
