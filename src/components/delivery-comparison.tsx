@@ -5,13 +5,15 @@ import { isPackingMode } from "@/lib/simulation-packing";
 import { estimateCharterTrips, estimateSimulationCost, hasComparableRoutes } from "@/lib/simulation-cost";
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
-function ComparisonBars({ title, original, proposed, format, isCost = false }: { title: string; original: number; proposed: number; format: (n: number) => string; isCost?: boolean }) {
-  const max = Math.max(original, proposed, 1);
+function ComparisonBars({ title, original, proposed, regional, format, isCost = false }: { title: string; original: number; proposed: number; regional?: number | null; format: (n: number) => string; isCost?: boolean }) {
+  const max = Math.max(original, proposed, regional ?? 0, 1);
   const delta = proposed - original;
   const percent = original > 0 && delta !== 0 ? Math.abs(delta / original * 100) : null;
   const difference = delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? (isCost ? "절감 예상" : "감소") : (isCost ? "증가 예상" : "증가")}`;
-  return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>{difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>{[["기존 계획", original], ["AI 제안", proposed]].map(([label, value]) => <div className="simulation-chart-row" key={label}>
-    <span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${Number(value) / max * 100}%` }} /></div><strong>{format(Number(value))}</strong>
+  const values: [string, number][] = [["기존 계획", original], ["AI 제안", proposed]];
+  if (regional != null) values.push(["지방 집중", regional]);
+  return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>기존 대비 AI {difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>{values.map(([label, value]) => <div className="simulation-chart-row" key={label}>
+    <span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value / max * 100}%`, ...(label === "지방 집중" ? { backgroundColor: "#286895" } : {}) }} /></div><strong>{format(value)}</strong>
   </div>)}</div>;
 }
 function ExternalDeliveries({ items }: { items: SimulationItem[] }) {
@@ -68,8 +70,11 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const proposedHasCharter = !!result?.remaining.some((item) => /용차/.test(item.transport));
   const proposedTrips = result?.charterGroups == null ? null : result.charterGroups.length;
   const comparison = result && complete && !packingDirty && proposedTrips != null ? estimateSimulationCost({ originalVehicle: cost(result.original), proposedVehicle: cost(result.proposed), originalTrips, proposedTrips: String(proposedTrips), originalHasCharter, proposedHasCharter }) : null;
+  const regional = result?.regional;
+  const regionalTrips = regional && !regional.error ? regional.charterGroups.length : null;
+  const regionalComparison = result && regional && regionalTrips != null && complete && !packingDirty ? estimateSimulationCost({ originalVehicle: cost(result.original), proposedVehicle: cost(regional.routes), originalTrips, proposedTrips: String(regionalTrips), originalHasCharter, proposedHasCharter: regional.remaining.some((item) => /용차/.test(item.transport)) }) : null;
   return <section className="comparison-section" aria-labelledby="simulation-title"><h2 id="simulation-title">AI 배차 시뮬레이션</h2>
-    <p>용차·택배 물량을 자사 차량에 함께 실을 수 있는지 검토합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
+    <p>기존 계획과 AI 배차안, 1·2호차 지방 집중안을 비교합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { const selected = e.target.files?.[0] ?? null; setFile(selected); setResult(null); restorePreferences(selected, date); setPackingDirty(false); }} /></label>
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { const value = e.target.value; setPrice(value); setPriceSource("직접 입력한 경유 가격 · 수정 가능"); setResult(null); savePreferences(file, date, { packing, originalTrips, price: value }); }} placeholder="직접 입력" /></label>
@@ -85,11 +90,15 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         <h3>배차 결과 비교</h3>
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
-        {comparison ? <><div className="simulation-charts"><ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} format={money} isCost />{complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}</div>
-          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> → AI 제안 <strong>{proposedTrips}회</strong> · 1회 200,000원 가정</p>
+        {comparison ? <><div className="simulation-charts"><ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} format={money} isCost />{complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? total(regional!.routes) : null} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}</div>
+          {regionalComparison ? <p>지방 집중안의 포함 항목 비용: 기존 대비 <strong>{regionalComparison.saving === 0 ? "차이 없음" : `${money(Math.abs(regionalComparison.saving))} ${regionalComparison.saving > 0 ? "감소" : "증가"}`}</strong></p> : null}
+          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 1회 200,000원 가정</p>
           <p>자사 차량 경유비·통행료 + 용차비 기준입니다.</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "주소·경로·운행 횟수 또는 비용이 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}
-        <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 용차 1회 20만 원 가정이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다.</p>
+        <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 용차 1회 20만 원 가정이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
+        <p className="comparison-note">지방 집중안은 서울·경기·인천을 수도권으로 분류합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 가정합니다. 아산 등 충청 지역은 지방입니다.</p>
+        {regional?.error ? <p className="dispatch-route-note-warn">지방 집중안 계산 불가: {regional.error}</p> : null}
+        {regional && !regional.error && regional.note.includes("지역 미확인") ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => { const value = e.target.value; setOriginalTrips(value); savePreferences(file, date, { packing, originalTrips: value, price }); }} /></label>
           <p>AI 제안 용차 운행: <strong>{proposedTrips == null ? "제안 없음" : `${proposedTrips}회`}</strong></p></div>
         <p className="comparison-note">실제 기존 운행 횟수를 알면 수정할 수 있습니다. 용차가 남은 계획은 1회 이상, 없는 계획은 0회를 입력하세요.</p>
@@ -101,7 +110,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <details><summary>품목별 박스 적재 방식 설정</summary><p>기본값은 확인 필요입니다. 합적·별도 박스를 선택해도 공간과 고정 가능 여부는 현장에서 확인해야 합니다. 변경 후 배차안을 불러오거나 다시 만드세요.</p>
         {result.items.map((item) => <label key={item.rowNumber} className="simulation-packing-row"><span>{item.rowNumber}행 · {item.customer || "업체 미확인"} · {item.product} · {item.boxes == null ? "박스 수 미확인" : `${item.boxes}박스`}</span><select disabled={loading} value={packing[String(item.rowNumber)] ?? "unknown"} onChange={(e) => { const next = { ...packing, [String(item.rowNumber)]: e.target.value as PackingMode }; setPacking(next); savePreferences(file, date, { packing: next, originalTrips, price }); setPackingDirty(true); }}><option value="unknown">확인 필요</option><option value="shared">기존 PLT에 합적</option><option value="loose">별도 박스 적재</option><option value="pallet">별도 PLT 필요</option></select></label>)}
       </details>
-      <div className="comparison-plans"><Plan title="기존 배차 계획" routes={result.original} external={result.items.filter((item) => !item.vehicle)} /><Plan title="AI 시뮬레이션" routes={result.proposed} external={result.proposed.length ? result.remaining : undefined} /></div>
+      <div className="comparison-plans"><Plan title="기존 배차 계획" routes={result.original} external={result.items.filter((item) => !item.vehicle)} /><Plan title="AI 시뮬레이션" routes={result.proposed} external={result.proposed.length ? result.remaining : undefined} />{regional?.routes.length ? <Plan title="지방 집중 AI안" routes={regional.routes} external={regional.remaining} /> : null}</div>
+      {regional && !regional.error ? <><h3>지방 집중안 용차 제안 ({regional.charterGroups.length}회)</h3><ol>{regional.charterGroups.map((group, index) => <li key={index}>용차 {index + 1}회: {group.items.map((item) => `${item.customer || "업체 미확인"} (${item.rowNumber}행 · ${item.product})`).join(" / ")}</li>)}</ol>{regional.routes.some((route) => !route.items.length) ? <p className="dispatch-route-note-warn">물량 또는 조건에 따라 운행 품목이 없는 차량이 있습니다.</p> : null}</> : null}
       <h3>AI 용차 운행 제안 {proposedTrips == null ? "" : `(${proposedTrips}회)`}</h3>
       {result.charterGroups == null ? <p>AI 용차 묶음을 만들지 못했습니다. 다시 시도하세요.</p> : result.charterGroups.length === 0 ? <p>AI가 용차 운행 없이 처리하는 안을 제안했습니다.</p> : <ol>{result.charterGroups.map((group, index) => <li key={index}><strong>용차 {index + 1}회:</strong> {group.items.map((item) => `${item.customer || "업체 미확인"} (${item.rowNumber}행 · ${item.product})`).join(" / ")}</li>)}</ol>}
       <p className="dispatch-route-note-warn">AI가 묶은 용차는 차량 톤수·적재량, 납품 기한과 경유 가능 여부가 미확인인 후보입니다. 실제 운행과 1회 운임으로 확정된 결과가 아닙니다.</p>

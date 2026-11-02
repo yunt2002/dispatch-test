@@ -25,3 +25,14 @@ test("선택한 연월에 맞는 시트를 앞자리 0 유무와 관계없이 �
   assert.equal(findComparisonSheet(workbook, "2026-11-15"), null);
   assert.equal(findComparisonSheet(workbook, "2026-00-15"), null);
 });
+test("병합된 날짜와 업체·운송 방식은 각 품목에 반영한다", () => {
+  const sheet = new ExcelJS.Workbook().addWorksheet("26년 10월");
+  sheet.addRow(["일자", "업체명", "업체위치", "품명", "물류"]);
+  sheet.addRow(["10/14", "업체", "평택", "품목 A", "2호 차량(3.5t)"]);
+  sheet.addRow([null, null, null, "품목 B", null]);
+  for (const col of ["A", "B", "C", "E"]) sheet.mergeCells(`${col}2:${col}3`);
+  const rows = extractComparisonShipments(sheet, "2026-10-14");
+  assert.equal(rows.length, 2);
+  assert.equal(rows[1].customer, "업체");
+  assert.equal(rows[1].transport, "2호 차량(3.5t)");
+});

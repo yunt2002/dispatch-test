@@ -11,12 +11,13 @@ import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
+import { regionalScenarioItems, simulationRegion, validateRegionalOrders } from "@/lib/simulation-regions";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
 
 type ProposedPlan = { orders: Order[]; charterGroups: string[][] | null; note: string; model?: string };
-async function propose(items: SimulationItem[], objective: string): Promise<ProposedPlan> {
+async function propose(items: SimulationItem[], objective: string, regionalOnly = false): Promise<ProposedPlan> {
   const key = process.env.GROQ_API_KEY?.trim();
   if (!key) return { orders: [], charterGroups: null, note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
   let issue = "Groq 응답을 확인할 수 없습니다.";
@@ -26,7 +27,7 @@ async function propose(items: SimulationItem[], objective: string): Promise<Prop
       method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model, temperature: 0, max_completion_tokens: 4096,
         messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 정보가 부족해도 안전한 확정이 아니라 현장 확인이 필요한 시뮬레이션 후보를 제안하는 것이므로, 좌표가 있는 용차/택배 물량의 합차를 적극 검토한다. 각 자사 차량 적재량 숫자의 합은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. charterGroups의 각 배열은 한 번의 용차 운행이다. 한 용차 묶음에는 반드시 같은 거래처와 같은 지역의 품목만 넣는다. 서로 다른 거래처는 절대 같은 용차에 넣지 마라. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. 모든 id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 하나씩 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
-          { role: "user", content: JSON.stringify({ objective, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
+          { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차에는 region이 regional인 품목만 배정한다. 수도권 품목은 용차 또는 기존 택배로 유지한다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
       signal: AbortSignal.timeout(20000), cache: "no-store",
     });
     if (!response.ok) throw new Error();
@@ -34,7 +35,7 @@ async function propose(items: SimulationItem[], objective: string): Promise<Prop
     const content = data.choices?.[0]?.message?.content ?? "";
     const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[]; charterGroups?: unknown };
     const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
-    const problem = validateSimulationOrders(items, orders);
+    const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalOrders(items, orders) : null);
     if (problem) { issue = problem; continue; }
     const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     if (!groups) { issue = "AI가 용차 운행 묶음을 제안하지 않았습니다."; continue; }
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
     const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 1, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 2, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -94,12 +95,20 @@ export async function POST(request: Request) {
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
         lat: point?.lat ?? null, lng: point?.lng ?? null,
-        packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
+        region: simulationRegion(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
         weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
     });
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
     const eligible = items.filter((item) => !item.vehicle || item.lat != null);
     const originals: Order[] = ["1호차", "2호차"].map((vehicle) => ({ vehicle, ids: eligible.filter((item) => item.vehicle === vehicle).map((item) => String(item.rowNumber)) }));
+    const regionalItems = regionalScenarioItems(items);
+    const unknownRegions = regionalItems.filter((item) => item.region === "unknown");
+    const uncertainOwn = items.filter((item) => item.vehicle && item.region === "unknown");
+    const missingRegionalOwn = regionalItems.filter((item) => item.vehicle && (item.lat == null || item.lng == null));
+    const regionalEligible = regionalItems.filter((item) => !item.vehicle || item.lat != null);
+    const regionalPlanPromise = mode !== "refresh" && !uncertainOwn.length && !missingRegionalOwn.length
+      ? propose(regionalEligible, "1·2호차는 지방 물량만 운행하고 가능한 지방 용차·택배를 합차하여 비용 절감", true)
+      : null;
     let ai: ProposedPlan;
     let original: SimulationRoute[];
     let proposed: SimulationRoute[];
@@ -138,7 +147,25 @@ export async function POST(request: Request) {
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
     const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;
-    const result: SimulationResult = { items, original, proposed, remaining, charterGroups, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), candidateCount, comparisonNote, planSource: ai.model ?? stored?.planSource };
+    let regional: NonNullable<SimulationResult["regional"]> = { routes: [], remaining: [], charterGroups: [], note: "", error: "지방 집중안을 만들지 못했습니다." };
+    if (uncertainOwn.length) regional.error = `기존 자사 납품 지역 확인 필요: ${uncertainOwn.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"} (${item.location || "지역 미입력"})`).join(", ")}`;
+    else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
+    else {
+      const oldRegional = mode === "refresh" ? stored?.regional : undefined;
+      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : await regionalPlanPromise;
+      if (plan?.charterGroups) {
+        const problem = validateSimulationOrders(regionalEligible, plan.orders) || validateRegionalOrders(regionalEligible, plan.orders) || validateCharterGroups(regionalEligible, plan.orders, plan.charterGroups);
+        if (problem) regional.error = problem;
+        else {
+          const routes = await Promise.all(plan.orders.map((order) => calculate(order, regionalEligible, price)));
+          const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
+          regional = { routes, remaining: regionalItems.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalEligible.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}` };
+          if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
+          else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
+        }
+      } else regional.error = plan?.note || "지방 집중 AI안을 만들지 못했습니다. 다시 시도하세요.";
+    }
+    const result: SimulationResult = { items, original, proposed, remaining, charterGroups, regional, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), candidateCount, comparisonNote, planSource: ai.model ?? stored?.planSource };
     const value = JSON.stringify(result);
     if (mode === "refresh" && setting) {
       const updated = await prisma.appSetting.updateMany({ where: { key, value: setting.value }, data: { value } });
