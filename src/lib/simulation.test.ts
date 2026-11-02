@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem } from "./simulation";
-import { regionalScenarioItems, simulationRegion, validateRegionalOrders } from "./simulation-regions";
+import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
@@ -13,13 +13,45 @@ test("수도권과 지방 분류는 광주 혼동을 피하고 아산을 지방�
   assert.equal(simulationRegion("광주", "광주광역시 광산구"), "regional");
 });
 test("지방 집중안은 수도권 자사 물량을 용차로 전환하고 수도권 배정을 차단한다", () => {
-  const scenario = regionalScenarioItems([{ ...item(1, "2호차"), region: "capital" }, { ...item(2, "1호차"), region: "regional" }]);
+  const scenario = regionalScenarioItems([{ ...item(1, "2호차"), region: "capital" }, { ...item(2, "1호차"), region: "regional", regionalGroup: "경상권" }]);
   assert.equal(scenario[0].vehicle, null);
   assert.match(scenario[0].transport, /용차/);
   assert.ok(validateRegionalOrders(scenario, [{ vehicle: "1호차", ids: ["1"] }, { vehicle: "2호차", ids: ["2"] }]));
   const orders = [{ vehicle: "1호차", ids: ["2"] }, { vehicle: "2호차", ids: [] }];
   assert.equal(validateRegionalOrders(scenario, orders), null);
   assert.equal(validateCharterGroups(scenario, orders, [["1"]]), null);
+});
+test("권역을 분리하고 적재 초과 원래 자사 물량은 용차로 보낸다", () => {
+  assert.equal(regionalGroup("부산", null), "경상권");
+  assert.equal(regionalGroup("광주", "광주광역시 북구"), "전라권");
+  assert.equal(regionalGroup("광주", null), null);
+  const data: SimulationItem[] = [
+    { ...item(11, "1호차"), customer: "경상1", region: "regional", regionalGroup: "경상권", pallets: 7 },
+    { ...item(12, "1호차"), customer: "경상2", region: "regional", regionalGroup: "경상권", pallets: 3 },
+    { ...item(13, "2호차"), customer: "전라", region: "regional", regionalGroup: "전라권", pallets: 6 },
+  ];
+  const plan = buildRegionalPlan(data);
+  assert.equal(validateSimulationOrders(plan.items, plan.orders), null);
+  assert.equal(validateRegionalOrders(plan.items, plan.orders), null);
+  assert.equal(validateCharterGroups(plan.items, plan.orders, plan.charterGroups), null);
+  const assigned = plan.orders.flatMap(order => order.ids);
+  assert.equal(assigned.length, 2);
+  assert.equal(plan.charterGroups.flat().length, 1);
+  assert.ok(plan.charterGroups.flat().some(id => ["11", "12"].includes(id)));
+  assert.ok(validateRegionalOrders(plan.items, [{ vehicle: "1호차", ids: ["11", "13"] }, { vehicle: "2호차", ids: [] }]));
+});
+test("한 권역 초과분과 권역 미확인 물량은 다른 자사 차량에 섞지 않는다", () => {
+  const data: SimulationItem[] = [
+    { ...item(21, "1호차"), customer: "A", location: "포항", region: "regional", regionalGroup: "경상권", pallets: 7 },
+    { ...item(22, "1호차"), customer: "A", location: "포항", region: "regional", regionalGroup: "경상권", pallets: 7 },
+    { ...item(23, "1호차"), customer: "B", region: "regional", regionalGroup: null, pallets: 2 },
+    { ...item(24, null), customer: "C", region: "regional", regionalGroup: "전라권", transport: "택배", pallets: 1 },
+  ];
+  const plan = buildRegionalPlan(data);
+  assert.deepEqual(plan.orders[0].ids, ["21"]);
+  assert.deepEqual(plan.orders[1].ids, []);
+  assert.deepEqual(plan.charterGroups.flat().sort(), ["22", "23"]);
+  assert.equal(validateCharterGroups(plan.items, plan.orders, plan.charterGroups), null);
 });
 test("AI 용차 묶음이 누락·중복돼도 보수적 대체 묶음은 남은 용차만 정확히 포함한다", () => {
   const source = [item(1, "1호차"), { ...item(2, null), customer: "A", location: "서울" }, { ...item(3, null), customer: "A", location: "서울" }, { ...item(4, null), customer: "A", location: "" }, { ...item(5, null), customer: "A", location: "" }, { ...item(6, null), transport: "택배" }];

@@ -118,10 +118,9 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
         {!comparison && complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? total(regional!.routes) : null} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}
         <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 용차 1회 20만 원 가정이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
-        <p className="comparison-note">지방 집중안은 서울·경기·인천을 수도권으로 분류합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 가정합니다. 아산 등 충청 지역은 지방입니다.</p>
+        <p className="comparison-note">지방 집중안은 경상권·전라권 등 서로 다른 권역을 한 차량에 섞지 않습니다. 권역별 자사 차량은 한 대이며 초과 물량은 용차로 가정합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 유지합니다. 적재·용차 운행과 운임은 확인이 필요합니다.</p>
         {regional?.error ? <p className="dispatch-route-note-warn">지방 집중안 계산 불가: {regional.error}</p> : null}
-        {regional && !regional.error && regional.note.includes("용차 묶음 오류") ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
-        {regional && !regional.error && regional.note.includes("지역 미확인") ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
+        {regional && !regional.error && regional.note ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => { const value = e.target.value; setOriginalTrips(value); savePreferences(file, date, { packing, originalTrips: value, price }); }} /></label>
           <p>AI 제안 용차 운행: <strong>{proposedTrips == null ? "제안 없음" : `${proposedTrips}회`}</strong></p></div>
         <p className="comparison-note">실제 기존 운행 횟수를 알면 수정할 수 있습니다. 용차가 남은 계획은 1회 이상, 없는 계획은 0회를 입력하세요.</p>

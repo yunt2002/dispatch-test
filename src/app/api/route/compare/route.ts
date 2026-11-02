@@ -11,7 +11,7 @@ import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
-import { regionalScenarioItems, simulationRegion, validateRegionalOrders } from "@/lib/simulation-regions";
+import { buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalOrders } from "@/lib/simulation-regions";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
     const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 3, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 4, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
         lat: point?.lat ?? null, lng: point?.lng ?? null,
-        region: simulationRegion(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
+        region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
         weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
     });
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
@@ -106,12 +106,12 @@ export async function POST(request: Request) {
     const originals: Order[] = ["1호차", "2호차"].map((vehicle) => ({ vehicle, ids: eligible.filter((item) => item.vehicle === vehicle).map((item) => String(item.rowNumber)) }));
     const regionalItems = regionalScenarioItems(items);
     const unknownRegions = regionalItems.filter((item) => item.region === "unknown");
+    const unknownGroups = regionalItems.filter((item) => item.region === "regional" && !item.regionalGroup);
+    const missingLoads = regionalItems.filter((item) => item.region === "regional" && (item.vehicle || /용차/.test(item.transport)) && (item.pallets == null || item.weight == null));
     const uncertainOwn = items.filter((item) => item.vehicle && item.region === "unknown");
     const missingRegionalOwn = regionalItems.filter((item) => item.vehicle && (item.lat == null || item.lng == null));
     const regionalEligible = regionalItems.filter((item) => !item.vehicle || item.lat != null);
-    const regionalPlanPromise = mode !== "refresh" && !uncertainOwn.length && !missingRegionalOwn.length
-      ? propose(regionalEligible, "1·2호차는 지방 물량만 운행하고 가능한 지방 용차·택배를 합차하여 비용 절감", true)
-      : null;
+    const regionalPlan = buildRegionalPlan(regionalEligible);
     let ai: ProposedPlan;
     let original: SimulationRoute[];
     let proposed: SimulationRoute[];
@@ -155,14 +155,14 @@ export async function POST(request: Request) {
     else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
     else {
       const oldRegional = mode === "refresh" ? stored?.regional : undefined;
-      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : await regionalPlanPromise;
+      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : { ...regionalPlan, note: "권역별 자사 차량 1대, 초과 물량은 용차로 가정했습니다. 초과 자사 품목은 각각 별도 용차로 계산했으므로 실제 적재 및 운임을 확인하세요." };
       if (plan?.charterGroups) {
-        const problem = validateSimulationOrders(regionalEligible, plan.orders) || validateRegionalOrders(regionalEligible, plan.orders) || validateCharterGroups(regionalEligible, plan.orders, plan.charterGroups);
+        const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalOrders(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
         if (problem) regional.error = problem;
         else {
-          const routes = await Promise.all(plan.orders.map((order) => calculate(order, regionalEligible, price)));
+          const routes = await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
           const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
-          regional = { routes, remaining: regionalItems.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalEligible.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}` };
+          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}` };
           if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
           else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
         }
