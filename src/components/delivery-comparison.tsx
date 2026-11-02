@@ -13,8 +13,32 @@ function ComparisonBars({ title, original, proposed, regional, format, isCost = 
   const values: [string, number][] = [["기존 계획", original], ["AI 제안", proposed]];
   if (regional != null) values.push(["지방 집중", regional]);
   return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>기존 대비 AI {difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>{values.map(([label, value]) => <div className="simulation-chart-row" key={label}>
-    <span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value / max * 100}%`, ...(label === "지방 집중" ? { backgroundColor: "#286895" } : {}) }} /></div><strong>{format(value)}</strong>
+    <span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value / max * 100}%`, ...(label === "지방 집중" ? { backgroundColor: "#286895" } : {}) }} /></div><strong>{format(value)}<small>{label === "기존 계획" ? "비교 기준" : value === original ? "차이 없음" : `기존 대비 ${format(Math.abs(value - original))} ${value < original ? "감소" : "증가"}`}</small></strong>
   </div>)}</div>;
+}
+
+function difference(value: number | null, baseline: number | null, format: (n: number) => string) {
+  if (value == null || baseline == null) return "확인 필요";
+  const delta = value - baseline;
+  return delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? "감소" : "증가"}`;
+}
+
+function ScenarioSummary({ label, baseCost, planCost, baseTime, planTime, baseTrips, planTrips, baseVehicleCost, planVehicleCost, baseline, unavailable }: {
+  label: string; baseCost: number | null; planCost: number | null; baseTime: number | null; planTime: number | null;
+  baseTrips: number | null; planTrips: number | null; baseVehicleCost: number | null; planVehicleCost: number | null;
+  baseline?: boolean; unavailable?: string;
+}) {
+  return <article className="simulation-summary-card">
+    <h4>{label} <small>{baseline ? "비교 기준" : "기존 계획 대비"}</small></h4>
+    {unavailable ? <p className="simulation-summary-unavailable">{unavailable}</p> : <>
+      <dl>
+        <div><dt>예상 비용</dt><dd><strong>{money(planCost)}</strong>{!baseline ? <small>{difference(planCost, baseCost, money)}</small> : null}</dd></div>
+        <div><dt>자사 차량 운행 합계</dt><dd><strong>{planTime == null ? "확인 필요" : `${planTime.toLocaleString("ko-KR")}분`}</strong>{!baseline ? <small>{difference(planTime, baseTime, (n) => `${n.toLocaleString("ko-KR")}분`)}</small> : null}</dd></div>
+        <div><dt>용차 횟수</dt><dd><strong>{planTrips == null ? "확인 필요" : `${planTrips}회`}</strong>{!baseline ? <small>{difference(planTrips, baseTrips, (n) => `${n}회`)}</small> : null}</dd></div>
+      </dl>
+      {!baseline && baseTrips != null && planTrips != null && baseVehicleCost != null && planVehicleCost != null && planCost != null && baseCost != null ? <p className="simulation-summary-reason">비용 변화: 용차비 {difference(planTrips * 200000, baseTrips * 200000, money)} · 자사 경유비·통행료 {difference(planVehicleCost, baseVehicleCost, money)}</p> : null}
+    </>}
+  </article>;
 }
 function ExternalDeliveries({ items }: { items: SimulationItem[] }) {
   const groups = [
@@ -73,6 +97,10 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const regional = result?.regional;
   const regionalTrips = regional && !regional.error ? regional.charterGroups.length : null;
   const regionalComparison = result && regional && regionalTrips != null && complete && !packingDirty ? estimateSimulationCost({ originalVehicle: cost(result.original), proposedVehicle: cost(regional.routes), originalTrips, proposedTrips: String(regionalTrips), originalHasCharter, proposedHasCharter: regional.remaining.some((item) => /용차/.test(item.transport)) }) : null;
+  const baseTrips = /^\d+$/.test(originalTrips) && Number.isSafeInteger(Number(originalTrips)) && (originalHasCharter ? Number(originalTrips) > 0 : Number(originalTrips) === 0) ? Number(originalTrips) : null;
+  const summaryTime = complete && !packingDirty ? total(result!.original) : null;
+  const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
+  const baseCost = baseVehicleCost != null && baseTrips != null ? baseVehicleCost + baseTrips * 200000 : null;
   const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }, ...(regional && !regional.error ? [{ label: "지방 집중안", routes: regional.routes }] : [])], originalTrips, originalHasCharter) : [];
   if (result && !complete) {
     const planned = new Set(result.original.flatMap((route) => route.items.map((item) => item.rowNumber)));
@@ -96,6 +124,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         <h3>배차 결과 비교</h3>
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
+        <p className="simulation-summary-intro">세 배차안의 차이 <span>비용은 용차비·경유비·통행료만 반영한 참고값입니다.</span></p>
+        <div className="simulation-summary-grid">
+          <ScenarioSummary label="기존 계획" baseline baseCost={baseCost} planCost={baseCost} baseTime={summaryTime} planTime={summaryTime} baseTrips={baseTrips} planTrips={baseTrips} baseVehicleCost={baseVehicleCost} planVehicleCost={baseVehicleCost} />
+          <ScenarioSummary label="AI 제안" baseCost={baseCost} planCost={comparison?.proposed ?? null} baseTime={summaryTime} planTime={summaryTime == null ? null : total(result.proposed)} baseTrips={baseTrips} planTrips={!packingDirty ? proposedTrips : null} baseVehicleCost={baseVehicleCost} planVehicleCost={!packingDirty ? cost(result.proposed) : null} unavailable={packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : result.proposed.some((route) => route.over) ? "알려진 적재 한도를 초과해 실제 운행할 수 없습니다." : undefined} />
+          <ScenarioSummary label="지방 집중안" baseCost={baseCost} planCost={regionalComparison?.proposed ?? null} baseTime={summaryTime} planTime={summaryTime != null && regionalTrips != null ? total(regional!.routes) : null} baseTrips={baseTrips} planTrips={!packingDirty ? regionalTrips : null} baseVehicleCost={baseVehicleCost} planVehicleCost={regional && !regional.error && !packingDirty ? cost(regional.routes) : null} unavailable={packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : regional?.error || (!regional ? "지방 집중안을 아직 만들지 못했습니다." : undefined)} />
+        </div>
         {comparison ? <><div className="simulation-charts"><ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} format={money} isCost />{complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? total(regional!.routes) : null} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}</div>
           {regionalComparison ? <p>지방 집중안의 포함 항목 비용: 기존 대비 <strong>{regionalComparison.saving === 0 ? "차이 없음" : `${money(Math.abs(regionalComparison.saving))} ${regionalComparison.saving > 0 ? "감소" : "증가"}`}</strong></p> : null}
           <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 1회 200,000원 가정</p>
