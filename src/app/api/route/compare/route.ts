@@ -6,7 +6,7 @@ import { geocodeAddresses } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
-import { validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
+import { fallbackCharterGroups, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
@@ -38,8 +38,11 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
     const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalOrders(items, orders) : null);
     if (problem) { issue = problem; continue; }
     const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
-    if (!groups) { issue = "AI가 용차 운행 묶음을 제안하지 않았습니다."; continue; }
-    const charterProblem = validateCharterGroups(items, orders, groups as string[][]);
+    const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
+    if (charterProblem && regionalOnly) {
+      const fallback = fallbackCharterGroups(items, orders);
+      if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model, note: "Groq 차량 배정 · AI 용차 묶음 오류로 같은 거래처·지역 기준 용차 횟수를 가정했습니다. 실제 운행 확인 필요." };
+    }
     if (charterProblem) { issue = charterProblem; continue; }
     return { orders, charterGroups: groups as string[][], model, note: "Groq 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다." };
   } catch { issue = "Groq 제안 조회에 실패했습니다. 키와 연결을 확인하세요."; }
@@ -78,7 +81,7 @@ export async function POST(request: Request) {
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
     const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 2, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 3, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;

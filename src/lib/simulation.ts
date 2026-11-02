@@ -36,3 +36,20 @@ export function validateCharterGroups(items: SimulationItem[], orders: { vehicle
   }
   return null;
 }
+
+/** AI 묶음이 유효하지 않을 때만 같은 거래처·같은 지역 기준으로 보수적으로 묶는다. */
+export function fallbackCharterGroups(items: SimulationItem[], orders: { vehicle: string; ids: string[] }[]): string[][] {
+  const assigned = new Set(orders.flatMap((order) => order.ids));
+  const groups = new Map<string, string[]>();
+  for (const item of items) {
+    const id = String(item.rowNumber);
+    if (item.vehicle || !/용차/.test(item.transport) || assigned.has(id)) continue;
+    const customer = item.customer.trim().replace(/\s+/g, " ");
+    const location = item.location.trim().replace(/\s+/g, " ");
+    const key = customer && location ? JSON.stringify([customer, location]) : JSON.stringify(["미확인", id]);
+    const group = groups.get(key) ?? [];
+    group.push(id);
+    groups.set(key, group);
+  }
+  return [...groups.values()];
+}

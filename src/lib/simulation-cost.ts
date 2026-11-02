@@ -26,3 +26,14 @@ export function estimateSimulationCost(input: { originalVehicle: number | null; 
   const proposed = proposedVehicle + after * 200000;
   return { original, proposed, saving: original - proposed };
 }
+
+export function simulationCostIssues(routes: { label: string; routes: { vehicle: string; items: unknown[]; distance: number | null; fuel: number | null; toll: number | null }[] }[], originalTrips: string, originalHasCharter: boolean): string[] {
+  const issues: string[] = [];
+  for (const plan of routes) for (const route of plan.routes) {
+    if (!route.items.length) continue;
+    const missing = route.distance == null ? "카카오 경로" : [route.fuel == null ? "경유비" : null, route.toll == null ? "통행료" : null].filter(Boolean).join("·");
+    if (missing) issues.push(`${plan.label} ${route.vehicle}: ${missing} 미확인`);
+  }
+  if (!/^\d+$/.test(originalTrips) || !Number.isSafeInteger(Number(originalTrips)) || (originalHasCharter ? Number(originalTrips) < 1 : Number(originalTrips) !== 0)) issues.push("기존 용차 운행 횟수 확인 필요");
+  return issues;
+}

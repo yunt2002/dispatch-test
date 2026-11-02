@@ -1,8 +1,13 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes } from "./simulation-cost";
+import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues } from "./simulation-cost";
 
 const input = { originalVehicle: 146164, proposedVehicle: 485394, originalTrips: "3", proposedTrips: "1", originalHasCharter: true, proposedHasCharter: true };
+test("비용 미표시 시 누락된 경로·통행료·연료비와 용차 횟수를 구분한다", () => {
+  const route = { vehicle: "1호차", items: [1], distance: 100, fuel: 50000, toll: null };
+  assert.deepEqual(simulationCostIssues([{ label: "AI 제안", routes: [route] }], "7", true), ["AI 제안 1호차: 통행료 미확인"]);
+  assert.deepEqual(simulationCostIssues([{ label: "기존", routes: [{ ...route, distance: null }] }], "", true), ["기존 1호차: 카카오 경로 미확인", "기존 용차 운행 횟수 확인 필요"]);
+});
 test("용차 운행 횟수와 자사 차량 비용을 합산해 절감과 증가를 구한다", () => {
   assert.deepEqual(estimateSimulationCost(input), { original: 746164, proposed: 685394, saving: 60770 });
   assert.equal(estimateSimulationCost({ ...input, proposedTrips: "3" })?.saving, -339230);
