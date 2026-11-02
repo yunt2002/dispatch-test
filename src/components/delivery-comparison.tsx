@@ -5,9 +5,12 @@ import { isPackingMode } from "@/lib/simulation-packing";
 import { estimateCharterTrips, estimateSimulationCost, hasComparableRoutes } from "@/lib/simulation-cost";
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
-function ComparisonBars({ title, original, proposed, format }: { title: string; original: number; proposed: number; format: (n: number) => string }) {
+function ComparisonBars({ title, original, proposed, format, isCost = false }: { title: string; original: number; proposed: number; format: (n: number) => string; isCost?: boolean }) {
   const max = Math.max(original, proposed, 1);
-  return <div className="simulation-chart"><h4>{title}</h4>{[["기존 계획", original], ["AI 제안", proposed]].map(([label, value]) => <div className="simulation-chart-row" key={label}>
+  const delta = proposed - original;
+  const percent = original > 0 && delta !== 0 ? Math.abs(delta / original * 100) : null;
+  const difference = delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? (isCost ? "절감 예상" : "감소") : (isCost ? "증가 예상" : "증가")}`;
+  return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>{difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>{[["기존 계획", original], ["AI 제안", proposed]].map(([label, value]) => <div className="simulation-chart-row" key={label}>
     <span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${Number(value) / max * 100}%` }} /></div><strong>{format(Number(value))}</strong>
   </div>)}</div>;
 }
@@ -82,9 +85,9 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         <h3>배차 결과 비교</h3>
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
-        {comparison ? <><div className="comparison-result-totals"><p>예상 비용 차이 <strong>{comparison.saving > 0 ? `${money(comparison.saving)} 절감 예상` : comparison.saving < 0 ? `${money(-comparison.saving)} 증가 예상` : "차이 없음"}</strong></p></div>
-          <div className="simulation-charts"><ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} format={money} />{complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}</div>
-          <p>자사 차량 경유비·통행료 + 용차비 기준 · 기존 {originalTrips}회 / AI {proposedTrips}회 × 200,000원</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "주소·경로·운행 횟수 또는 비용이 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
+        {comparison ? <><div className="simulation-charts"><ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} format={money} isCost />{complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}</div>
+          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> → AI 제안 <strong>{proposedTrips}회</strong> · 1회 200,000원 가정</p>
+          <p>자사 차량 경유비·통행료 + 용차비 기준입니다.</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "주소·경로·운행 횟수 또는 비용이 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}
         <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 용차 1회 20만 원 가정이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다.</p>
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => { const value = e.target.value; setOriginalTrips(value); savePreferences(file, date, { packing, originalTrips: value, price }); }} /></label>

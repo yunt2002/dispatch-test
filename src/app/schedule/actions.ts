@@ -72,8 +72,10 @@ export async function updateBoxLoading(formData: FormData) {
   const total = members.reduce((sum, member) => sum + (member.id === id ? pallets : capacityUnits(member.palletCount, member.boxCount)), 0);
   const count = selected ? vehicleCountForPallets(total, selected.maxPallet) : 1;
   const updated = selected ? { ...selected, vehicleCount: count, loadingRate: loadingRateForPallets(total, selected.maxPallet, count) } : null;
+  const previousWarnings = parseJson<string[]>(entry.warningsJson, []);
+  const warnings = mode === "unknown" ? previousWarnings : previousWarnings.filter((warning) => !/박스 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정|낱개 적재 — PLT 환산 없음 · 자리 1칸으로 배정|낱개 박스 — PLT 환산 없음 · 별도 보관 · 자리 1칸/.test(warning));
   await prisma.$transaction([
-    prisma.scheduleEntry.update({ where: { id }, data: { palletCount: pallets } }),
+    prisma.scheduleEntry.update({ where: { id }, data: { palletCount: pallets, warningsJson: JSON.stringify(warnings) } }),
     prisma.appSetting.upsert({ where: { key: boxLoadingKey(id) }, create: { key: boxLoadingKey(id), value: mode }, update: { value: mode } }),
     prisma.appSetting.upsert({ where: { key: boxLoadingTargetKey(id) }, create: { key: boxLoadingTargetKey(id), value: target }, update: { value: target } }),
     ...(updated ? [prisma.scheduleEntry.updateMany({ where: { id: { in: members.map((member) => member.id) } }, data: { selectedVehicleJson: JSON.stringify(updated) } })] : []),

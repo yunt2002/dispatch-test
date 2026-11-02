@@ -2,6 +2,8 @@ import type { NormalizedShipment, RegionLookup } from "@/lib/delivery-excel";
 import { recommendForQuantity } from "@/lib/dispatch-group";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
+import { randomUUID } from "node:crypto";
+import { boxLoadingKey } from "@/lib/schedule-box-loading";
 
 async function loadRegions(): Promise<RegionLookup> {
   const regions = await prisma.regionMaster.findMany();
@@ -36,6 +38,7 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
       kgPerPallet: settings.kgPerPallet,
     });
     return {
+      id: randomUUID(),
       deliveryDate: row.deliveryDate,
       locationName: row.location || "",
       regionType: rec.regionType,
@@ -63,6 +66,8 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     await tx.scheduleEntry.deleteMany({ where: { source: "EXCEL" } });
     if (data.length) {
       await tx.scheduleEntry.createMany({ data });
+      const boxSettings = data.filter((item) => item.boxCount != null && item.boxCount > 0).map((item) => ({ key: boxLoadingKey(item.id), value: "unknown" }));
+      if (boxSettings.length) await tx.appSetting.createMany({ data: boxSettings });
     }
   });
   return data.length;

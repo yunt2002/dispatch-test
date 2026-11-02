@@ -21,7 +21,7 @@ import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 import { groupScheduleCards } from "@/lib/schedule-card-groups";
 import MapRoutePage from "@/components/map-route-page";
 import { EXTERNAL_TRANSPORTS, externalTransport, transportFeeKey } from "@/lib/external-transport";
-import { boxLoadingKey, boxLoadingTargetKey, isBoxLoadingMode } from "@/lib/schedule-box-loading";
+import { boxLoadingKey, boxLoadingTargetKey, currentLoadingWarning, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
@@ -146,7 +146,7 @@ export default async function HomePage({
 
   const geo = geocodingStatus();
   const warnings = [
-    ...new Set(activeEntries.flatMap((entry) => parseJson<string[]>(entry.warningsJson, []))),
+    ...new Set(activeEntries.flatMap((entry) => parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning))),
   ].slice(0, 4);
   const vehicleOptions = [...vehicles.map((vehicle) => ({
     id: vehicle.id,
@@ -192,7 +192,7 @@ export default async function HomePage({
         status={entry.status}
         transportFee={selected ? fees.get(transportFeeKey(entry.id, selected.vehicleTypeId)) ?? null : null}
         vehicles={vehicleOptions}
-        warnings={[...parseJson<string[]>(entry.warningsJson, []), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])]}
+        warnings={[...parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])]}
         returnTo={view}
         allowConfirm={view === "confirm"}
       />
@@ -207,7 +207,7 @@ export default async function HomePage({
       const selected = selectedVehicle(first);
       const totalPallets = group.reduce((sum, entry) => sum + (entry.palletCount ?? 0), 0);
       const unknownPallets = group.filter((entry) => entry.palletCount == null).length;
-      const warnings = [...new Set(group.flatMap((entry) => parseJson<string[]>(entry.warningsJson, [])))];
+      const warnings = [...new Set(group.flatMap((entry) => parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning)))];
       if (group.some((entry) => entry.boxCount != null && (!boxModes.get(boxLoadingKey(entry.id)) || boxModes.get(boxLoadingKey(entry.id)) === "unknown"))) warnings.push("박스 적재 방식·공간 확인 필요. 기존 납품의 PLT는 확인 전까지 유지합니다.");
       if (new Set(group.map((entry) => selectedVehicle(entry)?.vehicleTypeId ?? "")).size > 1) warnings.push("묶음 내 차량 배정이 서로 다릅니다. 차량을 확인하세요.");
       if (allMembers.some((entry) => entry.status !== first.status)) warnings.push("이 묶음의 일부 품목이 다른 상태에 있습니다. 다른 상태 칸도 확인하세요.");

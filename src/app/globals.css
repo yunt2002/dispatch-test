@@ -2316,11 +2316,20 @@ body {
 .comparison-result-totals p { display: grid; gap: 3px; margin: 4px 0; }
 .comparison-result-totals strong { font-size: 20px; }
 .simulation-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 18px; margin: 14px 0; }
-.simulation-chart { min-width: 0; padding: 14px; border: 1px solid #e5d9c7; border-radius: 8px; background: #fff; }
-.simulation-chart h4 { margin: 0 0 10px; font-size: 14px; }
-.simulation-chart-row { display: grid; grid-template-columns: 64px minmax(30px, 1fr) auto; gap: 9px; align-items: center; margin: 8px 0; font-size: 13px; }
-.simulation-chart-row strong { white-space: nowrap; font-size: 13px; }
-.simulation-chart-track { height: 12px; border-radius: 8px; background: #eeeae3; overflow: hidden; }
+.simulation-chart { min-width: 0; padding: 16px; border: 1px solid #e5d9c7; border-radius: 8px; background: #fff; }
+.simulation-chart-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; margin-bottom: 14px; }
+.simulation-chart h4 { margin: 0; font-size: 15px; }
+.simulation-chart-difference { color: #334d43; font-size: 16px; overflow-wrap: anywhere; }
+.simulation-chart-difference.is-increase { color: #983b23; }
+.simulation-chart-row { display: grid; grid-template-columns: 72px minmax(30px, 1fr) auto; gap: 10px; align-items: center; margin: 12px 0; font-size: 14px; }
+.simulation-chart-row strong { white-space: nowrap; font-size: 16px; }
+.simulation-chart-track { height: 14px; border-radius: 8px; background: #eeeae3; overflow: hidden; }
+.simulation-charter-summary { margin: 8px 0 2px; font-size: 15px !important; }
+.simulation-charter-summary strong { font-size: 16px; }
+@media (max-width: 480px) {
+  .simulation-chart-row { grid-template-columns: 1fr auto; }
+  .simulation-chart-track { grid-column: 1 / -1; grid-row: 2; }
+}
 .simulation-chart-bar { height: 100%; border-radius: inherit; background: #8e999c; }
 .simulation-chart-bar-ai { background: #ed6b3d; }
 .simulation-details { margin-top: 12px; }

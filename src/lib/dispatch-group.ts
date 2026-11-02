@@ -136,10 +136,10 @@ export function buildDispatchGroups(input: {
         reasonLines.push(
           `${family.familyName} · ${family.boxType} · 입수 ${family.boxesPerPallet}박스/PLT`,
         );
-      } else if (family && family.boxesPerPallet == null) {
-        warnings.push(`${family.familyName}: 낱개 적재 — PLT 환산 없음 · 자리 1칸으로 배정`);
       }
-      const { pallets, source, warning } = computePallets({
+      const hasBoxes = row.boxCount != null && row.boxCount > 0;
+      if (hasBoxes) warnings.push(`${row.productName || "박스 품목"}: 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정`);
+      const { pallets, source, warning } = hasBoxes ? { pallets: 0, source: null, warning: undefined } : computePallets({
         boxCount: row.boxCount,
         boxesPerPallet,
         totalWeight: row.totalWeight,
@@ -179,7 +179,7 @@ export function buildDispatchGroups(input: {
     }
 
     // Group-level weight fallback when no row-level PLT but group has weight
-    if (!palletKnown && totalWeight > 0 && kgPerPallet && kgPerPallet > 0 && totalPallets === 0) {
+    if (!palletKnown && totalBoxes === 0 && totalWeight > 0 && kgPerPallet && kgPerPallet > 0 && totalPallets === 0) {
       totalPallets = Math.ceil(totalWeight / kgPerPallet);
       palletKnown = true;
       usedWeightFallback = true;
@@ -393,15 +393,13 @@ export function recommendForQuantity(input: {
   const regionType = resolveRegionType(location, "", input.regions);
   const kgPerPallet = input.kgPerPallet ?? null;
   const boxCount = input.boxCount != null && input.boxCount > 0 ? input.boxCount : 0;
-  let totalPallets =
-    input.palletCount != null && input.palletCount >= 0 ? input.palletCount : null;
-  let palletKnown = totalPallets != null;
+  const totalPallets =
+    input.palletCount != null && input.palletCount >= 0 ? input.palletCount : boxCount > 0 ? 0 : null;
+  const palletKnown = totalPallets != null;
   const warnings: string[] = [];
   const reasonLines: string[] = [];
   const family = matchProductLoading(input.productCode, input.productName);
-  if (family?.boxesPerPallet == null && family && input.palletCount == null) {
-    warnings.push(`${family.familyName}: 낱개 박스 — PLT 환산 없음 · 별도 보관 · 자리 1칸`);
-  }
+  if (boxCount > 0 && input.palletCount == null) warnings.push("박스 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정");
   const zone = matchRouteZone({
     locationName: location,
     customerName: input.customerName ?? family?.customers?.[0] ?? null,
@@ -416,11 +414,7 @@ export function recommendForQuantity(input: {
     );
   }
 
-  // 박스 → PLT는 ceil (적재 자리). 중량은 BOX별 중량(g) × 박스수가 우선.
-  if (!palletKnown && boxCount > 0 && family?.boxesPerPallet != null && family.boxesPerPallet > 0) {
-    totalPallets = Math.ceil(boxCount / family.boxesPerPallet);
-    palletKnown = true;
-  }
+  // 박스는 별도 PLT를 지정하지 않으면 0으로 계산하고 공간 확인을 안내한다.
   const weightCalc = computeShipmentWeightKg({
     boxCount: boxCount > 0 ? boxCount : null,
     palletCount: totalPallets,
@@ -437,7 +431,7 @@ export function recommendForQuantity(input: {
     );
   }
   if (totalPallets != null && totalPallets > 0 && weightCalc.source === "boxes") {
-    reasonLines.push(`적재 ${totalPallets} PLT (박스÷입수 ceil)`);
+    reasonLines.push(`적재 ${totalPallets} PLT (입력된 수량)`);
   }
 
   const drafts = buildDispatchGroups({
@@ -488,7 +482,7 @@ export function recommendForQuantity(input: {
       if (!input.remainingByVehicleId) return Number.POSITIVE_INFINITY;
       return input.remainingByVehicleId[id] ?? 0;
     };
-    // 박스만 있고 PLT 미환산이면 자리 1칸으로 본다
+    // 추가 PLT가 0이면 파렛트 공간을 차감하지 않는다.
     const need = Math.max(0, needPallets);
 
     const isEmergency = (vehicle: VehicleType) =>
@@ -615,9 +609,11 @@ export function recommendForQuantity(input: {
       pick.maxPallet != null && pick.maxPallet > 0
         ? pallets <= pick.maxPallet && (rem == null || rem >= pallets)
         : true;
-    const vehicleCount = fitsInOne ? 1 : vehicleCountForPallets(pallets, pick.maxPallet);
+    const weightVehicles = totalWeight > 0 && pick.maxWeight > 0 ? Math.ceil(totalWeight / pick.maxWeight) : 1;
+    const vehicleCount = Math.max(fitsInOne ? 1 : vehicleCountForPallets(pallets, pick.maxPallet), weightVehicles);
     const loadingRate = loadingRateForPallets(pallets, pick.maxPallet, vehicleCount);
     const reasons = [...reasonLines];
+    if (weightVehicles > 1) warnings.push(`중량 ${totalWeight}kg · ${pick.vehicleName} ${weightVehicles}대 기준 확인 필요`);
     if (overflowFrom) {
       reasons.push(`${overflowFrom} 잔여 부족 → ${pick.vehicleName}으로 넘김`);
       warnings.push(`${overflowFrom} 적재 한도 초과분 · ${pick.vehicleName} 배정`);
