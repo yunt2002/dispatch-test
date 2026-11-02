@@ -2364,3 +2364,9 @@ body {
 @media (max-width: 820px) { .dispatch-board-confirm { grid-template-columns: 1fr; } }
 .route-batch-select { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 13px; font-weight: 700; }
 .route-batch-select select { min-width: min(100%, 250px); }
+.route-current-scope { margin: 0 0 10px; padding: 10px 12px; border: 1px solid #decdb2; border-radius: 8px; background: #fff7e9; color: #493c2e; font-size: 15px; }
+.confirmed-batch-list { display: grid; gap: 8px; list-style: none; padding: 0; margin: 14px 0; }
+.confirmed-batch-list li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px; border: 1px solid #e1ddd4; border-radius: 8px; }
+.confirmed-batch-list li div { min-width: 0; display: grid; gap: 4px; }
+.confirmed-batch-list li strong { font-size: 14px; overflow-wrap: anywhere; }
+.confirmed-batch-list li span { color: #5d5b55; font-size: 14px; }

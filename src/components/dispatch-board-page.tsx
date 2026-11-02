@@ -192,7 +192,7 @@ export default async function HomePage({
         status={entry.status}
         transportFee={selected ? fees.get(transportFeeKey(entry.id, selected.vehicleTypeId)) ?? null : null}
         vehicles={vehicleOptions}
-        warnings={[...parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])]}
+        warnings={[...new Set([...parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])])]}
         returnTo={view}
         allowConfirm={view === "confirm"}
       />
@@ -284,7 +284,7 @@ export default async function HomePage({
       </datalist>
 
       <div className={`dispatch-workspace${view === "confirm" ? " dispatch-workspace-confirm" : ""}`}>
-        <ScheduleSelectionRoot date={date} returnTo={view} allowConfirm={view === "confirm"} entryIds={(view === "request" ? reviewEntries : entries).map((entry) => entry.id)}>
+        <ScheduleSelectionRoot date={date} returnTo={view} allowConfirm={view === "confirm"} entryIds={(view === "request" ? reviewEntries : entries).map((entry) => entry.id)} confirmableEntryIds={reviewEntries.map((entry) => entry.id)}>
         <section className={`dispatch-board ${view === "confirm" ? "dispatch-board-confirm" : "dispatch-board-request"}`} aria-label={`${formatSheetDate(date)} 배차 보드`}>
           <section className={`dispatch-column dispatch-column-review${view === "request" && !reviewEntries.length ? " dispatch-column-compact" : ""}`}>
             <div className="dispatch-column-head"><div><i /><strong>{view === "confirm" ? "확정 대기" : "배차 신청 내역"}</strong><span>차량과 납품 확인</span></div><b>{reviewEntries.length}</b></div>

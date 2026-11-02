@@ -14,7 +14,8 @@ export function RouteBatchSelect({ date, batchId, options, embedded }: {
       router.replace(`${embedded ? "/" : "/map"}?${params.toString()}${embedded ? "#request-map" : ""}`, { scroll: false });
     }}>
       <option value="">배차 신청 (미확정)</option>
-      {batchId && !options.some((option) => option.id === batchId) ? <option value={batchId}>확인할 수 없는 배차</option> : null}
+      <option value="all-confirmed">확정 배차 전체</option>
+      {batchId && batchId !== "all-confirmed" && !options.some((option) => option.id === batchId) ? <option value={batchId}>확인할 수 없는 배차</option> : null}
       {options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
     </select>
   </label>;

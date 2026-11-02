@@ -27,12 +27,14 @@ export function useScheduleSelection() {
 export function ScheduleSelectionRoot({
   date,
   entryIds,
+  confirmableEntryIds,
   children,
   returnTo = "request",
   allowConfirm = true,
 }: {
   date: string;
   entryIds: string[];
+  confirmableEntryIds: string[];
   children: ReactNode;
   returnTo?: "request" | "confirm";
   allowConfirm?: boolean;
@@ -45,6 +47,7 @@ export function ScheduleSelectionRoot({
     [entryIds, selected],
   );
   const selectedCount = selectedIds.length;
+  const selectedConfirmableIds = selectedIds.filter((id) => confirmableEntryIds.includes(id));
   const allSelected = entryIds.length > 0 && selectedCount === entryIds.length;
 
   const value = useMemo<SelectionContextValue>(
@@ -89,17 +92,17 @@ export function ScheduleSelectionRoot({
                 ? `${selectedCount}건 선택`
                 : entryIds.length
                   ? `${date} · ${entryIds.length}건`
-                  : "납품 없음"}
+                  : "선택 가능한 납품 없음"}
             </span>
           </div>
           <div className="dispatch-bulk-bar-actions">
             {allowConfirm ? <form action={confirmSchedules} onSubmit={(event) => {
-              if (!selectedCount || !confirm(`선택한 ${selectedCount}건 중 추천 확인 상태인 배차를 확정할까요? 확인 사항과 차량을 먼저 검토하세요.`)) event.preventDefault();
+              if (!selectedConfirmableIds.length || !confirm(`선택한 확정 대기 ${selectedConfirmableIds.length}건을 배차 확정할까요? 확인 사항과 차량을 먼저 검토하세요.`)) event.preventDefault();
             }}>
               <input type="hidden" name="date" value={date} />
               <input type="hidden" name="returnTo" value={returnTo} />
-              {selectedIds.map((id) => <input key={id} type="hidden" name="ids" value={id} />)}
-              <button className="dispatch-primary-button" disabled={!selectedCount} type="submit">선택 배차 확정{selectedCount ? ` (${selectedCount})` : ""}</button>
+              {selectedConfirmableIds.map((id) => <input key={id} type="hidden" name="ids" value={id} />)}
+              <button className="dispatch-primary-button" disabled={!selectedConfirmableIds.length} type="submit">선택 배차 확정{selectedConfirmableIds.length ? ` (${selectedConfirmableIds.length})` : ""}</button>
             </form> : null}
             {selectedCount > 0 ? (
               <button

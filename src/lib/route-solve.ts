@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { groupRouteStops } from "@/lib/route-stop-groups";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
 import { externalTransport } from "@/lib/external-transport";
+import { capacityUnits } from "@/lib/schedule-box-loading";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -125,8 +126,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       });
       continue;
     }
-    const demand =
-      entry.palletCount != null && entry.palletCount > 0 ? entry.palletCount : 1;
+    const demand = capacityUnits(entry.palletCount, entry.boxCount);
     stops.push({
       id: entry.id,
       lat: marker.lat,
