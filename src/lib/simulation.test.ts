@@ -20,6 +20,16 @@ test("지엠비 코리아 창원 납품지에 확인된 주소를 적용한다",
   assert.equal(confirmedSimulationAddress("지엠비 코리아", "대전"), null);
   assert.equal(confirmedSimulationAddress("다른 업체", "창원"), null);
 });
+test("확인한 삼현과 한국프레틀 주소를 업체와 지역에 맞게 적용한다", () => {
+  const samhyun = confirmedSimulationAddress("엘지이노텍(삼현)", "창원");
+  assert.equal(samhyun, "경상남도 창원시 의창구 죽전로 45");
+  assert.equal(simulationAddressIssue("창원", samhyun), null);
+  const prettl = confirmedSimulationAddress("한국에프아이티볼테라 \n(한국프레틀)", "안양");
+  assert.equal(prettl, "경기도 의왕시 한밭들1길 20");
+  assert.match(simulationAddressIssue("안양", prettl)!, /엑셀 지역 안양/);
+  assert.equal(confirmedSimulationAddress("한국프레틀", "의왕"), prettl);
+  assert.equal(confirmedSimulationAddress("엘지이노텍(삼현)", "김해"), null);
+});
 test("회사명과 엑셀 지역에 일치하는 유일한 장소만 주소 후보로 사용한다", () => {
   const place = { place_name: "디아이씨", road_address_name: "울산광역시 울주군 언양읍 반천산업로 1", x: "129.1", y: "35.5" };
   assert.equal(uniqueCompanyPlace("디아이씨", "울주", [place], true)?.address, place.road_address_name);
