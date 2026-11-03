@@ -2,7 +2,13 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { packingPallets } from "./simulation-packing";
 
-test("박스의 기본 적재 방식은 확인 필요이며 팔레트를 임의 배정하지 않는다", () => {
+test("자동 적재는 기준표와 박스 수가 있으면 PLT를 추정하며 값이 없으면 미확인이다", () => {
+  assert.equal(packingPallets(2, 40, "auto"), 1);
+  assert.equal(packingPallets(80, 40, "auto"), 2);
+  assert.equal(packingPallets(41, 40, "auto"), 2);
+  assert.equal(packingPallets(2, null, "auto"), null);
+  assert.equal(packingPallets(null, 40, "auto"), null);
+  assert.equal(packingPallets(2, 0, "auto"), null);
   assert.equal(packingPallets(2, 40, "unknown"), null);
   assert.equal(packingPallets(80, 40, "unknown"), null);
 });

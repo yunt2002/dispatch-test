@@ -1,6 +1,6 @@
 import type { ComparisonShipment } from "./comparison-workbook";
 
-export type PackingMode = "unknown" | "shared" | "loose" | "pallet";
+export type PackingMode = "auto" | "unknown" | "shared" | "loose" | "pallet";
 export type SimulationItem = ComparisonShipment & { vehicle: "1호차" | "2호차" | null; lat: number | null; lng: number | null; pallets: number | null; weight: number | null; packing: PackingMode; address?: string | null; addressSource?: string; addressIssue?: string | null; region?: "capital" | "regional" | "unknown"; regionalGroup?: string | null };
 export type SimulationRoute = { vehicle: string; items: SimulationItem[]; pallets: number; weight: number; unknownPallets: number; unknownWeight: number; distance: number | null; minutes: number | null; toll: number | null; fuel: number | null; over: boolean; legs?: { from: string; to: string; distanceKm: number | null; minutes: number | null }[] };
 export type CharterGroup = { items: SimulationItem[] };
