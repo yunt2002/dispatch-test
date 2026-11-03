@@ -1,7 +1,23 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import ExcelJS from "exceljs";
-import { extractComparisonShipments, findComparisonSheet } from "./comparison-workbook";
+import { extractComparisonShipments, extractWorkbookAddress, findComparisonSheet } from "./comparison-workbook";
+
+test("비고에 주소와 담당자가 섞여 있으면 도로명 주소만 추출한다", () => {
+  assert.equal(extractWorkbookAddress("김해시 상동로 504번지 한신물류 담당자 010-1234-5678"), "김해시 상동로 504번지");
+  assert.equal(extractWorkbookAddress("대전광역시 유성구 테크노2로 334 업체 담당자"), "대전광역시 유성구 테크노2로 334");
+  assert.equal(extractWorkbookAddress("담당자 010-1234-5678"), null);
+});
+
+test("엑셀의 병합된 비고 도착지 주소를 각 품목에 반영한다", () => {
+  const sheet = new ExcelJS.Workbook().addWorksheet("26년 10월");
+  sheet.addRow(["일자", "업체명", "업체위치", "품명", "물류", "비고 / 개별화물 도착지"]);
+  sheet.addRow(["10/14", "업체", "김해", "품목 A", "용차", "김해시 상동로 504번지 물류 담당자"]);
+  sheet.addRow(["10/14", "업체", "김해", "품목 B", "용차", null]);
+  sheet.mergeCells("F2:F3");
+  const rows = extractComparisonShipments(sheet, "2026-10-14");
+  assert.deepEqual(rows.map((row) => row.workbookAddress), ["김해시 상동로 504번지", "김해시 상동로 504번지"]);
+});
 
 test("엑셀 순서와 운송 방식을 유지하고 빈 위치는 앞 행의 위치를 상속하지 않는다", () => {
   const workbook = new ExcelJS.Workbook();

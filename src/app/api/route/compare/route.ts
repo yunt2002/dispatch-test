@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import { extractComparisonShipments, findComparisonSheet } from "@/lib/comparison-workbook";
 import { resolveCustomerAddress } from "@/lib/delivery-customers";
-import { geocodeAddresses } from "@/lib/geocoding";
+import { geocodeAddresses, searchCompanyPlace } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
@@ -83,9 +83,9 @@ export async function POST(request: Request) {
     const rows = extractComparisonShipments(sheet, date);
     if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
-    const addressFor = (name: string) => customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || resolveCustomerAddress(name) || null;
+    const addressFor = (row: typeof rows[number]) => row.workbookAddress || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 7, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 8, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -95,13 +95,17 @@ export async function POST(request: Request) {
     } catch { /* 오래된 결과는 다시 생성한다. */ }
     if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
     if ((mode === "refresh" || mode === "regional") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
-    const addresses = [...new Set(rows.map((row) => { const address = addressFor(row.customer); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
+    const lookupRows = mode === "regional" ? [] : [...new Map(rows.filter((row) => !row.workbookAddress && !!simulationAddressIssue(row.location, addressFor(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
+    const places = new Map(await Promise.all(lookupRows.map(async ([key, row]) => [key, await searchCompanyPlace(row.customer, row.location)] as const)));
+    const resolvedAddress = (row: typeof rows[number]) => row.workbookAddress || places.get(JSON.stringify([row.customer, row.location]))?.address || addressFor(row);
+    const addresses = [...new Set(rows.map((row) => { const address = resolvedAddress(row); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
     const items: SimulationItem[] = mode === "regional" && stored ? stored.items : rows.map((row) => {
-      const address = addressFor(row.customer); const addressIssue = simulationAddressIssue(row.location, address); const point = address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
+      const place = row.workbookAddress ? null : places.get(JSON.stringify([row.customer, row.location]));
+      const address = resolvedAddress(row); const addressIssue = simulationAddressIssue(row.location, address); const point = !addressIssue && place ? place : address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const family = matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
-        address, addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
+        address, addressSource: row.workbookAddress ? "엑셀 도착지" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
         region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
         weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
     });
@@ -155,6 +159,7 @@ export async function POST(request: Request) {
     const remaining = items.filter((item) => !item.vehicle && !assigned.has(String(item.rowNumber)));
     const warnings = [...new Set(excluded.map((item) => `${item.customer}: 주소 미확인으로 기존 자사 납품에서 제외`))];
     for (const item of items) if (item.addressIssue) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: ${item.addressIssue}${item.address ? ` (${item.address})` : ""} · 경로 배정 제외`);
+    for (const item of items) if (item.addressSource?.startsWith("카카오")) warnings.push(`${item.rowNumber}행 ${item.customer}: 엑셀 업체명·지역으로 찾은 장소를 사용했습니다. 실제 납품지 확인 필요 (${item.address})`);
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
     const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;

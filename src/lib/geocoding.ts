@@ -8,6 +8,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { uniqueCompanyPlace } from "@/lib/simulation-place-match";
 
 export type GeoPoint = { lat: number; lng: number; provider: "kakao" | "naver" | "manual" };
 
@@ -164,6 +165,19 @@ export async function geocodeAddress(address: string): Promise<GeoPoint | null> 
   if (!key) return null;
   const points = await geocodeAddresses([key]);
   return points.get(key) ?? null;
+}
+
+/** 엑셀 업체명·지역이 일치하는 유일한 카카오 장소만 참고 후보로 반환한다. */
+export async function searchCompanyPlace(customer: string, location: string): Promise<{ address: string; lat: number; lng: number } | null> {
+  const key = envKey("KAKAO_REST_API_KEY", "KAKAO_MAP_REST_KEY");
+  if (!key || !customer.trim() || !location.trim()) return null;
+  try {
+    const query = new URLSearchParams({ query: `${customer.trim()} ${location.trim()}`, size: "15" });
+    const response = await fetch(`https://dapi.kakao.com/v2/local/search/keyword.json?${query}`, { headers: { Authorization: `KakaoAK ${key}` }, cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (!response.ok) return null;
+    const data = await response.json() as { meta?: { is_end?: boolean }; documents?: Parameters<typeof uniqueCompanyPlace>[2] };
+    return uniqueCompanyPlace(customer, location, data.documents ?? [], data.meta?.is_end === true);
+  } catch { return null; }
 }
 
 export function geocodingStatus(): {
