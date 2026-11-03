@@ -44,6 +44,9 @@ function Plan({ title, routes, external }: { title: string; routes: SimulationRo
       {r.unknownPallets || r.unknownWeight ? <p className="dispatch-route-note-warn">적재 정보 미확인: PLT {r.unknownPallets}품목, 중량 {r.unknownWeight}품목</p> : null}
       {r.over ? <p className="dispatch-route-note-warn">알려진 적재량이 한도를 초과합니다.</p> : null}
       <p>왕복 {r.distance == null ? "거리 확인 필요" : `${r.distance}km`} · {r.minutes == null ? "시간 확인 필요" : `${r.minutes}분`} · 통행료 {money(r.toll)} · 경유비 {money(r.fuel)}</p>
+      <details><summary>납품지 주소와 구간 보기</summary><ul>{r.items.filter((item, index, list) => list.findIndex((other) => other.customer === item.customer && other.address === item.address) === index).map((item) => <li key={item.rowNumber}>{item.customer || "업체 미확인"} · 엑셀 지역 {item.location || "미입력"} · {item.address || "주소 미확인"}{item.addressIssue ? ` · ${item.addressIssue}` : ""}</li>)}</ul>
+        {r.legs?.length ? <><p>구간별 카카오 길찾기 (조회 시점 기준)</p><ol>{r.legs.map((leg, index) => <li key={`${index}-${leg.from}-${leg.to}`}>{leg.from} → {leg.to} · {leg.distanceKm == null ? "거리 확인 불가" : `${leg.distanceKm.toLocaleString("ko-KR")}km`} · {leg.minutes == null ? "시간 확인 불가" : `${leg.minutes.toLocaleString("ko-KR")}분`}</li>)}</ol></> : <p>구간별 정보가 없습니다. 배차안을 다시 만들거나 경로를 새로 조회하세요.</p>}
+      </details>
       <details><summary>품목 보기 ({r.items.length}품목)</summary><ul>{r.items.map((i) => <li key={i.rowNumber}>{i.customer} · {i.product} · {i.transport || "방식 미확인"} {i.vehicle ? "" : "→ 자사 차량"}</li>)}</ul></details></>}
   </div>) : <p>AI 제안이 없습니다.</p>}{external ? <ExternalDeliveries items={external} /> : null}</div>;
 }
@@ -140,6 +143,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <p className="comparison-note">{result.note} · 납품 기한·긴급 여부·택배 마감·하차 시간은 미확인이므로 실제 운행 가능성을 확인해야 합니다.</p>
       {result.savedAt ? <p className="comparison-note">배차안 생성: {new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · 경로 조회: {result.routeUpdatedAt ? new Date(result.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 후보 {result.candidateCount ?? 0}개 · {result.planSource || "Groq"}</p> : null}
       {result.comparisonNote ? <p className="comparison-note">{result.comparisonNote}</p> : null}
+      <details><summary>전체 품목의 주소 확인</summary><p>엑셀 지역과 등록 주소가 다르거나 주소가 없으면 해당 납품지는 자사 차량 경로에서 제외합니다. 지역이 같더라도 실제 상세 주소를 확인하세요.</p><ul>{result.items.map((item) => <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "업체 미확인"} · 엑셀 지역 {item.location || "미입력"} · {item.address || "주소 미확인"}{item.addressIssue ? ` · ${item.addressIssue} (경로 제외)` : item.lat == null ? " · 좌표 미확인 (경로 제외)" : ""}</li>)}</ul></details>
       <details><summary>품목별 박스 적재 방식 설정</summary><p>기본값은 확인 필요입니다. 합적·별도 박스를 선택해도 공간과 고정 가능 여부는 현장에서 확인해야 합니다. 변경 후 배차안을 불러오거나 다시 만드세요.</p>
         {result.items.map((item) => <label key={item.rowNumber} className="simulation-packing-row"><span>{item.rowNumber}행 · {item.customer || "업체 미확인"} · {item.product} · {item.boxes == null ? "박스 수 미확인" : `${item.boxes}박스`}</span><select disabled={loading} value={packing[String(item.rowNumber)] ?? "unknown"} onChange={(e) => { const next = { ...packing, [String(item.rowNumber)]: e.target.value as PackingMode }; setPacking(next); savePreferences(file, date, { packing: next, originalTrips, price }); setPackingDirty(true); }}><option value="unknown">확인 필요</option><option value="shared">기존 PLT에 합적</option><option value="loose">별도 박스 적재</option><option value="pallet">별도 PLT 필요</option></select></label>)}
       </details>

@@ -2,10 +2,19 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
+import { simulationAddressIssue } from "./simulation-address";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("엑셀 지역과 주소가 불일치하거나 주소가 없으면 경로에서 확인하도록 알린다", () => {
+  assert.match(simulationAddressIssue("울주", "대구광역시 달서구 월암동")!, /엑셀 지역 울주/);
+  assert.match(simulationAddressIssue("창원", "경상남도 김해시")!, /엑셀 지역 창원/);
+  assert.equal(simulationAddressIssue("김해", "경상남도 김해시 김해대로"), null);
+  assert.equal(simulationAddressIssue("광주", "광주광역시 북구"), null);
+  assert.equal(simulationAddressIssue("울주", null), "등록 주소 없음");
+  assert.equal(simulationAddressIssue("", "경기도 화성시"), null);
+});
 test("지방 대체안은 서로 다른 납품지를 두 차량에 배정하고 남은 용차를 빠짐없이 처리한다", () => {
   const a = { ...item(11, null), customer: "A", location: "광주", region: "regional" as const, regionalGroup: "전라권", lat: 35.2, lng: 126.9 };
   const b = { ...item(12, null), customer: "B", location: "김해", region: "regional" as const, regionalGroup: "경상권", lat: 35.3, lng: 128.9 };

@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
+import { simulationAddressIssue } from "@/lib/simulation-address";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -57,10 +58,12 @@ async function calculate(order: Order, items: SimulationItem[], price: number | 
   const stops = selected.filter((item, index) => !selected.slice(0, index).some((prior) => prior.customer === item.customer && prior.lat === item.lat && prior.lng === item.lng));
   const points = [DEFAULT_DEPOT, ...stops.map((s) => ({ lat: s.lat!, lng: s.lng! })), DEFAULT_DEPOT];
   const road = stops.length ? await fetchKakaoDrivingRoute(points, "RECOMMEND", 2) : null;
+  const labels = ["회사", ...stops.map((stop) => stop.customer || stop.location || "납품지"), "회사"];
+  const legs = road ? labels.slice(1).map((to, index) => ({ from: labels[index], to, distanceKm: road.legDistancesKm?.[index] ?? null, minutes: road.legDurationsSec?.[index] == null ? null : Math.round(road.legDurationsSec[index] / 60) })) : undefined;
   return { vehicle: order.vehicle, items: selected, pallets, weight, unknownPallets: selected.filter((i) => i.pallets == null).length, unknownWeight: selected.filter((i) => i.weight == null).length,
     distance: road?.distanceKm ?? null, minutes: road?.durationMin ?? null, toll: road?.tollWon ?? null,
     fuel: road && price != null ? Math.round(road.distanceKm / 7.1 * price) : null,
-    over: pallets > 8 || weight > (order.vehicle === "1호차" ? 4000 : 3500) };
+    over: pallets > 8 || weight > (order.vehicle === "1호차" ? 4000 : 3500), legs };
 }
 
 export async function POST(request: Request) {
@@ -80,9 +83,9 @@ export async function POST(request: Request) {
     const rows = extractComparisonShipments(sheet, date);
     if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
     const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
-    const addressFor = (name: string) => resolveCustomerAddress(name) || customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || null;
+    const addressFor = (name: string) => customers.find((c) => c.customerName.trim() === name.trim())?.address?.trim() || resolveCustomerAddress(name) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 6, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 7, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row.customer)) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -92,13 +95,13 @@ export async function POST(request: Request) {
     } catch { /* 오래된 결과는 다시 생성한다. */ }
     if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
     if ((mode === "refresh" || mode === "regional") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
-    const addresses = [...new Set(rows.map((row) => addressFor(row.customer)).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
+    const addresses = [...new Set(rows.map((row) => { const address = addressFor(row.customer); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
     const items: SimulationItem[] = mode === "regional" && stored ? stored.items : rows.map((row) => {
-      const address = addressFor(row.customer); const point = address ? points.get(address.trim().replace(/\s+/g, " ")) : null;
+      const address = addressFor(row.customer); const addressIssue = simulationAddressIssue(row.location, address); const point = address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const family = matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
-        lat: point?.lat ?? null, lng: point?.lng ?? null,
+        address, addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
         region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
         weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
     });
@@ -151,6 +154,7 @@ export async function POST(request: Request) {
     const assigned = new Set(ai.orders.flatMap((order) => order.ids));
     const remaining = items.filter((item) => !item.vehicle && !assigned.has(String(item.rowNumber)));
     const warnings = [...new Set(excluded.map((item) => `${item.customer}: 주소 미확인으로 기존 자사 납품에서 제외`))];
+    for (const item of items) if (item.addressIssue) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: ${item.addressIssue}${item.address ? ` (${item.address})` : ""} · 경로 배정 제외`);
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
     const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;
