@@ -14,6 +14,8 @@ import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
 import { simulationAddressIssue } from "@/lib/simulation-address";
+import { findCustomProduct } from "@/lib/custom-product";
+import { loadCustomProducts } from "@/lib/custom-product-server";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -82,10 +84,10 @@ export async function POST(request: Request) {
     if (!sheet) return NextResponse.json({ error: `선택한 날짜의 ${date.slice(0, 7)} 월별 시트를 찾을 수 없습니다.` }, { status: 400 });
     const rows = extractComparisonShipments(sheet, date);
     if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
-    const customers = await prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } });
+    const [customers, customProducts] = await Promise.all([prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } }), loadCustomProducts()]);
     const addressFor = (row: typeof rows[number]) => row.workbookAddress || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 8, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 9, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -102,12 +104,12 @@ export async function POST(request: Request) {
     const items: SimulationItem[] = mode === "regional" && stored ? stored.items : rows.map((row) => {
       const place = row.workbookAddress ? null : places.get(JSON.stringify([row.customer, row.location]));
       const address = resolvedAddress(row); const addressIssue = simulationAddressIssue(row.location, address); const point = !addressIssue && place ? place : address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
-      const family = matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
+      const custom = findCustomProduct(customProducts, row.product); const family = custom ? null : matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "unknown";
       return { ...row, vehicle: /1호\s*차량/.test(row.transport) ? "1호차" : /2호\s*차량/.test(row.transport) ? "2호차" : null,
         address, addressSource: row.workbookAddress ? "엑셀 도착지" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
-        region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, family?.boxesPerPallet, packing),
-        weight: boxes != null && family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null };
+        region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, custom ? custom.boxesPerPallet : family?.boxesPerPallet, packing),
+        weight: boxes != null ? (custom ? (custom.boxWeightKg == null ? null : Math.round(boxes * custom.boxWeightKg * 1000) / 1000) : family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null) : null };
     });
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
     const eligible = items.filter((item) => !item.vehicle || item.lat != null);

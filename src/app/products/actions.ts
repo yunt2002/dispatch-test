@@ -7,6 +7,18 @@ import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { listErpProductNames } from "@/lib/product-loading";
 import { hiddenProductKey } from "@/lib/product-visibility";
+import { DELIVERY_CUSTOMERS } from "@/lib/delivery-customers";
+
+async function productDetails(formData: FormData) {
+  const customerName = optionalText(formData, "customerName");
+  const locationName = optionalText(formData, "locationName");
+  const defaultUnit = text(formData, "defaultUnit");
+  const parseWeight = (name: string) => { const raw = text(formData, name); if (!raw) return null; const value = Number(raw); if (!Number.isFinite(value) || value <= 0 || value > 1000000) throw new Error("invalid"); return value; };
+  if (customerName && !DELIVERY_CUSTOMERS.some((customer) => customer.name === customerName)) throw new Error("invalid");
+  if (locationName && !(await prisma.regionMaster.findFirst({ where: { locationName } }))) throw new Error("invalid");
+  if (defaultUnit !== "box" && defaultUnit !== "plt") throw new Error("invalid");
+  return JSON.stringify({ customerName, locationName, defaultUnit, boxWeightKg: parseWeight("boxWeightKg"), palletWeightKg: parseWeight("palletWeightKg"), boxesPerPallet: parseWeight("boxesPerPallet") });
+}
 
 export async function setExistingProductVisibility(formData: FormData) {
   const name = text(formData, "name");
@@ -23,7 +35,7 @@ export async function setExistingProductVisibility(formData: FormData) {
   }
   revalidatePath("/");
   revalidatePath("/products");
-  redirect("/products?ok=" + encodeURIComponent(visible === "true" ? "품명을 다시 사용합니다." : "품명을 사용 중지했습니다. 기존 납품 기록은 유지됩니다."));
+  redirect("/products?ok=" + encodeURIComponent(visible === "true" ? "품명을 다시 등록했습니다." : "품명을 목록에서 삭제했습니다. 기존 납품 기록은 유지됩니다."));
 }
 
 export async function registerProduct(formData: FormData) {
@@ -32,19 +44,41 @@ export async function registerProduct(formData: FormData) {
     redirect("/products?error=" + encodeURIComponent("품명을 1~150자로 입력해 주세요."));
   }
   const key = productName.normalize("NFKC").toLocaleLowerCase("ko-KR");
-  if (listErpProductNames().some((name) => name.replace(/\s+/g, " ").trim().normalize("NFKC").toLocaleLowerCase("ko-KR") === key)) {
-    redirect("/products?error=" + encodeURIComponent("기존 품목 목록에 이미 있는 품명입니다."));
+  const existingName = listErpProductNames().find((name) => name.replace(/\s+/g, " ").trim().normalize("NFKC").toLocaleLowerCase("ko-KR") === key);
+  if (existingName) {
+    let removed: { count: number };
+    try {
+      removed = await prisma.appSetting.deleteMany({ where: { key: hiddenProductKey(existingName) } });
+    } catch {
+      redirect("/products?error=" + encodeURIComponent("품명을 등록하지 못했습니다. 다시 시도해 주세요."));
+    }
+    if (!removed.count) redirect("/products?error=" + encodeURIComponent("기존 품목 목록에 이미 있는 품명입니다."));
+    revalidatePath("/");
+    revalidatePath("/products");
+    redirect("/products?ok=" + encodeURIComponent("품명을 다시 등록했습니다."));
   }
   const productCode = `USER-${createHash("sha256").update(key).digest("hex")}`;
   try {
-    const restored = await prisma.product.updateMany({ where: { productCode, isActive: false }, data: { productName, isActive: true } });
-    if (!restored.count) await prisma.product.create({ data: { productCode, productName } });
+    const specialLoadingCondition = await productDetails(formData);
+    const restored = await prisma.product.updateMany({ where: { productCode, isActive: false }, data: { productName, specialLoadingCondition, isActive: true } });
+    if (!restored.count) await prisma.product.create({ data: { productCode, productName, specialLoadingCondition } });
   } catch {
     redirect("/products?error=" + encodeURIComponent("이미 등록된 품명이거나 저장하지 못했습니다. 확인 후 다시 시도해 주세요."));
   }
   revalidatePath("/");
   revalidatePath("/products");
   redirect("/products?ok=" + encodeURIComponent("품명이 등록되었습니다. 새 납품 등록에서 선택할 수 있습니다."));
+}
+
+export async function updateRegisteredProduct(formData: FormData) {
+  const id = text(formData, "id");
+  try {
+    const specialLoadingCondition = await productDetails(formData);
+    const updated = await prisma.product.updateMany({ where: { id, isActive: true, productCode: { startsWith: "USER-" } }, data: { specialLoadingCondition } });
+    if (!updated.count) throw new Error("missing");
+  } catch { redirect("/products?error=" + encodeURIComponent("품목 정보를 확인해 주세요. 중량과 박스 수는 0보다 커야 합니다.")); }
+  revalidatePath("/"); revalidatePath("/confirm"); revalidatePath("/products");
+  redirect("/products?ok=" + encodeURIComponent("품목 정보를 저장했습니다."));
 }
 
 export async function removeRegisteredProduct(formData: FormData) {
@@ -59,20 +93,6 @@ export async function removeRegisteredProduct(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/products");
   redirect("/products?ok=" + encodeURIComponent("품명을 목록에서 삭제했습니다. 기존 납품 기록은 유지됩니다."));
-}
-
-export async function restoreRegisteredProduct(formData: FormData) {
-  const id = text(formData, "id");
-  let restored: { count: number };
-  try {
-    restored = await prisma.product.updateMany({ where: { id, isActive: false, productCode: { startsWith: "USER-" } }, data: { isActive: true } });
-  } catch {
-    redirect("/products?error=" + encodeURIComponent("품명을 다시 사용하지 못했습니다. 다시 시도해 주세요."));
-  }
-  if (!restored.count) redirect("/products?error=" + encodeURIComponent("다시 사용할 품명을 찾지 못했습니다."));
-  revalidatePath("/");
-  revalidatePath("/products");
-  redirect("/products?ok=" + encodeURIComponent("품명을 다시 사용합니다."));
 }
 
 export async function upsertProduct(formData: FormData) {

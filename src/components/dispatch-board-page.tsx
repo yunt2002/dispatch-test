@@ -14,6 +14,7 @@ import { reasonOneLine, regionTypeLabel } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
 import { computeShipmentWeightKg } from "@/lib/pallet-weight";
 import { matchProductLoading } from "@/lib/product-loading";
+import { findCustomProduct, readCustomProduct } from "@/lib/custom-product";
 import { HIDDEN_PRODUCT_PREFIX } from "@/lib/product-visibility";
 import { applyProductLoadingIfNeeded } from "@/lib/product-loading-apply";
 import { getDispatchSettings } from "@/lib/settings";
@@ -64,7 +65,7 @@ export default async function HomePage({
       orderBy: { vehicleName: "asc" },
     }),
     getDispatchSettings(),
-    prisma.product.findMany({ where: { isActive: true, productCode: { startsWith: "USER-" } }, select: { productName: true }, orderBy: { productName: "asc" } }),
+    prisma.product.findMany({ where: { productCode: { startsWith: "USER-" } }, select: { productName: true, specialLoadingCondition: true, isActive: true }, orderBy: { productName: "asc" } }),
     prisma.appSetting.findMany({ where: { key: { startsWith: HIDDEN_PRODUCT_PREFIX } }, select: { value: true } }),
   ]);
 
@@ -74,6 +75,7 @@ export default async function HomePage({
   const today = todayISO();
   const date = params.date || (knownDates.includes(today) ? today : knownDates[0]) || today;
   const entries = await loadEntries(date);
+  const customInfo = customProducts.map(readCustomProduct);
   const feeKeys = entries.flatMap((entry) => { const selected = selectedVehicle(entry); return selected ? [transportFeeKey(entry.id, selected.vehicleTypeId)] : []; });
   const feeSettings = view === "confirm" && feeKeys.length ? await prisma.appSetting.findMany({ where: { key: { in: feeKeys } }, select: { key: true, value: true } }) : [];
   const fees = new Map(feeSettings.map((setting) => [setting.key, setting.value]));
@@ -110,12 +112,13 @@ export default async function HomePage({
     const capacity = maxPallet > 0 ? maxPallet * neededTrucks : 0;
     const remaining = Math.max(0, capacity - pallets);
     const weights = assigned.map(({ entry }) => {
-      const family = matchProductLoading(entry.productCode, entry.productName);
+      const custom = findCustomProduct(customInfo, entry.productName);
+      const family = custom ? null : matchProductLoading(entry.productCode, entry.productName);
       const weight = computeShipmentWeightKg({
         boxCount: entry.boxCount,
         palletCount: entry.palletCount,
-        boxWeightG: family?.boxWeightG,
-        kgPerPallet: family?.kgPerPallet,
+        boxWeightG: custom ? (custom.boxWeightKg == null ? null : custom.boxWeightKg * 1000) : family?.boxWeightG,
+        kgPerPallet: custom ? custom.palletWeightKg : family?.kgPerPallet,
         fallbackKgPerPallet: settings.kgPerPallet,
       });
       return weight;
@@ -248,7 +251,7 @@ export default async function HomePage({
         <div className="dispatch-head-actions">
           {view === "request" ? <ScheduleRegisterDialog
             date={date}
-            customProductNames={customProducts.map((product) => product.productName)}
+            customProducts={customProducts.filter((product) => product.isActive).map(readCustomProduct)}
             hiddenProductNames={hiddenProducts.map((product) => product.value)}
             regions={regions}
             vehicles={vehicles.map((vehicle) => ({

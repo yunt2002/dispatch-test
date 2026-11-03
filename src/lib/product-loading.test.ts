@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
+import { findCustomProduct, readCustomProduct } from "./custom-product";
 import { describe, it } from "node:test";
 import {
   matchProductLoading,
   normalizeBoxType,
   resolveDefaultsFromProduct,
 } from "./product-loading";
+
+describe("사용자 품목 정보", () => {
+  it("이전에 이름만 등록한 품목은 미확인 상태로 읽는다", () => {
+    const info = readCustomProduct({ productName: "신규 품목", specialLoadingCondition: null });
+    assert.equal(info.boxWeightKg, null);
+    assert.equal(info.defaultUnit, "box");
+  });
+  it("사용자 품목은 이름이 정확히 같은 경우에만 매칭한다", () => {
+    const info = readCustomProduct({ productName: "Test PART", specialLoadingCondition: JSON.stringify({ boxWeightKg: 6, defaultUnit: "plt" }) });
+    assert.equal(findCustomProduct([info], " test  part ")?.boxWeightKg, 6);
+    assert.equal(findCustomProduct([info], "Test PART 추가"), undefined);
+    assert.equal(info.defaultUnit, "plt");
+  });
+});
 
 describe("normalizeBoxType", () => {
   it("treats P folding boxes as P boxes", () => {

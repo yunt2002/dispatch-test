@@ -23,6 +23,12 @@ function vehicle(partial: Partial<VehicleType> & Pick<VehicleType, "id" | "vehic
 }
 
 describe("dispatch groups", () => {
+  it("사용자 품목의 박스 중량을 추천에 반영하되 박스를 PLT로 자동 환산하지 않는다", () => {
+    const customProduct = { productName: "신규 품목", customerName: null, locationName: "인천", defaultUnit: "box" as const, boxWeightKg: 6, palletWeightKg: null, boxesPerPallet: 20 };
+    const result = recommendForQuantity({ locationName: "인천", boxCount: 20, palletCount: 0, productName: customProduct.productName, customProduct, vehicles: [vehicle({ id: "v2", vehicleName: "2호차" })], regions: new Map([["인천", { regionType: "METROPOLITAN", preferredVehicleTypeId: "v2" }]]) });
+    assert.equal(result.palletCount, 0);
+    assert.ok(result.reasonLines.some((reason) => reason.includes("120kg")));
+  });
   it("등록 담당자가 박스의 추가 PLT를 0으로 지정하면 품목 기준표로 다시 환산하지 않는다", () => {
     const result = recommendForQuantity({ locationName: "인천", boxCount: 20, palletCount: 0, productName: "BD HIP SENSOR MAGNET ASSY", vehicles: [vehicle({ id: "v2", vehicleName: "2호차" })], regions: new Map([["인천", { regionType: "METROPOLITAN", preferredVehicleTypeId: "v2" }]]) });
     assert.equal(result.palletCount, 0);

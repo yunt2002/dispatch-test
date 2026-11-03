@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { registerSchedule } from "@/app/schedule/actions";
 import { ProductCombobox } from "@/components/product-combobox";
+import { findCustomProduct, type CustomProductInfo } from "@/lib/custom-product";
 import { EXTERNAL_TRANSPORTS } from "@/lib/external-transport";
 import { resolveRegistrationProductFields } from "@/lib/registration-product-defaults";
 import {
@@ -18,26 +19,28 @@ export function ScheduleRegisterDialog({
   date,
   regions,
   vehicles,
-  customProductNames,
+  customProducts,
   hiddenProductNames,
 }: {
   date: string;
   regions: { id: string; locationName: string }[];
   vehicles: { id: string; vehicleName: string }[];
-  customProductNames: string[];
+  customProducts: CustomProductInfo[];
   hiddenProductNames: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [productName, setProductName] = useState("");
+  const [qtyUnit, setQtyUnit] = useState<"box" | "plt">("box");
   const [extraProducts, setExtraProducts] = useState<number[]>([]);
   const [nextProductId, setNextProductId] = useState(1);
+  const [extraUnits, setExtraUnits] = useState<Record<number, "box" | "plt">>({});
   const [customerName, setCustomerName] = useState("");
   const [locationName, setLocationName] = useState("");
   const [suggestNote, setSuggestNote] = useState<string | null>(null);
   const [customerManual, setCustomerManual] = useState(false);
   const [locationManual, setLocationManual] = useState(false);
 
-  const erpNames = useMemo(() => { const hidden = new Set(hiddenProductNames); return [...new Set([...listErpProductNames().filter((name) => !hidden.has(name)), ...customProductNames])].sort((a, b) => a.localeCompare(b, "ko")); }, [customProductNames, hiddenProductNames]);
+  const erpNames = useMemo(() => { const hidden = new Set(hiddenProductNames); return [...new Set([...listErpProductNames().filter((name) => !hidden.has(name)), ...customProducts.map((product) => product.productName)])].sort((a, b) => a.localeCompare(b, "ko")); }, [customProducts, hiddenProductNames]);
   const customerNames = useMemo(
     () => DELIVERY_CUSTOMERS.map((c) => c.name),
     [],
@@ -61,7 +64,9 @@ export function ScheduleRegisterDialog({
 
   function resetFields() {
     setProductName("");
+    setQtyUnit("box");
     setExtraProducts([]);
+    setExtraUnits({});
     setNextProductId(1);
     setCustomerName("");
     setLocationName("");
@@ -78,7 +83,9 @@ export function ScheduleRegisterDialog({
   /** 사용자가 직접 지정한 값은 유지하고 나머지 값만 품명에 맞춘다. */
   function onProductChange(name: string) {
     setProductName(name);
-    const defaults = resolveDefaultsFromProduct(name);
+    const custom = findCustomProduct(customProducts, name);
+    const defaults = custom ?? resolveDefaultsFromProduct(name);
+    setQtyUnit(custom?.defaultUnit ?? "box");
     const { customerName: nextCustomer, locationName: nextLocation } = resolveRegistrationProductFields({
       current: { customerName, locationName }, customerManual, locationManual,
       suggestedCustomer: defaults.customerName, suggestedLocation: defaults.locationName,
@@ -94,7 +101,7 @@ export function ScheduleRegisterDialog({
     setCustomerManual(Boolean(name));
     setCustomerName(name);
     if (!locationManual) {
-      const defaults = resolveDefaultsFromProduct(productName);
+      const defaults = findCustomProduct(customProducts, productName) ?? resolveDefaultsFromProduct(productName);
       const mapped = name ? resolveLocationFromCustomer(name, locationOptions) : defaults.locationName;
       setLocationName(mapped ?? "");
       setSuggestNote(mapped ? `지역 ${mapped} 자동 추천` : null);
@@ -168,7 +175,8 @@ export function ScheduleRegisterDialog({
                     />
                     <select
                       className="dispatch-select"
-                      defaultValue="box"
+                      value={qtyUnit}
+                      onChange={(event) => setQtyUnit(event.target.value === "plt" ? "plt" : "box")}
                       id="qtyUnit"
                       name="qtyUnit"
                     >
@@ -236,13 +244,13 @@ export function ScheduleRegisterDialog({
                 <div className="dispatch-form-grid" key={productId}>
                   <div className="dispatch-field">
                     <label htmlFor={`productName-${productId}`}>추가 품명 {index + 2} *</label>
-                    <ProductCombobox id={`productName-${productId}`} names={erpNames} required />
+                    <ProductCombobox id={`productName-${productId}`} names={erpNames} onValueChange={(name) => setExtraUnits((units) => ({ ...units, [productId]: findCustomProduct(customProducts, name)?.defaultUnit ?? "box" }))} required />
                   </div>
                   <div className="dispatch-field">
                     <label htmlFor={`quantity-${productId}`}>수량 *</label>
                     <div className="dispatch-quantity-row">
                       <input className="dispatch-input" id={`quantity-${productId}`} inputMode="decimal" name="quantity" placeholder="예: 64" required />
-                      <select className="dispatch-select" defaultValue="box" name="qtyUnit" aria-label={`추가 품목 ${index + 2} 수량 단위`}>
+                      <select className="dispatch-select" value={extraUnits[productId] ?? "box"} onChange={(event) => setExtraUnits((units) => ({ ...units, [productId]: event.target.value === "plt" ? "plt" : "box" }))} name="qtyUnit" aria-label={`추가 품목 ${index + 2} 수량 단위`}>
                         <option value="box">박스</option><option value="plt">PLT</option>
                       </select>
                     </div>

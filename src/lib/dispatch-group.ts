@@ -8,6 +8,7 @@ import {
 } from "@/lib/delivery-excel";
 import { matchProductLoading } from "@/lib/product-loading";
 import { computeShipmentWeightKg } from "@/lib/pallet-weight";
+import type { CustomProductInfo } from "@/lib/custom-product";
 import {
   matchRouteZone,
   preferredVehicleIdForZone,
@@ -371,6 +372,7 @@ function resolveFleetIds(vehicles: VehicleType[]) {
 
 /** 지역 + 수량만으로 즉시 차량 추천 (일정 등록용) */
 export function recommendForQuantity(input: {
+  customProduct?: CustomProductInfo;
   locationName: string;
   customerName?: string | null;
   boxCount?: number | null;
@@ -398,7 +400,7 @@ export function recommendForQuantity(input: {
   const palletKnown = totalPallets != null;
   const warnings: string[] = [];
   const reasonLines: string[] = [];
-  const family = matchProductLoading(input.productCode, input.productName);
+  const family = input.customProduct ? { familyName: input.customProduct.productName, boxType: "등록 품목", boxesPerPallet: input.customProduct.boxesPerPallet, boxWeightG: input.customProduct.boxWeightKg == null ? null : input.customProduct.boxWeightKg * 1000, kgPerPallet: input.customProduct.palletWeightKg, customers: input.customProduct.customerName ? [input.customProduct.customerName] : [] } : matchProductLoading(input.productCode, input.productName);
   if (boxCount > 0 && input.palletCount == null) warnings.push("박스 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정");
   const zone = matchRouteZone({
     locationName: location,

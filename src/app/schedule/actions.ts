@@ -26,6 +26,8 @@ import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
 import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 import { transitionScheduleStatus } from "@/lib/schedule-status-transition";
+import { findCustomProduct } from "@/lib/custom-product";
+import { loadCustomProducts } from "@/lib/custom-product-server";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -137,8 +139,9 @@ export async function registerSchedule(formData: FormData) {
     go(formData, { date: deliveryDate, error: "여러 품목을 등록할 때는 각 품명을 입력하세요." });
   }
 
+  const customProducts = await loadCustomProducts();
   if (!locationName || !customerName) {
-    const defaults = resolveDefaultsFromProduct(productName);
+    const defaults = findCustomProduct(customProducts, productName) ?? resolveDefaultsFromProduct(productName);
     if (!locationName) locationName = defaults.locationName;
     if (!customerName) customerName = defaults.customerName;
   }
@@ -179,6 +182,7 @@ export async function registerSchedule(formData: FormData) {
   const boxCount = qtyUnit === "box" ? quantity : null;
   const palletCount = qtyUnit === "plt" ? quantity : 0;
   const result = recommendForQuantity({
+    customProduct: findCustomProduct(customProducts, itemName),
     locationName: resolvedLocation,
     customerName,
     boxCount,
@@ -458,6 +462,7 @@ export async function updateSchedule(formData: FormData) {
   ]);
 
   const result = recommendForQuantity({
+    customProduct: findCustomProduct(await loadCustomProducts(), productName),
     locationName,
     customerName,
     boxCount,

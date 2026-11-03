@@ -8,6 +8,8 @@ import { parseJson } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
 import { externalTransport } from "@/lib/external-transport";
+import { findCustomProduct } from "@/lib/custom-product";
+import { loadCustomProducts } from "@/lib/custom-product-server";
 
 async function loadRegions(): Promise<RegionLookup> {
   const regions = await prisma.regionMaster.findMany();
@@ -28,7 +30,7 @@ async function loadRegions(): Promise<RegionLookup> {
  * CONFIRMED·수동 선택·합차 그룹은 차량을 유지하고 잔여만 차감한다.
  */
 export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
-  const [vehicles, regions, settings, entriesRaw] = await Promise.all([
+  const [vehicles, regions, settings, entriesRaw, customProducts] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
     loadRegions(),
     getDispatchSettings(),
@@ -39,6 +41,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
       },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     }),
+    loadCustomProducts(),
   ]);
 
   const entries = [...entriesRaw].sort((a, b) => {
@@ -101,6 +104,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
     }
 
     const result = recommendForQuantity({
+      customProduct: findCustomProduct(customProducts, entry.productName),
       locationName: entry.locationName,
       customerName: entry.customerName,
       boxCount: entry.boxCount,
