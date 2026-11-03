@@ -6,6 +6,25 @@ import { bool, num, optionalText, text } from "@/lib/form";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "node:crypto";
 import { listErpProductNames } from "@/lib/product-loading";
+import { hiddenProductKey } from "@/lib/product-visibility";
+
+export async function setExistingProductVisibility(formData: FormData) {
+  const name = text(formData, "name");
+  const visible = text(formData, "visible");
+  if (!listErpProductNames().includes(name) || (visible !== "true" && visible !== "false")) {
+    redirect("/products?error=" + encodeURIComponent("품명 또는 요청을 확인해 주세요."));
+  }
+  const key = hiddenProductKey(name);
+  try {
+    if (visible === "true") await prisma.appSetting.deleteMany({ where: { key } });
+    else await prisma.appSetting.upsert({ where: { key }, create: { key, value: name }, update: { value: name } });
+  } catch {
+    redirect("/products?error=" + encodeURIComponent("품명 상태를 변경하지 못했습니다. 다시 시도해 주세요."));
+  }
+  revalidatePath("/");
+  revalidatePath("/products");
+  redirect("/products?ok=" + encodeURIComponent(visible === "true" ? "품명을 다시 사용합니다." : "품명을 사용 중지했습니다. 기존 납품 기록은 유지됩니다."));
+}
 
 export async function registerProduct(formData: FormData) {
   const productName = text(formData, "productName").replace(/\s+/g, " ").trim();
@@ -40,6 +59,20 @@ export async function removeRegisteredProduct(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/products");
   redirect("/products?ok=" + encodeURIComponent("품명을 목록에서 삭제했습니다. 기존 납품 기록은 유지됩니다."));
+}
+
+export async function restoreRegisteredProduct(formData: FormData) {
+  const id = text(formData, "id");
+  let restored: { count: number };
+  try {
+    restored = await prisma.product.updateMany({ where: { id, isActive: false, productCode: { startsWith: "USER-" } }, data: { isActive: true } });
+  } catch {
+    redirect("/products?error=" + encodeURIComponent("품명을 다시 사용하지 못했습니다. 다시 시도해 주세요."));
+  }
+  if (!restored.count) redirect("/products?error=" + encodeURIComponent("다시 사용할 품명을 찾지 못했습니다."));
+  revalidatePath("/");
+  revalidatePath("/products");
+  redirect("/products?ok=" + encodeURIComponent("품명을 다시 사용합니다."));
 }
 
 export async function upsertProduct(formData: FormData) {
