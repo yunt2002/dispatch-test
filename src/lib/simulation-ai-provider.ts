@@ -15,7 +15,7 @@ export async function requestSimulationAi(input: {
   });
   if (groq.status === 429 && input.geminiKey) {
     try {
-    const model = input.geminiModel?.trim() || "gemini-3.8-flash";
+    const model = input.geminiModel?.trim() || "gemini-3.6-flash";
     if (!/^[a-zA-Z0-9._-]+$/.test(model)) throw new Error("Gemini 모델 이름이 올바르지 않습니다.");
     const response = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST", headers: { "x-goog-api-key": input.geminiKey, "Content-Type": "application/json" },

@@ -10,6 +10,7 @@ test("Groq 한도 초과일 때만 Gemini로 전환해 응답과 출처를 반�
   };
   const result = await requestSimulationAi({ groqKey: "groq-test", groqModel: "model", geminiKey: "gemini-test", messages: [{ role: "system", content: "규칙" }, { role: "user", content: "요청" }], fetcher });
   assert.equal(result.provider, "Gemini"); assert.equal(result.switched, true); assert.match(result.content!, /charterGroups/);
+  assert.equal(result.model, "gemini-3.6-flash");
   assert.match(calls[1].url, /generativelanguage\.googleapis\.com/);
   assert.equal((calls[1].init?.headers as Record<string, string>)["x-goog-api-key"], "gemini-test");
 });
