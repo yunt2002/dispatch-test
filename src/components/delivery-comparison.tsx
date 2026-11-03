@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { isPackingMode } from "@/lib/simulation-packing";
-import { estimateCharterTrips, charterDestinationKey, charterGroupsCost, hasComparableRoutes, simulationCostIssues } from "@/lib/simulation-cost";
+import { estimateCharterTrips, charterDestinationKey, estimatedCharterGroupsCost, estimatedOriginalCharterCost, hasComparableRoutes, simulationCostIssues } from "@/lib/simulation-cost";
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
 function ComparisonBars({ title, original, proposed, regional, format, isCost = false, regionalProvisional = false }: { title: string; original: number; proposed: number; regional?: number | null; format: (n: number) => string; isCost?: boolean; regionalProvisional?: boolean }) {
@@ -113,8 +113,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const proposedTrips = result?.charterGroups == null ? null : result.charterGroups.length;
   const destinations = result ? [...new Map([...result.items, ...(result.regional?.remaining ?? [])].map((item) => [charterDestinationKey(item), item])).entries()] : [];
   const originalGroups = result ? [...new Map(result.items.filter((item) => !item.vehicle && /용차/.test(item.transport)).map((item) => [charterDestinationKey(item), { items: [item] }])).values()] : [];
-  const originalCharterCost = /^\d+$/.test(originalTrips) && Number(originalTrips) === originalGroups.length ? charterGroupsCost(originalGroups, fares) : null;
-  const proposedCharterCost = result?.charterGroups ? charterGroupsCost(result.charterGroups, fares) : null;
+  const originalCharterCost = estimatedOriginalCharterCost(originalGroups, fares, originalTrips);
+  const proposedCharterCost = result?.charterGroups ? estimatedCharterGroupsCost(result.charterGroups, fares) : null;
   const compare = (vehicle: number | null, charter: number | null) => {
     const base = result ? cost(result.original) : null;
     if (!complete || packingDirty || base == null || vehicle == null || originalCharterCost == null || charter == null) return null;
@@ -126,7 +126,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const regionalTrips = regional && !regional.error ? regional.charterGroups.length : null;
   const regionalUncertain = !!regional && [...regional.routes.flatMap((route) => route.items), ...regional.remaining.filter((item) => item.region === 'regional' && /용차/.test(item.transport))].some((item) => item.pallets == null || item.weight == null || item.addressSource?.startsWith("카카오"));
   const regionalTime = regional && regional.routes.some((route) => route.items.length) && regional.routes.every((route) => !route.items.length || route.minutes != null) ? total(regional.routes) : null;
-  const regionalCharterCost = regional && !regional.error ? charterGroupsCost(regional.charterGroups, fares) : null;
+  const regionalCharterCost = regional && !regional.error ? estimatedCharterGroupsCost(regional.charterGroups, fares) : null;
   const regionalComparison = regional && !regional.error ? compare(cost(regional.routes), regionalCharterCost) : null;
   const baseTrips = /^\d+$/.test(originalTrips) && Number.isSafeInteger(Number(originalTrips)) && (originalHasCharter ? Number(originalTrips) > 0 : Number(originalTrips) === 0) ? Number(originalTrips) : null;
   const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
@@ -165,22 +165,22 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           {proposedTrips != null && baseTrips != null && baseVehicleCost != null && cost(result.proposed) != null ? <p>AI 제안 비용 변화: 용차비 <strong>{difference(proposedCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(result.proposed), baseVehicleCost, money)}</strong></p> : null}
           {regionalComparison ? <p>지방 집중안의 포함 항목 비용: 기존 대비 <strong>{regionalComparison.saving === 0 ? "차이 없음" : `${money(Math.abs(regionalComparison.saving))} ${regionalComparison.saving > 0 ? "감소" : "증가"}`}</strong></p> : null}
           {regionalComparison && regional && regionalTrips != null && baseTrips != null && baseVehicleCost != null && cost(regional.routes) != null ? <p>지방 집중안 비용 변화: 용차비 <strong>{difference(regionalCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(regional.routes), baseVehicleCost, money)}</strong></p> : null}
-          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 입력한 목적지별 운임 기준</p>
+          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 미입력 운임은 1회 200,000원 가정</p>
           <p>자사 차량 경유비·통행료 + 용차비 기준입니다.</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "목적지별 운임·주소·경로 또는 운행 횟수가 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
         {!comparison && complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? regionalTime : null} regionalProvisional={regionalUncertain} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : null}
         {regional && !regional.error && !packingDirty ? <RegionalVehicleCharts routes={regional.routes} provisional={regionalUncertain} /> : null}
-        <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 비용은 입력한 목적지별 운임 기준이며 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
+        <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 용차비는 입력한 목적지별 운임과 미입력 시 1회 20만 원 가정을 사용합니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
         <p className="comparison-note">지방 집중안은 AI 후보 중 1·2호차 모두 지방 물량이 있고 알려진 적재 한도와 권역 조건을 만족하는 안을 검증합니다. AI 후보 생성에 실패하면 같은 조건을 통과한 규칙 기반 대체안을 별도로 표시할 수 있습니다. 경상권·전라권을 분리하고 비슷한 방향은 직선거리 기준으로 검토합니다. 적재 미확인 품목은 가배정이며 실제 적재와 도로 경로를 확인해야 합니다. 수도권의 기존 자사 물량은 용차, 기존 택배는 택배로 유지합니다.</p>
         {regionalUncertain ? <p className="dispatch-route-note-warn">지방 집중안은 적재 정보 또는 장소 검색 주소 확인이 필요한 가배정 참고값입니다. 실제 납품지·적재 가능 여부, 용차 횟수와 비용은 확인 후 달라질 수 있습니다.</p> : null}
         {regional?.error ? <p className="dispatch-route-note-warn">지방 집중안 계산 불가: {regional.error}</p> : null}
         {regional && !regional.error && regional.note ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
         <h4>목적지별 용차 운임 (1회)</h4>
-        <p className="comparison-note">각 목적지의 실제 또는 예상 운임을 입력하세요. 미입력 시 비용 비교를 표시하지 않습니다. 같은 거래처·지역의 품목은 한 운행으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다. AI 후보 선택은 기존 20만 원 가정을 사용하며 입력 금액으로 다시 선택하지 않습니다.</p>
+        <p className="comparison-note">각 목적지의 실제 또는 예상 운임을 입력하세요. 입력하지 않은 목적지는 기존처럼 1회 20만 원으로 가정합니다. 같은 거래처·지역의 품목은 한 운행으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다. AI 후보 선택은 기존 20만 원 가정을 사용하며 입력 금액으로 다시 선택하지 않습니다.</p>
         {destinations.map(([key, item]) => <label key={key} className="simulation-packing-row"><span>{item.customer || `거래처 미확인 · ${item.rowNumber}행`} · {item.location || "지역 미확인"}</span><input type="number" min="0" step="1" placeholder="운임 미입력" value={fares[key] ?? ""} onChange={(e) => { const next = { ...fares, [key]: e.target.value }; setFares(next); try { if (file && date) localStorage.setItem(`simulation-fares:v1:${file.name}:${file.size}:${file.lastModified}:${date}`, JSON.stringify(next)); } catch { /* Storage may be unavailable. */ } }} aria-label={`${item.customer || item.rowNumber} ${item.location} 용차 운임`} /> 원</label>)}
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => { const value = e.target.value; setOriginalTrips(value); savePreferences(file, date, { packing, originalTrips: value, price }); }} /></label>
           <p>AI 제안 용차 운행: <strong>{proposedTrips == null ? "제안 없음" : `${proposedTrips}회`}</strong></p></div>
-        <p className="comparison-note">비용 비교는 기존 운행 횟수가 거래처·지역별 추정 묶음 수와 같을 때 가능합니다. 실제 운행이 다르면 운임과 횟수를 별도로 확인하세요.</p>
+        <p className="comparison-note">기존 운행 횟수가 추정 묶음 수와 다르면 목적지별 운임을 적용할 수 없어 비교 금액이 표시되지 않을 수 있습니다. 운임을 입력하지 않은 경우에는 입력한 운행 횟수에 20만 원을 적용합니다.</p>
       </div>
       <details className="simulation-details"><summary>배차 결과 자세히 보기</summary>
       <p className="comparison-note">{result.note} · 납품 기한·긴급 여부·택배 마감·하차 시간은 미확인이므로 실제 운행 가능성을 확인해야 합니다.</p>

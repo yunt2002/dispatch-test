@@ -23,6 +23,24 @@ export function charterGroupsCost(groups: { items: Destination[] }[], fares: Rec
   return total;
 }
 
+/** 미입력 운임은 예시 금액을 사용하며 잘못 입력한 값은 계산하지 않는다. */
+export function estimatedCharterGroupsCost(groups: { items: Destination[] }[], fares: Record<string, string>): number | null {
+  const defaults: Record<string, string> = {};
+  for (const group of groups) for (const item of group.items) {
+    const key = charterDestinationKey(item);
+    defaults[key] = fares[key] === undefined || fares[key] === "" ? "200000" : fares[key];
+  }
+  return charterGroupsCost(groups, defaults);
+}
+
+export function estimatedOriginalCharterCost(groups: { items: Destination[] }[], fares: Record<string, string>, trips: string): number | null {
+  if (!/^\d+$/.test(trips) || !Number.isSafeInteger(Number(trips)) || (groups.length ? Number(trips) < 1 : Number(trips) !== 0)) return null;
+  if (Number(trips) === groups.length) return estimatedCharterGroupsCost(groups, fares);
+  if (groups.some((group) => group.items.some((item) => fares[charterDestinationKey(item)]))) return null;
+  const total = Number(trips) * 200000;
+  return Number.isSafeInteger(total) ? total : null;
+}
+
 /** 적재 초과는 실행 불가 경고이며 비용 자료의 누락과는 별개다. */
 export function hasComparableRoutes(result: {
   items: { rowNumber: number; vehicle: string | null }[];
