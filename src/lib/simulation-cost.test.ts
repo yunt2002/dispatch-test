@@ -19,6 +19,8 @@ test("기본 운임으로 기존 비교를 유지하고 입력 운임만 대체�
   assert.equal(estimatedCharterGroupsCost(groups, {}), 400000);
   assert.equal(estimatedCharterGroupsCost(groups, { [charterDestinationKey(a)]: "300000" }), 500000);
   assert.equal(estimatedCharterGroupsCost(groups, { [charterDestinationKey(a)]: "0" }), 200000);
+  assert.equal(estimatedCharterGroupsCost([{ items: [a, b] }], {}), 200000);
+  assert.equal(estimatedCharterGroupsCost([{ items: [a, b] }], { [charterDestinationKey(a)]: "300000" }), null);
   assert.equal(estimatedOriginalCharterCost(groups, {}, "3"), 600000);
   assert.equal(estimatedOriginalCharterCost(groups, { [charterDestinationKey(a)]: "300000" }, "3"), null);
 });

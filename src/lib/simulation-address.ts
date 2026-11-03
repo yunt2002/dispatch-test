@@ -1,11 +1,18 @@
 /** 엑셀에 명시된 시·군과 등록 주소가 다른 경우만 불일치로 본다. */
+export function correctedSimulationLocation(customer: string, location: string): string {
+  const name = customer.trim().replace(/\s+/g, "").toLowerCase();
+  const area = location.trim().replace(/\s+/g, "");
+  if ((name === "한국프레틀" || name === "한국에프아이티볼테라(한국프레틀)") && ["의왕", "의왕시"].includes(area)) return "안양";
+  return location;
+}
+
 export function confirmedSimulationAddress(customer: string, location: string): string | null {
   const name = customer.trim().replace(/\s+/g, "").toLowerCase();
   const area = location.trim().replace(/\s+/g, "");
   if ((name === "디아이씨" || name === "dic") && (area === "울주" || area === "울주군")) return "울산광역시 울주군 상북면 길천산업로 401";
   if (name === "지엠비코리아" && (area === "창원" || area === "창원시")) return "경상남도 창원시 성산구 웅남로 618";
   if ((name === "엘지이노텍(삼현)" || name === "lgit(삼현)") && (area === "창원" || area === "창원시")) return "경상남도 창원시 의창구 죽전로 45";
-  if ((name === "한국프레틀" || name === "한국에프아이티볼테라(한국프레틀)") && ["안양", "안양시"].includes(area)) return "경기도 안양시 만안구 덕천로152번길 25";
+  if ((name === "한국프레틀" || name === "한국에프아이티볼테라(한국프레틀)") && ["", "안양", "안양시", "경기안양", "경기안양시", "경기도안양", "경기도안양시", "경기도안양시만안구", "경기안양시만안구"].includes(area)) return "경기도 안양시 만안구 덕천로152번길 25";
   return null;
 }
 

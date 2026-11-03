@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
-import { confirmedSimulationAddress, simulationAddressIssue } from "./simulation-address";
+import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "./simulation-address";
 import { uniqueCompanyPlace } from "./simulation-place-match";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
@@ -27,7 +27,14 @@ test("확인한 삼현과 한국프레틀 주소를 업체와 지역에 맞게 �
   const prettl = confirmedSimulationAddress("한국에프아이티볼테라 \n(한국프레틀)", "안양");
   assert.equal(prettl, "경기도 안양시 만안구 덕천로152번길 25");
   assert.equal(simulationAddressIssue("안양", prettl), null);
+  assert.equal(confirmedSimulationAddress("한국에프아이티볼테라 (한국프레틀)", ""), prettl);
+  assert.equal(confirmedSimulationAddress("한국에프아이티볼테라 (한국프레틀)", "경기 안양시 만안구"), prettl);
   assert.equal(confirmedSimulationAddress("한국프레틀", "의왕"), null);
+  const corrected = correctedSimulationLocation("한국에프아이티볼테라 \n(한국프레틀)", "의왕");
+  assert.equal(corrected, "안양");
+  assert.equal(confirmedSimulationAddress("한국에프아이티볼테라 \n(한국프레틀)", corrected), prettl);
+  assert.equal(correctedSimulationLocation("다른 업체", "의왕"), "의왕");
+  assert.equal(correctedSimulationLocation("한국프레틀", "수원"), "수원");
   assert.equal(confirmedSimulationAddress("엘지이노텍(삼현)", "김해"), null);
 });
 test("회사명과 엑셀 지역에 일치하는 유일한 장소만 주소 후보로 사용한다", () => {

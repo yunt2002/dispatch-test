@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
-import { confirmedSimulationAddress, simulationAddressIssue } from "@/lib/simulation-address";
+import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
 
@@ -82,12 +82,12 @@ export async function POST(request: Request) {
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
     const sheet = findComparisonSheet(workbook, date);
     if (!sheet) return NextResponse.json({ error: `선택한 날짜의 ${date.slice(0, 7)} 월별 시트를 찾을 수 없습니다.` }, { status: 400 });
-    const rows = extractComparisonShipments(sheet, date);
+    const rows = extractComparisonShipments(sheet, date).map((row) => ({ ...row, originalLocation: row.location, location: correctedSimulationLocation(row.customer, row.location) }));
     if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
     const [customers, customProducts] = await Promise.all([prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } }), loadCustomProducts()]);
     const addressFor = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 10, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 11, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -160,6 +160,7 @@ export async function POST(request: Request) {
     const assigned = new Set(ai.orders.flatMap((order) => order.ids));
     const remaining = items.filter((item) => !item.vehicle && !assigned.has(String(item.rowNumber)));
     const warnings = [...new Set(excluded.map((item) => `${item.customer}: 주소 미확인으로 기존 자사 납품에서 제외`))];
+    for (const row of rows) if (row.originalLocation !== row.location) warnings.push(`${row.rowNumber}행 ${row.customer}: 엑셀 지역 ${row.originalLocation} → 확인된 납품지 ${row.location} 적용 (엑셀 원본은 변경되지 않음)`);
     for (const item of items) if (item.addressIssue) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: ${item.addressIssue}${item.address ? ` (${item.address})` : ""} · 경로 배정 제외`);
     for (const item of items) if (item.addressSource?.startsWith("카카오")) warnings.push(`${item.rowNumber}행 ${item.customer}: 엑셀 업체명·지역으로 찾은 장소를 사용했습니다. 실제 납품지 확인 필요 (${item.address})`);
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");

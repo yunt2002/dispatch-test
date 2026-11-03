@@ -25,12 +25,18 @@ export function charterGroupsCost(groups: { items: Destination[] }[], fares: Rec
 
 /** 미입력 운임은 예시 금액을 사용하며 잘못 입력한 값은 계산하지 않는다. */
 export function estimatedCharterGroupsCost(groups: { items: Destination[] }[], fares: Record<string, string>): number | null {
-  const defaults: Record<string, string> = {};
-  for (const group of groups) for (const item of group.items) {
-    const key = charterDestinationKey(item);
-    defaults[key] = fares[key] === undefined || fares[key] === "" ? "200000" : fares[key];
+  let total = 0;
+  for (const group of groups) {
+    const keys = [...new Set(group.items.map(charterDestinationKey))];
+    if (!keys.length) return null;
+    const entered = keys.filter((key) => fares[key] !== undefined && fares[key] !== "");
+    if (keys.length > 1 && entered.length) return null;
+    const value = entered.length ? fares[entered[0]] : "200000";
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) return null;
+    total += Number(value);
+    if (!Number.isSafeInteger(total)) return null;
   }
-  return charterGroupsCost(groups, defaults);
+  return total;
 }
 
 export function estimatedOriginalCharterCost(groups: { items: Destination[] }[], fares: Record<string, string>, trips: string): number | null {
