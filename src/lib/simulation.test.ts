@@ -2,12 +2,17 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
-import { simulationAddressIssue } from "./simulation-address";
+import { confirmedSimulationAddress, simulationAddressIssue } from "./simulation-address";
 import { uniqueCompanyPlace } from "./simulation-place-match";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("디아이씨 울주 납품지만 확인한 울산 주소를 사용한다", () => {
+  assert.equal(confirmedSimulationAddress("디아이씨", "울주"), "울산광역시 울주군 상북면 길천산업로 401");
+  assert.equal(confirmedSimulationAddress("DIC", "대구"), null);
+  assert.equal(confirmedSimulationAddress("다른 업체", "울주"), null);
+});
 test("회사명과 엑셀 지역에 일치하는 유일한 장소만 주소 후보로 사용한다", () => {
   const place = { place_name: "디아이씨", road_address_name: "울산광역시 울주군 언양읍 반천산업로 1", x: "129.1", y: "35.5" };
   assert.equal(uniqueCompanyPlace("디아이씨", "울주", [place], true)?.address, place.road_address_name);

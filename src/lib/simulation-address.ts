@@ -1,4 +1,11 @@
 /** 엑셀에 명시된 시·군과 등록 주소가 다른 경우만 불일치로 본다. */
+export function confirmedSimulationAddress(customer: string, location: string): string | null {
+  const name = customer.trim().replace(/\s+/g, "").toLowerCase();
+  const area = location.trim().replace(/\s+/g, "");
+  if ((name === "디아이씨" || name === "dic") && (area === "울주" || area === "울주군")) return "울산광역시 울주군 상북면 길천산업로 401";
+  return null;
+}
+
 export function simulationAddressIssue(location: string, address: string | null): string | null {
   if (!address?.trim()) return "등록 주소 없음";
   const raw = location.trim().replace(/\s+/g, "").replace(/(?:시|군|구)$/, "");
