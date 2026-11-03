@@ -4,6 +4,28 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { bool, num, optionalText, text } from "@/lib/form";
 import { prisma } from "@/lib/prisma";
+import { createHash } from "node:crypto";
+import { listErpProductNames } from "@/lib/product-loading";
+
+export async function registerProduct(formData: FormData) {
+  const productName = text(formData, "productName").replace(/\s+/g, " ").trim();
+  if (!productName || productName.length > 150) {
+    redirect("/products?error=" + encodeURIComponent("품명을 1~150자로 입력해 주세요."));
+  }
+  const key = productName.normalize("NFKC").toLocaleLowerCase("ko-KR");
+  if (listErpProductNames().some((name) => name.replace(/\s+/g, " ").trim().normalize("NFKC").toLocaleLowerCase("ko-KR") === key)) {
+    redirect("/products?error=" + encodeURIComponent("기존 품목 목록에 이미 있는 품명입니다."));
+  }
+  const productCode = `USER-${createHash("sha256").update(key).digest("hex")}`;
+  try {
+    await prisma.product.create({ data: { productCode, productName } });
+  } catch {
+    redirect("/products?error=" + encodeURIComponent("이미 등록된 품명이거나 저장하지 못했습니다. 확인 후 다시 시도해 주세요."));
+  }
+  revalidatePath("/");
+  revalidatePath("/products");
+  redirect("/products?ok=" + encodeURIComponent("품명이 등록되었습니다. 새 납품 등록에서 선택할 수 있습니다."));
+}
 
 export async function upsertProduct(formData: FormData) {
   const id = optionalText(formData, "id");

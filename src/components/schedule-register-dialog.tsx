@@ -18,10 +18,12 @@ export function ScheduleRegisterDialog({
   date,
   regions,
   vehicles,
+  customProductNames,
 }: {
   date: string;
   regions: { id: string; locationName: string }[];
   vehicles: { id: string; vehicleName: string }[];
+  customProductNames: string[];
 }) {
   const [open, setOpen] = useState(false);
   const [productName, setProductName] = useState("");
@@ -33,7 +35,7 @@ export function ScheduleRegisterDialog({
   const [customerManual, setCustomerManual] = useState(false);
   const [locationManual, setLocationManual] = useState(false);
 
-  const erpNames = useMemo(() => listErpProductNames(), []);
+  const erpNames = useMemo(() => [...new Set([...listErpProductNames(), ...customProductNames])].sort((a, b) => a.localeCompare(b, "ko")), [customProductNames]);
   const customerNames = useMemo(
     () => DELIVERY_CUSTOMERS.map((c) => c.name),
     [],

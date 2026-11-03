@@ -51,7 +51,7 @@ export default async function HomePage({
   // 마이그레이션성 작업은 병렬. 잔여 재배정(rebalance)은 일정 변경 액션에서만 돌린다.
   await Promise.all([importLatestExcelIfNeeded(), applyProductLoadingIfNeeded()]);
 
-  const [regions, scheduleDates, vehicles, settings] = await Promise.all([
+  const [regions, scheduleDates, vehicles, settings, customProducts] = await Promise.all([
     prisma.regionMaster.findMany({ orderBy: { locationName: "asc" } }),
     prisma.scheduleEntry.findMany({
       distinct: ["deliveryDate"],
@@ -63,6 +63,7 @@ export default async function HomePage({
       orderBy: { vehicleName: "asc" },
     }),
     getDispatchSettings(),
+    prisma.product.findMany({ where: { isActive: true, productCode: { startsWith: "USER-" } }, select: { productName: true }, orderBy: { productName: "asc" } }),
   ]);
 
   const knownDates = [...new Set(scheduleDates.map((item) => item.deliveryDate))].sort((a, b) =>
@@ -245,6 +246,7 @@ export default async function HomePage({
         <div className="dispatch-head-actions">
           {view === "request" ? <ScheduleRegisterDialog
             date={date}
+            customProductNames={customProducts.map((product) => product.productName)}
             regions={regions}
             vehicles={vehicles.map((vehicle) => ({
               id: vehicle.id,

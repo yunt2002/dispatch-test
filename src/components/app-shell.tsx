@@ -11,6 +11,7 @@ const DAILY = [
 ];
 
 const SETTINGS = [
+  { href: "/products", label: "상품", match: (p: string) => p.startsWith("/products") },
   { href: "/plan", label: "처음 가져오기", match: (p: string) => p.startsWith("/plan") },
   { href: "/vehicles", label: "차량", match: (p: string) => p.startsWith("/vehicles") },
   { href: "/regions", label: "지역", match: (p: string) => p.startsWith("/regions") },
