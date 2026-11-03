@@ -13,6 +13,13 @@ test("디아이씨 울주 납품지만 확인한 울산 주소를 사용한다",
   assert.equal(confirmedSimulationAddress("DIC", "대구"), null);
   assert.equal(confirmedSimulationAddress("다른 업체", "울주"), null);
 });
+test("지엠비 코리아 창원 납품지에 확인된 주소를 적용한다", () => {
+  const address = confirmedSimulationAddress("지엠비 코리아", "창원");
+  assert.equal(address, "경상남도 창원시 성산구 웅남로 618");
+  assert.equal(simulationAddressIssue("창원", address), null);
+  assert.equal(confirmedSimulationAddress("지엠비 코리아", "대전"), null);
+  assert.equal(confirmedSimulationAddress("다른 업체", "창원"), null);
+});
 test("회사명과 엑셀 지역에 일치하는 유일한 장소만 주소 후보로 사용한다", () => {
   const place = { place_name: "디아이씨", road_address_name: "울산광역시 울주군 언양읍 반천산업로 1", x: "129.1", y: "35.5" };
   assert.equal(uniqueCompanyPlace("디아이씨", "울주", [place], true)?.address, place.road_address_name);

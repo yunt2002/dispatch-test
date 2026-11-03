@@ -3,6 +3,7 @@ export function confirmedSimulationAddress(customer: string, location: string): 
   const name = customer.trim().replace(/\s+/g, "").toLowerCase();
   const area = location.trim().replace(/\s+/g, "");
   if ((name === "디아이씨" || name === "dic") && (area === "울주" || area === "울주군")) return "울산광역시 울주군 상북면 길천산업로 401";
+  if (name === "지엠비코리아" && (area === "창원" || area === "창원시")) return "경상남도 창원시 성산구 웅남로 618";
   return null;
 }
 
