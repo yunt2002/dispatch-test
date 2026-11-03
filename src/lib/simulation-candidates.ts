@@ -4,6 +4,7 @@ export type CandidateForRanking = { routes: SimulationRoute[]; charterCount: num
 export function chooseSimulationCandidate(candidates: CandidateForRanking[]): { index: number | null; note: string } {
   const valid = candidates.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => candidate.routes.length === 2 && !candidate.routes.some((route) => route.over));
   if (!valid.length) return { index: null, note: "적재 한도를 초과하지 않는 후보를 만들지 못했습니다." };
+  if (valid.length === 1) return { index: valid[0].index, note: "유효한 후보가 1개여서 다른 안과 비교하지 못했습니다. 실제 적재와 운임을 확인하세요." };
   const courierSets = valid.map(({ candidate }) => [...candidate.courierMovedIds].sort().join(","));
   if (new Set(courierSets).size > 1) return { index: valid[0].index, note: "택배비가 미확인이고 후보별 택배 처리가 달라 비용 순위를 정할 수 없습니다. 첫 번째 유효 후보입니다." };
   const measurable = valid.filter(({ candidate }) => candidate.routes.every((route) => !route.items.length || (route.fuel != null && route.toll != null && route.minutes != null)));

@@ -189,3 +189,10 @@ test("자사 차량에 옮기지 않은 용차 품목은 AI 용차 묶음에 정
   assert.ok(validateCharterGroups([...items, unrelated], orders, [["4", "5"]]));
   assert.equal(validateCharterGroups([...items, unrelated], orders, [["4"], ["5"]]), null);
 });
+test("같은 좌표라도 다른 거래처를 한 용차로 묶지 않는다", () => {
+  const a = { ...item(10, null), customer: "비엠씨", location: "광주" };
+  const b = { ...item(11, null), customer: "한온", location: "광주" };
+  const orders = [{ vehicle: "1호차", ids: [] }, { vehicle: "2호차", ids: [] }];
+  assert.match(validateCharterGroups([a, b], orders, [["10", "11"]])!, /같은 거래처/);
+  assert.equal(validateCharterGroups([a, b], orders, [["10"], ["11"]]), null);
+});

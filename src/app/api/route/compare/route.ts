@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
+import { GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
@@ -27,29 +28,28 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
   const issues: string[] = [];
   const models = [...new Set([process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b", "openai/gpt-oss-120b"])];
   for (const model of models) try {
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, temperature: 0, max_completion_tokens: 4096,
-        messages: [{ role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 정보가 부족해도 안전한 확정이 아니라 현장 확인이 필요한 시뮬레이션 후보를 제안하는 것이므로, 좌표가 있는 용차/택배 물량의 합차를 적극 검토한다. 각 자사 차량 적재량 숫자의 합은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. charterGroups의 각 배열은 한 번의 용차 운행이다. 한 용차 묶음에는 반드시 같은 거래처와 같은 지역의 품목만 넣는다. 서로 다른 거래처는 절대 같은 용차에 넣지 마라. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. 모든 id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 하나씩 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
-          { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) }] }),
-      signal: AbortSignal.timeout(20000), cache: "no-store",
-    });
-    if (!response.ok) { issues.push(groqHttpError(response.status)); continue; }
-    const data = await response.json() as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content ?? "";
-    const parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}") as { orders?: Order[]; charterGroups?: unknown };
+    const aiResponse = await requestSimulationAi({ groqKey: key, groqModel: model, geminiKey: process.env.GEMINI_API_KEY?.trim(), geminiModel: process.env.GEMINI_MODEL, messages: [
+      { role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 현장 확인이 필요한 후보를 제안한다. 자사 차량 적재량은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. 각 배열은 한 번의 용차 운행이며 같은 거래처와 같은 지역의 품목만 묶는다. 서로 다른 거래처는 같은 용차에 넣지 마라. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
+      { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
+    ] });
+    const { response, provider } = aiResponse;
+    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : `Groq 한도 초과 후 Gemini 요청 실패 (HTTP ${response.status}).`); if (aiResponse.switched) break; continue; }
+    const content = aiResponse.content ?? "";
+    let parsed: { orders?: Order[]; charterGroups?: unknown };
+    try { parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}"); }
+    catch { issues.push(`${provider} 응답 형식을 읽지 못했습니다.`); if (aiResponse.switched) break; continue; }
     const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
     const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
-    if (problem) { issues.push(`후보 검증 실패: ${problem}`); continue; }
+    if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem}`); if (aiResponse.switched) break; continue; }
     const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
-    if (charterProblem && regionalOnly) {
+    if (charterProblem) {
       const fallback = fallbackCharterGroups(items, orders);
-      if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model, note: "Groq 차량 배정 · AI 용차 묶음 오류로 같은 거래처·지역 기준 용차 횟수를 가정했습니다. 실제 운행 확인 필요." };
+      if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 차량 배정 · AI 용차 묶음 검증 실패(${charterProblem})로 같은 거래처·지역 기준 묶음을 사용했습니다. 실제 운행 확인 필요.` };
     }
     if (charterProblem) { issues.push(`후보 검증 실패: ${charterProblem}`); continue; }
-    return { orders, charterGroups: groups as string[][], model, note: "Groq 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다." };
-  } catch (error) { issues.push(groqException(error)); }
+    return { orders, charterGroups: groups as string[][], model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다.` };
+  } catch (error) { if (error instanceof GeminiFallbackError) { issues.push(error.message); break; } issues.push(groqException(error)); }
   return { orders: [], charterGroups: null, note: [...new Set(issues)].join(" / ") || "Groq 응답을 확인할 수 없습니다." };
 }
 
@@ -87,7 +87,7 @@ export async function POST(request: Request) {
     const [customers, customProducts] = await Promise.all([prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } }), loadCustomProducts()]);
     const addressFor = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 11, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 12, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "unknown"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
@@ -155,7 +155,14 @@ export async function POST(request: Request) {
       const selection = chooseSimulationCandidate(rankings);
       if (selection.index == null) return NextResponse.json({ error: `${selection.note} 기존 저장 결과는 유지됩니다.` }, { status: 422 });
       ai = candidates[selection.index].plan; proposed = candidates[selection.index].routes; original = originalRoutes;
-      candidateCount = plans.length; comparisonNote = selection.note; savedAt = new Date().toISOString();
+      const failures = [...new Set(attempts.filter((attempt) => !attempt.charterGroups).map((attempt) => attempt.note).filter(Boolean))];
+      const sameOrders = originals.every((originalOrder) => {
+        const selectedOrder = ai.orders.find((order) => order.vehicle === originalOrder.vehicle);
+        return !!selectedOrder && JSON.stringify(selectedOrder.ids) === JSON.stringify(originalOrder.ids);
+      });
+      candidateCount = plans.length;
+      comparisonNote = `AI 요청 ${attempts.length}건 · 유효한 서로 다른 후보 ${plans.length}개. ${sameOrders ? "선택된 안의 자사 차량별 품목과 순서는 기존 계획과 같습니다. 용차 묶음은 별도 확인하세요." : "선택된 안은 기존 자사 차량 배정 또는 방문 순서와 다릅니다."} ${selection.note}${failures.length ? ` 실패한 요청: ${failures.join(" / ")}` : ""}`;
+      savedAt = new Date().toISOString();
     }
     const assigned = new Set(ai.orders.flatMap((order) => order.ids));
     const remaining = items.filter((item) => !item.vehicle && !assigned.has(String(item.rowNumber)));

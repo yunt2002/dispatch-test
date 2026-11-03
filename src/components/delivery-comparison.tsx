@@ -158,6 +158,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       {packingDirty ? <p className="dispatch-route-note-warn">적재 방식을 변경했습니다. 아래는 이전 결과입니다. 배차안을 불러오거나 다시 만드세요.</p> : null}
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>배차 결과 비교</h3>
+        {result.comparisonNote ? <p className="comparison-note"><strong>일반 AI안 선택 과정:</strong> {result.comparisonNote}</p> : null}
+        {result.note ? <p className="comparison-note"><strong>일반 AI안 생성:</strong> {result.note}</p> : null}
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
         <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>

@@ -13,3 +13,8 @@ test("택배 방식이나 통행 비용을 비교할 수 없으면 최저 비용
   assert.match(chooseSimulationCandidate([candidate(1, null), candidate(2, 100)]).note, /순위를 정할 수 없/);
   assert.match(chooseSimulationCandidate([candidate(1, 100, false, ["3"]), candidate(1, 100)]).note, /택배비/);
 });
+test("유효한 후보가 하나면 다른 후보와 비교했다고 표시하지 않는다", () => {
+  const selected = chooseSimulationCandidate([candidate(7, 100)]);
+  assert.equal(selected.index, 0);
+  assert.match(selected.note, /1개.*비교하지 못했습니다/);
+});
