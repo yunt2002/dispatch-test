@@ -1,7 +1,8 @@
 import { ErrorText, PageHeader, SuccessText } from "@/components/ui";
+import { ConfirmSubmit } from "@/components/confirm-submit";
 import { listErpProductNames } from "@/lib/product-loading";
 import { prisma } from "@/lib/prisma";
-import { registerProduct } from "./actions";
+import { registerProduct, removeRegisteredProduct } from "./actions";
 
 export default async function ProductsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const params = await searchParams;
@@ -22,7 +23,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: Pro
     </form>
     <section className="card mb-4 p-4" aria-labelledby="custom-products-title">
       <h2 id="custom-products-title" className="mb-3 text-base font-bold">추가한 품명 · {products.length}개</h2>
-      {products.length ? <ul>{products.map((product) => <li key={product.id}>{product.productName}</li>)}</ul> : <p>추가한 품명이 없습니다.</p>}
+      {products.length ? <ul>{products.map((product) => <li key={product.id} className="flex items-center justify-between gap-3 py-2"><span>{product.productName}</span><ConfirmSubmit action={removeRegisteredProduct} id={product.id} message={`‘${product.productName}’ 품명을 목록에서 삭제할까요? 기존 납품 기록은 유지됩니다.`} /></li>)}</ul> : <p>추가한 품명이 없습니다.</p>}
     </section>
     <details className="card p-4">
       <summary>기존 품명 보기 · {existingNames.length}개</summary>

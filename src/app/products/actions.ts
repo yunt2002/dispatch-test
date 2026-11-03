@@ -18,13 +18,28 @@ export async function registerProduct(formData: FormData) {
   }
   const productCode = `USER-${createHash("sha256").update(key).digest("hex")}`;
   try {
-    await prisma.product.create({ data: { productCode, productName } });
+    const restored = await prisma.product.updateMany({ where: { productCode, isActive: false }, data: { productName, isActive: true } });
+    if (!restored.count) await prisma.product.create({ data: { productCode, productName } });
   } catch {
     redirect("/products?error=" + encodeURIComponent("이미 등록된 품명이거나 저장하지 못했습니다. 확인 후 다시 시도해 주세요."));
   }
   revalidatePath("/");
   revalidatePath("/products");
   redirect("/products?ok=" + encodeURIComponent("품명이 등록되었습니다. 새 납품 등록에서 선택할 수 있습니다."));
+}
+
+export async function removeRegisteredProduct(formData: FormData) {
+  const id = text(formData, "id");
+  let removed: { count: number };
+  try {
+    removed = await prisma.product.updateMany({ where: { id, isActive: true, productCode: { startsWith: "USER-" } }, data: { isActive: false } });
+  } catch {
+    redirect("/products?error=" + encodeURIComponent("품명을 삭제하지 못했습니다. 다시 시도해 주세요."));
+  }
+  if (!removed.count) redirect("/products?error=" + encodeURIComponent("삭제할 수 있는 추가 품명을 찾지 못했습니다."));
+  revalidatePath("/");
+  revalidatePath("/products");
+  redirect("/products?ok=" + encodeURIComponent("품명을 목록에서 삭제했습니다. 기존 납품 기록은 유지됩니다."));
 }
 
 export async function upsertProduct(formData: FormData) {
