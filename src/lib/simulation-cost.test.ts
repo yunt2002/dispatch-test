@@ -1,6 +1,16 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues } from "./simulation-cost";
+import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues, charterDestinationKey, charterGroupsCost } from "./simulation-cost";
+
+test("목적지별 운임은 운행마다 반영하고 미입력이나 복수 목적지는 계산하지 않는다", () => {
+  const a = { rowNumber: 1, customer: "만도", location: "안양" };
+  const b = { rowNumber: 2, customer: "삼현", location: "창원" };
+  const fares = { [charterDestinationKey(a)]: "250000", [charterDestinationKey(b)]: "350000" };
+  assert.equal(charterGroupsCost([{ items: [a] }, { items: [b] }], fares), 600000);
+  assert.equal(charterGroupsCost([{ items: [a] }], {}), null);
+  assert.equal(charterGroupsCost([{ items: [a, b] }], fares), null);
+  assert.equal(charterGroupsCost([], {}), 0);
+});
 
 const input = { originalVehicle: 146164, proposedVehicle: 485394, originalTrips: "3", proposedTrips: "1", originalHasCharter: true, proposedHasCharter: true };
 test("비용 미표시 시 누락된 경로·통행료·연료비와 용차 횟수를 구분한다", () => {

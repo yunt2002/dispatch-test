@@ -5,7 +5,7 @@ export function confirmedSimulationAddress(customer: string, location: string): 
   if ((name === "디아이씨" || name === "dic") && (area === "울주" || area === "울주군")) return "울산광역시 울주군 상북면 길천산업로 401";
   if (name === "지엠비코리아" && (area === "창원" || area === "창원시")) return "경상남도 창원시 성산구 웅남로 618";
   if ((name === "엘지이노텍(삼현)" || name === "lgit(삼현)") && (area === "창원" || area === "창원시")) return "경상남도 창원시 의창구 죽전로 45";
-  if ((name === "한국프레틀" || name === "한국에프아이티볼테라(한국프레틀)") && ["안양", "안양시", "의왕", "의왕시"].includes(area)) return "경기도 의왕시 한밭들1길 20";
+  if ((name === "한국프레틀" || name === "한국에프아이티볼테라(한국프레틀)") && ["안양", "안양시"].includes(area)) return "경기도 안양시 만안구 덕천로152번길 25";
   return null;
 }
 

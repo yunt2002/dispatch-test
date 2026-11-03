@@ -2363,6 +2363,13 @@ body {
 }
 .simulation-chart-bar { height: 100%; border-radius: inherit; background: #8e999c; }
 .simulation-chart-bar-ai { background: #ed6b3d; }
+.regional-vehicle-charts { margin: 20px 0; padding-top: 16px; border-top: 1px solid #e5d9c7; }
+.regional-vehicle-charts > h4 { margin: 0; font-size: 16px; }
+.regional-vehicle-bar { height: 100%; border-radius: inherit; background: #286895; }
+.regional-vehicle-detail { margin: -4px 0 12px 82px; color: #45555d; font-size: 13px; }
+.regional-vehicle-detail summary { cursor: pointer; color: #286895; font-weight: 600; }
+.regional-vehicle-detail p { margin: 5px 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .regional-vehicle-detail { margin-left: 0; } }
 .simulation-details { margin-top: 12px; }
 .simulation-details > summary { display: inline-block; padding: 9px 14px; border: 1px solid #d5cec2; border-radius: 8px; background: #fff; cursor: pointer; font-weight: 600; }
 .simulation-details[open] > summary { margin-bottom: 12px; }

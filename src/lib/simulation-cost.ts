@@ -4,6 +4,25 @@ export function estimateCharterTrips(items: { rowNumber: number; customer: strin
   return new Set(charter.map((item) => item.customer.trim() ? `${item.customer.trim().replace(/\s+/g, " ")}|${item.location.trim().replace(/\s+/g, " ")}` : `미확인:${item.rowNumber}`)).size;
 }
 
+type Destination = { rowNumber: number; customer: string; location: string };
+export function charterDestinationKey(item: Destination): string {
+  return item.customer.trim() ? JSON.stringify([item.customer.trim().replace(/\s+/g, " "), item.location.trim().replace(/\s+/g, " ")]) : `row:${item.rowNumber}`;
+}
+
+/** 운행별 목적지 금액. 한 운행에 서로 다른 목적지가 있으면 운임을 임의 합산하지 않는다. */
+export function charterGroupsCost(groups: { items: Destination[] }[], fares: Record<string, string>): number | null {
+  let total = 0;
+  for (const group of groups) {
+    const keys = [...new Set(group.items.map(charterDestinationKey))];
+    if (keys.length !== 1) return null;
+    const value = fares[keys[0]];
+    if (typeof value !== "string" || !/^\d+$/.test(value) || !Number.isSafeInteger(Number(value))) return null;
+    total += Number(value);
+    if (!Number.isSafeInteger(total)) return null;
+  }
+  return total;
+}
+
 /** 적재 초과는 실행 불가 경고이며 비용 자료의 누락과는 별개다. */
 export function hasComparableRoutes(result: {
   items: { rowNumber: number; vehicle: string | null }[];
