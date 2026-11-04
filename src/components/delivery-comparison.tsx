@@ -270,40 +270,46 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {regional && !regional.error && regional.note ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
         <h4>용차 운행 (편도/왕복 · 다중 경유)</h4>
         <p className="comparison-note">운행 1건에 운임 1금액입니다. 편도는 납품 또는 회수, 왕복은 납품(+경유) 후 P박스 회수까지 패키지 총액입니다. 여러 목적지를 묶어 한 용차로 처리할 수 있습니다. 미입력 운임은 1회 20만 원으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다.</p>
-        <h5 className="simulation-trip-heading">기존 계획 용차 · {originalCharterTrips.length}회</h5>
-        {!originalCharterTrips.length ? <p className="comparison-note">기존 계획에 용차 품목이 없습니다.</p> : null}
-        <div className="comparison-controls">
-          <button type="button" className="dispatch-secondary-button" disabled={selectedTripIds.length < 2} onClick={() => { persistTrips({ original: mergeCharterTrips(originalCharterTrips, selectedTripIds) }); setSelectedTripIds([]); }}>선택 운행 묶기</button>
-          <p className="comparison-note">체크한 기존 운행을 한 용차로 합칩니다. 예: DIC + GMB.</p>
+        <div className="simulation-trip-columns">
+          <section className="simulation-trip-column" aria-label="기존 계획 용차">
+            <h5 className="simulation-trip-heading">기존 계획 용차 · {originalCharterTrips.length}회</h5>
+            {!originalCharterTrips.length ? <p className="comparison-note">기존 계획에 용차 품목이 없습니다.</p> : null}
+            <div className="comparison-controls">
+              <button type="button" className="dispatch-secondary-button" disabled={selectedTripIds.length < 2} onClick={() => { persistTrips({ original: mergeCharterTrips(originalCharterTrips, selectedTripIds) }); setSelectedTripIds([]); }}>선택 운행 묶기</button>
+              <p className="comparison-note">체크한 기존 운행을 한 용차로 합칩니다. 예: DIC + GMB.</p>
+            </div>
+            {originalCharterTrips.map((trip) => (
+              <div key={trip.id} className="simulation-trip-row">
+                <label className="simulation-trip-select"><input type="checkbox" checked={selectedTripIds.includes(trip.id)} onChange={(e) => setSelectedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`${tripLabel(trip, itemsByRow)} 선택`} /></label>
+                <div className="simulation-trip-body">
+                  <strong>{tripLabel(trip, itemsByRow)}</strong>
+                  <div className="simulation-trip-fields">
+                    <label>운행<select value={trip.leg} onChange={(e) => updateTripList("original", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
+                    <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("original", trip.id, { fare: e.target.value })} /> 원</label>
+                    <button type="button" className="dispatch-secondary-button" disabled={trip.rowNumbers.length < 2} onClick={() => persistTrips({ original: [...originalCharterTrips.filter((row) => row.id !== trip.id), ...splitCharterTrip(trip, charterItemsFromPlan(result.items))] })}>분리</button>
+                    {!trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ original: [...originalCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button> : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </section>
+          <section className="simulation-trip-column" aria-label="AI 제안 용차">
+            <h5 className="simulation-trip-heading">AI 제안 용차 · {proposedCharterTrips.length}회</h5>
+            {!proposedCharterTrips.length ? <p className="comparison-note">{proposedTrips == null ? "AI 용차 묶음이 없습니다." : "AI가 용차 없이 처리하는 안입니다."}</p> : null}
+            {proposedCharterTrips.map((trip) => (
+              <div key={trip.id} className="simulation-trip-row">
+                <div className="simulation-trip-body">
+                  <strong>{tripLabel(trip, itemsByRow)}</strong>
+                  <div className="simulation-trip-fields">
+                    <label>운행<select value={trip.leg} onChange={(e) => updateTripList("proposed", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
+                    <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("proposed", trip.id, { fare: e.target.value })} /> 원</label>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </section>
         </div>
-        {originalCharterTrips.map((trip) => (
-          <div key={trip.id} className="simulation-trip-row">
-            <label className="simulation-trip-select"><input type="checkbox" checked={selectedTripIds.includes(trip.id)} onChange={(e) => setSelectedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`${tripLabel(trip, itemsByRow)} 선택`} /></label>
-            <div className="simulation-trip-body">
-              <strong>{tripLabel(trip, itemsByRow)}</strong>
-              <div className="simulation-trip-fields">
-                <label>운행<select value={trip.leg} onChange={(e) => updateTripList("original", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
-                <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("original", trip.id, { fare: e.target.value })} /> 원</label>
-                <button type="button" className="dispatch-secondary-button" disabled={trip.rowNumbers.length < 2} onClick={() => persistTrips({ original: [...originalCharterTrips.filter((row) => row.id !== trip.id), ...splitCharterTrip(trip, charterItemsFromPlan(result.items))] })}>분리</button>
-                {!trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ original: [...originalCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button> : null}
-              </div>
-            </div>
-          </div>
-        ))}
-        <h5 className="simulation-trip-heading">AI 제안 용차 · {proposedCharterTrips.length}회</h5>
-        {!proposedCharterTrips.length ? <p className="comparison-note">{proposedTrips == null ? "AI 용차 묶음이 없습니다." : "AI가 용차 없이 처리하는 안입니다."}</p> : null}
-        {proposedCharterTrips.map((trip) => (
-          <div key={trip.id} className="simulation-trip-row">
-            <div className="simulation-trip-body">
-              <strong>{tripLabel(trip, itemsByRow)}</strong>
-              <div className="simulation-trip-fields">
-                <label>운행<select value={trip.leg} onChange={(e) => updateTripList("proposed", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
-                <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("proposed", trip.id, { fare: e.target.value })} /> 원</label>
-              </div>
-            </div>
-          </div>
-        ))}
-        {regional && !regional.error ? <>
+        {regional && !regional.error ? <section className="simulation-trip-column simulation-trip-column-wide" aria-label="지방 집중 용차">
           <h5 className="simulation-trip-heading">지방 집중 용차 · {regionalCharterTrips.length}회</h5>
           {regionalCharterTrips.map((trip) => (
             <div key={trip.id} className="simulation-trip-row">
@@ -316,7 +322,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
               </div>
             </div>
           ))}
-        </> : null}
+        </section> : null}
       </div>
       <details className="simulation-details"><summary>배차 결과 자세히 보기</summary>
       <p className="comparison-note">{result.note} · 납품 기한·긴급 여부·택배 마감·하차 시간은 미확인이므로 실제 운행 가능성을 확인해야 합니다.</p>
