@@ -13,12 +13,26 @@ import {
   estimatedTripsCost,
   hasComparableRoutes,
   mergeCharterTrips,
+  parseCharterTrips,
   simulationCostIssues,
   syncOriginalCharterTrips,
   tripLabel,
   tripsFromCharterGroups,
   type CharterTrip,
 } from "./simulation-cost";
+
+test("기존 운행 비용 제외는 저장 후 유지되며 다시 포함할 수 있다", () => {
+  const item = { rowNumber: 1, customer: "거래처", location: "안양" };
+  const original = defaultOriginalCharterTrips([item])[0];
+  const excluded = { ...original, excluded: true };
+  const restored = syncOriginalCharterTrips([item], parseCharterTrips([excluded]));
+  assert.equal(restored[0].excluded, true);
+  assert.equal(estimatedTripsCost(restored), 0);
+  assert.equal(estimatedTripsCost([{ ...restored[0], excluded: false }]), 200000);
+  const returnTrip = addReturnCharterTrip(original);
+  assert.equal(estimatedTripsCost([original, returnTrip]), 400000);
+  assert.equal(estimatedTripsCost([original, returnTrip].filter((trip) => trip.id !== returnTrip.id)), 200000);
+});
 
 test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 표시한다", () => {
   const item = (rowNumber: number, customer: string, transport: string, vehicle: string | null = null) => ({ rowNumber, customer, location: "경기", transport, vehicle });

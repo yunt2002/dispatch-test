@@ -177,7 +177,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   function updateTripList(
     kind: "original" | "proposed" | "regional",
     tripId: string,
-    patch: Partial<Pick<CharterTrip, "leg" | "fare">>,
+    patch: Partial<Pick<CharterTrip, "leg" | "fare" | "excluded">>,
   ) {
     const map = (trips: CharterTrip[]) => trips.map((trip) => trip.id === tripId ? { ...trip, ...patch } : trip);
     if (kind === "original") persistTrips({ original: map(originalCharterTrips) });
@@ -212,6 +212,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     return map;
   }, [result]);
   const originalCharterCost = estimatedTripsCost(originalCharterTrips);
+  const excludedOriginalTrips = originalCharterTrips.filter((trip) => trip.excluded);
+  const activeOriginalTrips = originalCharterTrips.length - excludedOriginalTrips.length;
   const proposedCharterCost = result?.charterGroups == null ? null : estimatedTripsCost(proposedCharterTrips);
   const compare = (vehicle: number | null, charter: number | null) => {
     const base = result ? cost(result.original) : null;
@@ -226,9 +228,9 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const regionalTime = regional && regional.routes.some((route) => route.items.length) && regional.routes.every((route) => !route.items.length || route.minutes != null) ? total(regional.routes) : null;
   const regionalCharterCost = regional && !regional.error ? estimatedTripsCost(regionalCharterTrips) : null;
   const regionalComparison = regional && !regional.error ? compare(cost(regional.routes), regionalCharterCost) : null;
-  const baseTrips = originalHasCharter ? (originalCharterTrips.length > 0 ? originalCharterTrips.length : null) : 0;
+  const baseTrips = activeOriginalTrips;
   const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
-  const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }, ...(regional && !regional.error ? [{ label: "지방 집중안", routes: regional.routes }] : [])], originalCharterTrips.length, originalHasCharter) : [];
+  const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }, ...(regional && !regional.error ? [{ label: "지방 집중안", routes: regional.routes }] : [])], activeOriginalTrips, originalHasCharter && (activeOriginalTrips > 0 || excludedOriginalTrips.length === 0)) : [];
   if (result && !complete) {
     const planned = new Set(result.original.flatMap((route) => route.items.map((item) => item.rowNumber)));
     const missing = result.items.filter((item) => item.vehicle && !planned.has(item.rowNumber));
@@ -262,6 +264,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.items.some((item) => item.packing === "auto" && item.pallets != null) ? <p className="comparison-note">별도 설정이 없는 품목은 제품 기준표의 1PLT당 박스 수로 PLT를 추정합니다. 실제 합적·적재 방식은 확인이 필요합니다.</p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
+        {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn"><strong>기존 용차 {excludedOriginalTrips.length}회 비용 제외 중: AI안과 납품 비용을 같은 조건으로 비교할 수 없습니다.</strong></p> : null}
         <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>
         <div className="simulation-charts">
           {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} regionalProvisional={regionalUncertain} format={money} isCost costParts={{
@@ -277,7 +280,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           {proposedTrips != null && baseTrips != null && baseVehicleCost != null && cost(result.proposed) != null ? <p>AI 제안 비용 변화: 용차비 <strong>{difference(proposedCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(result.proposed), baseVehicleCost, money)}</strong></p> : null}
           {regionalComparison ? <p>지방 집중안의 포함 항목 비용: 기존 대비 <strong>{regionalComparison.saving === 0 ? "차이 없음" : `${money(Math.abs(regionalComparison.saving))} ${regionalComparison.saving > 0 ? "감소" : "증가"}`}</strong></p> : null}
           {regionalComparison && regional && regionalTrips != null && baseTrips != null && baseVehicleCost != null && cost(regional.routes) != null ? <p>지방 집중안 비용 변화: 용차비 <strong>{difference(regionalCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(regional.routes), baseVehicleCost, money)}</strong></p> : null}
-          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{originalCharterTrips.length}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 미입력 운임은 1회 200,000원 가정</p>
+          <p className="simulation-charter-summary">용차 운행: 기존 <strong>{activeOriginalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 지방 집중 <strong>{regionalTrips == null ? "확인 필요" : `${regionalTrips}회`}</strong> · 미입력 운임은 1회 200,000원 가정</p>
           <p>자사 차량 경유비·통행료 + 용차비 기준입니다.</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "용차 운임·주소·경로가 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
         {regional && !regional.error && !packingDirty ? <RegionalVehicleCharts routes={regional.routes} provisional={regionalUncertain} /> : null}
@@ -290,7 +293,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         <p className="comparison-note">운행 1건에 운임 1금액입니다. 편도는 납품 또는 회수, 왕복은 납품(+경유) 후 P박스 회수까지 패키지 총액입니다. 여러 목적지를 묶어 한 용차로 처리할 수 있습니다. 미입력 운임은 1회 20만 원으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다.</p>
         <div className="simulation-trip-columns">
           <section className="simulation-trip-column" aria-label="기존 계획 용차">
-            <h5 className="simulation-trip-heading">기존 계획 용차 · {originalCharterTrips.length}회</h5>
+            <h5 className="simulation-trip-heading">기존 계획 용차 · {activeOriginalTrips}회{excludedOriginalTrips.length ? ` · 비용 제외 ${excludedOriginalTrips.length}회` : ""}</h5>
+            {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn">기존 계획에서 용차 비용을 제외했습니다. 해당 납품은 AI안에 남아 있어 안별 비용을 같은 조건으로 비교할 수 없습니다. 실제 납품 일정은 변경되지 않습니다.</p> : null}
             {!originalCharterTrips.length ? <p className="comparison-note">기존 계획에 용차 품목이 없습니다.</p> : null}
             <div className="comparison-controls">
               <button type="button" className="dispatch-secondary-button" disabled={selectedTripIds.length < 2} onClick={() => { persistTrips({ original: mergeCharterTrips(originalCharterTrips, selectedTripIds) }); setSelectedTripIds([]); }}>선택 운행 묶기</button>
@@ -298,14 +302,14 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
             </div>
             {originalCharterTrips.map((trip) => (
               <div key={trip.id} className="simulation-trip-row">
-                <label className="simulation-trip-select"><input type="checkbox" checked={selectedTripIds.includes(trip.id)} onChange={(e) => setSelectedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`${tripLabel(trip, itemsByRow)} 선택`} /></label>
+                <label className="simulation-trip-select"><input type="checkbox" disabled={trip.excluded} checked={selectedTripIds.includes(trip.id)} onChange={(e) => setSelectedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`${tripLabel(trip, itemsByRow)} 선택`} /></label>
                 <div className="simulation-trip-body">
-                  <strong>{tripLabel(trip, itemsByRow)}</strong>
+                  <strong>{tripLabel(trip, itemsByRow)}{trip.excluded ? " · 비용 제외" : ""}</strong>
                   <div className="simulation-trip-fields">
                     <label>운행<select value={trip.leg} onChange={(e) => updateTripList("original", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
                     <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("original", trip.id, { fare: e.target.value })} /> 원</label>
-                    <button type="button" className="dispatch-secondary-button" disabled={trip.rowNumbers.length < 2} onClick={() => persistTrips({ original: [...originalCharterTrips.filter((row) => row.id !== trip.id), ...splitCharterTrip(trip, charterItemsFromPlan(result.items))] })}>분리</button>
-                    {!trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ original: [...originalCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button> : null}
+                    <button type="button" className="dispatch-secondary-button" disabled={trip.excluded || trip.rowNumbers.length < 2} onClick={() => persistTrips({ original: [...originalCharterTrips.filter((row) => row.id !== trip.id), ...splitCharterTrip(trip, charterItemsFromPlan(result.items))] })}>분리</button>
+                    {trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => { persistTrips({ original: originalCharterTrips.filter((row) => row.id !== trip.id) }); setSelectedTripIds((ids) => ids.filter((id) => id !== trip.id)); }}>회수 운행 삭제</button> : <><button type="button" className="dispatch-secondary-button" disabled={trip.excluded} onClick={() => persistTrips({ original: [...originalCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button><button type="button" className="dispatch-secondary-button" onClick={() => { updateTripList("original", trip.id, { excluded: !trip.excluded }); setSelectedTripIds((ids) => ids.filter((id) => id !== trip.id)); }}>{trip.excluded ? "비용에 다시 포함" : "비용에서 제외"}</button></>}
                   </div>
                 </div>
               </div>

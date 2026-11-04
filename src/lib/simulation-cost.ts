@@ -17,6 +17,7 @@ export type CharterTrip = {
   leg: CharterLeg;
   rowNumbers: number[];
   fare: string;
+  excluded?: boolean;
 };
 
 export function isCharterLeg(value: unknown): value is CharterLeg {
@@ -35,7 +36,7 @@ export function parseCharterTrips(raw: unknown): CharterTrip[] {
     if (typeof row.fare !== "string" || !/^\d*$/.test(row.fare)) continue;
     const rowNumbers = [...new Set(row.rowNumbers as number[])].sort((a, b) => a - b);
     if (!rowNumbers.length) continue;
-    trips.push({ id: row.id, leg: row.leg, rowNumbers, fare: row.fare });
+    trips.push({ id: row.id, leg: row.leg, rowNumbers, fare: row.fare, ...(row.excluded === true ? { excluded: true } : {}) });
   }
   return trips;
 }
@@ -171,6 +172,7 @@ function parseFare(fare: string): number | null {
 export function estimatedTripsCost(trips: CharterTrip[]): number | null {
   let total = 0;
   for (const trip of trips) {
+    if (trip.excluded) continue;
     if (!trip.rowNumbers.length) return null;
     const amount = parseFare(trip.fare);
     if (amount == null) return null;
