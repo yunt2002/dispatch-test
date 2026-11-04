@@ -159,6 +159,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>배차 결과 비교</h3>
         {result.comparisonNote ? <p className="comparison-note"><strong>일반 AI안 선택 과정:</strong> {result.comparisonNote}</p> : null}
+        {!result.candidateCountVerified && result.candidateCount != null ? <p className="dispatch-route-note-warn">이전에 저장된 결과의 후보 수에는 적재 한도 초과 후보가 포함됐을 수 있습니다. 정확한 유효 후보 수는 AI 배차안을 다시 만들면 확인할 수 있습니다.</p> : null}
         {result.note ? <p className="comparison-note"><strong>일반 AI안 생성:</strong> {result.note}</p> : null}
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
         {result.items.some((item) => item.packing === "auto" && item.pallets != null) ? <p className="comparison-note">별도 설정이 없는 품목은 제품 기준표의 1PLT당 박스 수로 PLT를 추정합니다. 실제 합적·적재 방식은 확인이 필요합니다.</p> : null}

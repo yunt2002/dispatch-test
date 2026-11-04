@@ -5,7 +5,7 @@ export type SimulationItem = ComparisonShipment & { vehicle: "1호차" | "2호�
 export type SimulationRoute = { vehicle: string; items: SimulationItem[]; pallets: number; weight: number; unknownPallets: number; unknownWeight: number; distance: number | null; minutes: number | null; toll: number | null; fuel: number | null; over: boolean; legs?: { from: string; to: string; distanceKm: number | null; minutes: number | null }[] };
 export type CharterGroup = { items: SimulationItem[] };
 export type RegionalScenario = { routes: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[]; note: string; error?: string; savedAt?: string; routeUpdatedAt?: string };
-export type SimulationResult = { items: SimulationItem[]; original: SimulationRoute[]; proposed: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[] | null; regional?: RegionalScenario; note: string; warnings: string[]; savedAt?: string; routeUpdatedAt?: string; inputFingerprint?: string; candidateCount?: number; comparisonNote?: string; planSource?: string; restored?: boolean };
+export type SimulationResult = { items: SimulationItem[]; original: SimulationRoute[]; proposed: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[] | null; regional?: RegionalScenario; note: string; warnings: string[]; savedAt?: string; routeUpdatedAt?: string; inputFingerprint?: string; candidateCount?: number; candidateCountVerified?: boolean; comparisonNote?: string; planSource?: string; restored?: boolean };
 
 /** 같은 경고가 경로 새로고침 때 반복해서 붙지 않도록 한다. */
 export function appendSimulationNotes(note: string, ...additions: string[]): string {
