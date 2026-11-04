@@ -1,6 +1,6 @@
 # Vercel 배포 가이드 (카카오 길찾기 · OR-Tools 없음)
 
-AI 배차 시뮬레이션에서 Groq 요청이 한도 초과(HTTP 429)일 때 Gemini를 사용하려면 Vercel 환경 변수에 서버 전용 `GEMINI_API_KEY`를 추가하고 다시 배포합니다. 기본 모델은 `gemini-3.6-flash`이며 필요하면 서버 전용 `GEMINI_MODEL`로 변경할 수 있습니다. Gemini에는 배차 후보 생성에 필요한 거래처·지역·좌표·적재 정보가 전송됩니다. Gemini 키가 없거나 Gemini도 실패하면 오류를 안내하며, 지방 집중안은 기존처럼 유효한 규칙 기반 대체안이 있을 때 표시합니다. Gemini의 사용 한도와 요금제, 회사 데이터 처리 조건은 계정에서 확인하세요.
+AI 배차 시뮬레이션에서 Groq 요청이 한도 초과(HTTP 429)일 때 Gemini를 사용하려면 Vercel 환경 변수에 서버 전용 `GEMINI_API_KEY`를 추가하고 다시 배포합니다. 기본 선호 모델은 `gemini-3.6-flash`이며 `GEMINI_MODEL`로 바꿀 수 있습니다. 해당 모델이 한도 초과(429)·미지원(404)·서버 오류·시간 초과면 `gemini-2.5-flash` → `gemini-2.0-flash` → `gemini-2.0-flash-lite` → `gemini-1.5-flash` 순으로 자동 이어 시도합니다. Gemini에는 배차 후보 생성에 필요한 거래처·지역·좌표·적재 정보가 전송됩니다. Gemini 키가 없거나 하위 모델까지 모두 실패하면 오류를 안내하며, 지방 집중안은 기존처럼 유효한 규칙 기반 대체안이 있을 때 표시합니다. Gemini의 사용 한도와 요금제, 회사 데이터 처리 조건은 계정에서 확인하세요.
 
 경로 계산은 Next 서버에서 카카오 자동차 길찾기 API만 호출합니다.  
 Python 솔버(`solver/`, `ROUTE_SOLVER_URL`)는 배포에 필요 없습니다.
