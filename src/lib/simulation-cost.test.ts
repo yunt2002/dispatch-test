@@ -1,6 +1,18 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues, charterDestinationKey, charterGroupsCost, estimatedCharterGroupsCost, estimatedOriginalCharterCost } from "./simulation-cost";
+import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues, charterDestinationKey, charterFareDestinations, charterGroupsCost, estimatedCharterGroupsCost, estimatedOriginalCharterCost } from "./simulation-cost";
+
+test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 표시한다", () => {
+  const item = (rowNumber: number, customer: string, transport: string, vehicle: string | null = null) => ({ rowNumber, customer, location: "경기", transport, vehicle });
+  const own = item(1, "자사", "자사", "1호차");
+  const original = item(2, "기존 용차", "용차");
+  const parcel = item(3, "택배", "택배");
+  const proposed = item(4, "AI 용차", "용차");
+  const regional = item(5, "지방안 용차", "자사", "2호차");
+  const destinations = charterFareDestinations([own, original, parcel], [{ items: [original, proposed] }], { charterGroups: [{ items: [regional] }] });
+  assert.deepEqual(destinations.map(([, value]) => value.customer), ["기존 용차", "AI 용차", "지방안 용차"]);
+  assert.deepEqual(charterFareDestinations([own, parcel], null, { charterGroups: [{ items: [regional] }], error: "계산 실패" }), []);
+});
 
 test("목적지별 운임은 운행마다 반영하고 미입력이나 복수 목적지는 계산하지 않는다", () => {
   const a = { rowNumber: 1, customer: "만도", location: "안양" };

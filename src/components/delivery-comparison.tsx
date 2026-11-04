@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { isPackingMode } from "@/lib/simulation-packing";
-import { estimateCharterTrips, charterDestinationKey, estimatedCharterGroupsCost, estimatedOriginalCharterCost, hasComparableRoutes, simulationCostIssues } from "@/lib/simulation-cost";
+import { estimateCharterTrips, charterDestinationKey, charterFareDestinations, estimatedCharterGroupsCost, estimatedOriginalCharterCost, hasComparableRoutes, simulationCostIssues } from "@/lib/simulation-cost";
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
 function ComparisonBars({ title, original, proposed, regional, format, isCost = false, regionalProvisional = false }: { title: string; original: number; proposed: number; regional?: number | null; format: (n: number) => string; isCost?: boolean; regionalProvisional?: boolean }) {
@@ -111,7 +111,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
   const proposedTrips = result?.charterGroups == null ? null : result.charterGroups.length;
-  const destinations = result ? [...new Map([...result.items, ...(result.regional?.remaining ?? [])].map((item) => [charterDestinationKey(item), item])).entries()] : [];
+  const destinations = result ? charterFareDestinations(result.items, result.charterGroups, result.regional) : [];
   const originalGroups = result ? [...new Map(result.items.filter((item) => !item.vehicle && /용차/.test(item.transport)).map((item) => [charterDestinationKey(item), { items: [item] }])).values()] : [];
   const originalCharterCost = estimatedOriginalCharterCost(originalGroups, fares, originalTrips);
   const proposedCharterCost = result?.charterGroups ? estimatedCharterGroupsCost(result.charterGroups, fares) : null;
@@ -183,7 +183,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {regional?.error ? <p className="dispatch-route-note-warn">지방 집중안 계산 불가: {regional.error}</p> : null}
         {regional && !regional.error && regional.note ? <p className="dispatch-route-note-warn">{regional.note}</p> : null}
         <h4>목적지별 용차 운임 (1회)</h4>
-        <p className="comparison-note">각 목적지의 실제 또는 예상 운임을 입력하세요. 입력하지 않은 목적지는 기존처럼 1회 20만 원으로 가정합니다. 같은 거래처·지역의 품목은 한 운행으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다. AI 후보 선택은 기존 20만 원 가정을 사용하며 입력 금액으로 다시 선택하지 않습니다.</p>
+        <p className="comparison-note">선택한 날짜에 기존 계획·AI 제안·지방 집중안 중 하나라도 용차가 필요한 목적지만 표시합니다. 각 목적지의 실제 또는 예상 운임을 입력하세요. 입력하지 않은 목적지는 기존처럼 1회 20만 원으로 가정합니다. 같은 거래처·지역의 품목은 한 운행으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다. AI 후보 선택은 기존 20만 원 가정을 사용하며 입력 금액으로 다시 선택하지 않습니다.</p>
+        {!destinations.length ? <p className="comparison-note">비교 가능한 배차안에 용차 목적지가 없습니다.</p> : null}
         {destinations.map(([key, item]) => <label key={key} className="simulation-packing-row"><span>{item.customer || `거래처 미확인 · ${item.rowNumber}행`} · {item.location || "지역 미확인"}</span><input type="number" min="0" step="1" placeholder="운임 미입력" value={fares[key] ?? ""} onChange={(e) => { const next = { ...fares, [key]: e.target.value }; setFares(next); try { if (file && date) localStorage.setItem(`simulation-fares:v1:${file.name}:${file.size}:${file.lastModified}:${date}`, JSON.stringify(next)); } catch { /* Storage may be unavailable. */ } }} aria-label={`${item.customer || item.rowNumber} ${item.location} 용차 운임`} /> 원</label>)}
         <div className="comparison-controls"><label>기존 용차 운행 횟수 <input type="number" min="0" step="1" value={originalTrips} onChange={(e) => { const value = e.target.value; setOriginalTrips(value); savePreferences(file, date, { packing, originalTrips: value, price }); }} /></label>
           <p>AI 제안 용차 운행: <strong>{proposedTrips == null ? "제안 없음" : `${proposedTrips}회`}</strong></p></div>
