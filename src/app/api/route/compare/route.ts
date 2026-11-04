@@ -6,14 +6,14 @@ import { geocodeAddresses, searchCompanyPlace } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
-import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
+import { appendSimulationNotes, fallbackCharterGroups, parseSimulationAiOrders, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
-import { GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
+import { geminiHttpError, GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
@@ -33,15 +33,16 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
       { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
     ] });
     const { response, provider } = aiResponse;
-    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : `Groq 한도 초과 후 Gemini 요청 실패 (HTTP ${response.status}).`); if (aiResponse.switched) break; continue; }
+    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : geminiHttpError(response.status)); if (aiResponse.switched) break; continue; }
     const content = aiResponse.content ?? "";
-    let parsed: { orders?: Order[]; charterGroups?: unknown };
+    let parsed: { orders?: unknown; charterGroups?: unknown } | null;
     try { parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}"); }
     catch { issues.push(`${provider} 응답 형식을 읽지 못했습니다.`); if (aiResponse.switched) break; continue; }
-    const orders = Array.isArray(parsed.orders) ? parsed.orders.map((order) => ({ vehicle: order.vehicle, ids: Array.isArray(order.ids) ? order.ids.map(String) : [] })) : [];
+    const orders = parseSimulationAiOrders(parsed?.orders);
+    if (!orders) { issues.push(`${provider} 차량 배정 응답 형식이 올바르지 않습니다.`); if (aiResponse.switched) break; continue; }
     const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
     if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem}`); if (aiResponse.switched) break; continue; }
-    const groups = Array.isArray(parsed.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
+    const groups = Array.isArray(parsed?.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
     if (charterProblem) {
       const fallback = fallbackCharterGroups(items, orders);
@@ -196,7 +197,7 @@ export async function POST(request: Request) {
         else {
           const routes = chosen && mode !== "refresh" ? chosen.routes : await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
           const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
-          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), savedAt: mode === "refresh" ? oldRegional?.savedAt : new Date().toISOString(), routeUpdatedAt: new Date().toISOString(), note: `${plan.note}${unknownRegions.length ? ` 지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : ""}${unknownGroups.length ? ` 세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : ""}${missingLoads.length ? ` 적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : ""}` };
+          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), savedAt: mode === "refresh" ? oldRegional?.savedAt : new Date().toISOString(), routeUpdatedAt: new Date().toISOString(), note: appendSimulationNotes(plan.note, unknownRegions.length ? `지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : "", unknownGroups.length ? `세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : "", missingLoads.length ? `적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : "") };
           if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
           else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
         }

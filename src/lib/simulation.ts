@@ -7,6 +7,26 @@ export type CharterGroup = { items: SimulationItem[] };
 export type RegionalScenario = { routes: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[]; note: string; error?: string; savedAt?: string; routeUpdatedAt?: string };
 export type SimulationResult = { items: SimulationItem[]; original: SimulationRoute[]; proposed: SimulationRoute[]; remaining: SimulationItem[]; charterGroups: CharterGroup[] | null; regional?: RegionalScenario; note: string; warnings: string[]; savedAt?: string; routeUpdatedAt?: string; inputFingerprint?: string; candidateCount?: number; comparisonNote?: string; planSource?: string; restored?: boolean };
 
+/** 같은 경고가 경로 새로고침 때 반복해서 붙지 않도록 한다. */
+export function appendSimulationNotes(note: string, ...additions: string[]): string {
+  let result = note.trim();
+  for (const addition of additions) {
+    const text = addition.trim();
+    if (text && !result.includes(text)) result = result ? `${result} ${text}` : text;
+  }
+  return result;
+}
+
+export function parseSimulationAiOrders(value: unknown): { vehicle: string; ids: string[] }[] | null {
+  if (!Array.isArray(value)) return null;
+  const orders: { vehicle: string; ids: string[] }[] = [];
+  for (const row of value) {
+    if (!row || typeof row !== "object" || typeof row.vehicle !== "string" || !Array.isArray(row.ids) || row.ids.some((id: unknown) => typeof id !== "string" && typeof id !== "number")) return null;
+    orders.push({ vehicle: row.vehicle, ids: row.ids.map(String) });
+  }
+  return orders;
+}
+
 /** 지방안만 재시도할 때 기존 계획과 일반 AI안의 값과 조회 시각을 보존한다. */
 export function replaceRegionalScenario(stored: SimulationResult, regional: RegionalScenario, inputFingerprint: string): SimulationResult {
   return { ...stored, regional, inputFingerprint, restored: false };

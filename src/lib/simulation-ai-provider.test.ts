@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { requestSimulationAi } from "./simulation-ai-provider";
+import { geminiHttpError, GeminiFallbackError, requestSimulationAi } from "./simulation-ai-provider";
 
 test("Groq 한도 초과일 때만 Gemini로 전환해 응답과 출처를 반환한다", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -29,4 +29,15 @@ test("Gemini 요청 오류를 Groq 성공으로 오인하지 않는다", async (
   const fetcher: typeof fetch = async () => new Response("", { status: ++calls === 1 ? 429 : 503 });
   const result = await requestSimulationAi({ groqKey: "test", groqModel: "model", geminiKey: "test", messages: [], fetcher });
   assert.equal(result.provider, "Gemini"); assert.equal(result.response.status, 503);
+});
+
+test("Gemini 시간 초과와 잘못된 모델, 서버 오류를 구분한다", async () => {
+  const timeout: typeof fetch = async (url) => {
+    if (String(url).includes("api.groq.com")) return new Response("", { status: 429 });
+    throw new DOMException("timeout", "TimeoutError");
+  };
+  await assert.rejects(requestSimulationAi({ groqKey: "test", groqModel: "model", geminiKey: "test", messages: [], fetcher: timeout }), (error: unknown) => error instanceof GeminiFallbackError && /시간.*초과/.test(error.message));
+  await assert.rejects(requestSimulationAi({ groqKey: "test", groqModel: "model", geminiKey: "test", geminiModel: "bad/model", messages: [], fetcher: timeout }), (error: unknown) => error instanceof GeminiFallbackError && /모델 설정/.test(error.message));
+  assert.match(geminiHttpError(503), /Gemini 서버.*503/);
+  assert.match(geminiHttpError(429), /요청 한도/);
 });

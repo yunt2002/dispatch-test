@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { fallbackCharterGroups, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
+import { appendSimulationNotes, fallbackCharterGroups, parseSimulationAiOrders, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "./simulation-address";
 import { uniqueCompanyPlace } from "./simulation-place-match";
@@ -8,6 +8,14 @@ import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenar
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("AI 응답의 잘못된 차량 형식과 반복 안내를 처리한다", () => {
+  assert.equal(parseSimulationAiOrders(null), null);
+  assert.equal(parseSimulationAiOrders([null]), null);
+  assert.equal(parseSimulationAiOrders([{ vehicle: "1호차", ids: [null] }]), null);
+  assert.deepEqual(parseSimulationAiOrders([{ vehicle: "1호차", ids: [1, "2"] }]), [{ vehicle: "1호차", ids: ["1", "2"] }]);
+  const warning = "적재 정보 미확인 12품목은 가배정입니다.";
+  assert.equal(appendSimulationNotes(`기존 안내 ${warning}`, warning), `기존 안내 ${warning}`);
+});
 test("디아이씨 울주 납품지만 확인한 울산 주소를 사용한다", () => {
   assert.equal(confirmedSimulationAddress("디아이씨", "울주"), "울산광역시 울주군 상북면 길천산업로 401");
   assert.equal(confirmedSimulationAddress("DIC", "대구"), null);
