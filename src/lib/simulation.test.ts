@@ -194,13 +194,13 @@ test("자사 차량에 옮기지 않은 용차 품목은 AI 용차 묶음에 정
   assert.ok(validateCharterGroups(items, orders, [["4"], ["4"]]));
   assert.ok(validateCharterGroups(items, orders, [["3", "4"]]));
   const unrelated = { ...item(5, null), customer: "다른 업체", location: "먼 지역", lat: 35, lng: 129 };
-  assert.ok(validateCharterGroups([...items, unrelated], orders, [["4", "5"]]));
+  assert.equal(validateCharterGroups([...items, unrelated], orders, [["4", "5"]]), null);
   assert.equal(validateCharterGroups([...items, unrelated], orders, [["4"], ["5"]]), null);
 });
-test("같은 좌표라도 다른 거래처를 한 용차로 묶지 않는다", () => {
-  const a = { ...item(10, null), customer: "비엠씨", location: "광주" };
-  const b = { ...item(11, null), customer: "한온", location: "광주" };
+test("인접 권역 다른 거래처는 한 용차 다중 경유로 묶을 수 있다", () => {
+  const a = { ...item(10, null), customer: "디아이씨", location: "울주" };
+  const b = { ...item(11, null), customer: "지엠비 코리아", location: "창원" };
   const orders = [{ vehicle: "1호차", ids: [] }, { vehicle: "2호차", ids: [] }];
-  assert.match(validateCharterGroups([a, b], orders, [["10", "11"]])!, /같은 거래처/);
+  assert.equal(validateCharterGroups([a, b], orders, [["10", "11"]]), null);
   assert.equal(validateCharterGroups([a, b], orders, [["10"], ["11"]]), null);
 });

@@ -43,18 +43,13 @@ export function validateSimulationOrders(items: SimulationItem[], orders: { vehi
   return null;
 }
 
-/** 자사차로 이동하지 않은 용차 품목은 AI 용차 묶음에 빠짐없이 한 번만 포함한다. */
+/** 자사차로 이동하지 않은 용차 품목은 AI 용차 묶음에 빠짐없이 한 번만 포함한다. 다른 거래처 다중 경유를 허용한다. */
 export function validateCharterGroups(items: SimulationItem[], orders: { vehicle: string; ids: string[] }[], groups: string[][]): string | null {
   if (!Array.isArray(groups) || groups.some((group) => !Array.isArray(group) || !group.length || group.some((id) => typeof id !== "string"))) return "AI 용차 묶음 형식이 올바르지 않습니다.";
   const assigned = new Set(orders.flatMap((order) => order.ids));
   const expected = items.filter((item) => !item.vehicle && /용차/.test(item.transport) && !assigned.has(String(item.rowNumber))).map((item) => String(item.rowNumber));
   const ids = groups.flat();
   if (new Set(ids).size !== ids.length || ids.length !== expected.length || ids.some((id) => !expected.includes(id))) return "AI 용차 묶음에 품목 누락 또는 중복이 있습니다.";
-  for (const group of groups) {
-    const grouped = group.map((id) => items.find((item) => String(item.rowNumber) === id)!);
-    const first = grouped[0];
-    if (grouped.length > 1 && grouped.some((item) => !first.customer.trim() || !first.location.trim() || item.customer.trim().replace(/\s+/g, " ") !== first.customer.trim().replace(/\s+/g, " ") || item.location.trim().replace(/\s+/g, " ") !== first.location.trim().replace(/\s+/g, " "))) return "같은 거래처와 지역이 확인된 품목만 한 용차로 묶을 수 있습니다. 같은 주소의 다른 거래처도 별도 운행으로 확인하세요.";
-  }
   return null;
 }
 

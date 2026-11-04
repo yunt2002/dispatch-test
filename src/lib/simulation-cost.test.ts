@@ -1,6 +1,24 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { estimateSimulationCost, estimateCharterTrips, hasComparableRoutes, simulationCostIssues, charterDestinationKey, charterFareDestinations, charterGroupsCost, estimatedCharterGroupsCost, estimatedOriginalCharterCost } from "./simulation-cost";
+import {
+  addReturnCharterTrip,
+  charterDestinationKey,
+  charterFareDestinations,
+  charterGroupsCost,
+  defaultOriginalCharterTrips,
+  estimateCharterTrips,
+  estimateSimulationCost,
+  estimatedCharterGroupsCost,
+  estimatedOriginalCharterCost,
+  estimatedTripsCost,
+  hasComparableRoutes,
+  mergeCharterTrips,
+  simulationCostIssues,
+  syncOriginalCharterTrips,
+  tripLabel,
+  tripsFromCharterGroups,
+  type CharterTrip,
+} from "./simulation-cost";
 
 test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 표시한다", () => {
   const item = (rowNumber: number, customer: string, transport: string, vehicle: string | null = null) => ({ rowNumber, customer, location: "경기", transport, vehicle });
@@ -14,13 +32,13 @@ test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 �
   assert.deepEqual(charterFareDestinations([own, parcel], null, { charterGroups: [{ items: [regional] }], error: "계산 실패" }), []);
 });
 
-test("목적지별 운임은 운행마다 반영하고 미입력이나 복수 목적지는 계산하지 않는다", () => {
+test("목적지별 운임은 운행마다 반영하고 미입력은 계산하지 않는다", () => {
   const a = { rowNumber: 1, customer: "만도", location: "안양" };
   const b = { rowNumber: 2, customer: "삼현", location: "창원" };
   const fares = { [charterDestinationKey(a)]: "250000", [charterDestinationKey(b)]: "350000" };
   assert.equal(charterGroupsCost([{ items: [a] }, { items: [b] }], fares), 600000);
   assert.equal(charterGroupsCost([{ items: [a] }], {}), null);
-  assert.equal(charterGroupsCost([{ items: [a, b] }], fares), null);
+  assert.equal(charterGroupsCost([{ items: [a, b] }], { [charterDestinationKey(a)]: "1400000" }), 1400000);
   assert.equal(charterGroupsCost([], {}), 0);
 });
 
@@ -32,16 +50,47 @@ test("기본 운임으로 기존 비교를 유지하고 입력 운임만 대체�
   assert.equal(estimatedCharterGroupsCost(groups, { [charterDestinationKey(a)]: "300000" }), 500000);
   assert.equal(estimatedCharterGroupsCost(groups, { [charterDestinationKey(a)]: "0" }), 200000);
   assert.equal(estimatedCharterGroupsCost([{ items: [a, b] }], {}), 200000);
-  assert.equal(estimatedCharterGroupsCost([{ items: [a, b] }], { [charterDestinationKey(a)]: "300000" }), null);
+  assert.equal(estimatedCharterGroupsCost([{ items: [a, b] }], { [charterDestinationKey(a)]: "300000" }), 300000);
   assert.equal(estimatedOriginalCharterCost(groups, {}, "3"), 600000);
   assert.equal(estimatedOriginalCharterCost(groups, { [charterDestinationKey(a)]: "300000" }, "3"), null);
+});
+
+test("10/14 기준 운행 단위 운임(광주 편도·회수, DIC→GMB 왕복)을 합산한다", () => {
+  const gwangju = { rowNumber: 1, customer: "비엠씨 광주공장", location: "광주" };
+  const dic = { rowNumber: 2, customer: "디아이씨", location: "울주" };
+  const gmb = { rowNumber: 3, customer: "지엠비 코리아", location: "창원" };
+  const byRow = new Map([[1, gwangju], [2, dic], [3, gmb]]);
+  const outbound: CharterTrip = { id: "original:gwangju", leg: "one_way", rowNumbers: [1], fare: "450000" };
+  const inbound = { ...addReturnCharterTrip(outbound), fare: "280000" };
+  const multi: CharterTrip = { id: "original:merged", leg: "round_trip", rowNumbers: [2, 3], fare: "1400000" };
+  const trips = [outbound, inbound, multi];
+  assert.equal(estimatedTripsCost(trips), 2130000);
+  assert.equal(tripLabel(outbound, byRow), "네오 → 비엠씨 광주공장(광주)");
+  assert.match(tripLabel(inbound, byRow), /회수/);
+  assert.equal(tripLabel(multi, byRow), "네오 → 디아이씨(울주) → 지엠비 코리아(창원) → 네오");
+  assert.equal(estimatedTripsCost([{ ...multi, fare: "" }]), 200000);
+});
+
+test("기존 운행 묶기·분리와 AI 묶음 운행 변환을 지원한다", () => {
+  const a = { rowNumber: 10, customer: "디아이씨", location: "울주" };
+  const b = { rowNumber: 11, customer: "지엠비 코리아", location: "창원" };
+  const defaults = defaultOriginalCharterTrips([a, b]);
+  assert.equal(defaults.length, 2);
+  const merged = mergeCharterTrips(defaults, defaults.map((trip) => trip.id));
+  assert.equal(merged.length, 1);
+  assert.deepEqual(merged[0].rowNumbers, [10, 11]);
+  const synced = syncOriginalCharterTrips([a, b], [{ id: "keep", leg: "round_trip", rowNumbers: [10, 11], fare: "1400000" }]);
+  assert.equal(synced[0].fare, "1400000");
+  const fromAi = tripsFromCharterGroups([{ items: [a, b] }], "proposed", [{ id: "proposed:10,11", leg: "round_trip", rowNumbers: [10, 11], fare: "1400000" }]);
+  assert.equal(fromAi[0].leg, "round_trip");
+  assert.equal(fromAi[0].fare, "1400000");
 });
 
 const input = { originalVehicle: 146164, proposedVehicle: 485394, originalTrips: "3", proposedTrips: "1", originalHasCharter: true, proposedHasCharter: true };
 test("비용 미표시 시 누락된 경로·통행료·연료비와 용차 횟수를 구분한다", () => {
   const route = { vehicle: "1호차", items: [1], distance: 100, fuel: 50000, toll: null };
-  assert.deepEqual(simulationCostIssues([{ label: "AI 제안", routes: [route] }], "7", true), ["AI 제안 1호차: 통행료 미확인"]);
-  assert.deepEqual(simulationCostIssues([{ label: "기존", routes: [{ ...route, distance: null }] }], "", true), ["기존 1호차: 카카오 경로 미확인", "기존 용차 운행 횟수 확인 필요"]);
+  assert.deepEqual(simulationCostIssues([{ label: "AI 제안", routes: [route] }], 7, true), ["AI 제안 1호차: 통행료 미확인"]);
+  assert.deepEqual(simulationCostIssues([{ label: "기존", routes: [{ ...route, distance: null }] }], 0, true), ["기존 1호차: 카카오 경로 미확인", "기존 용차 운행 횟수 확인 필요"]);
 });
 test("용차 운행 횟수와 자사 차량 비용을 합산해 절감과 증가를 구한다", () => {
   assert.deepEqual(estimateSimulationCost(input), { original: 746164, proposed: 685394, saving: 60770 });

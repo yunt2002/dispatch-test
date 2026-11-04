@@ -2375,6 +2375,13 @@ body {
 .simulation-details[open] > summary { margin-bottom: 12px; }
 .simulation-packing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee9df; }
 .simulation-packing-row select { padding: 6px; border: 1px solid #d8d2c8; border-radius: 6px; }
+.simulation-trip-heading { margin: 14px 0 6px; font-size: 14px; font-weight: 600; }
+.simulation-trip-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid #eee9df; }
+.simulation-trip-select { padding-top: 4px; }
+.simulation-trip-body { flex: 1; display: grid; gap: 6px; }
+.simulation-trip-fields { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+.simulation-trip-fields label { display: grid; gap: 4px; font-size: 12px; }
+.simulation-trip-fields input, .simulation-trip-fields select { padding: 6px 8px; border: 1px solid #d8d2c8; border-radius: 6px; max-width: 160px; }
 .comparison-route + .comparison-route { border-top: 1px solid #eee9df; padding-top: 8px; }
 .request-map-link { display: inline-flex; margin-bottom: 10px; }
 .request-map-section .dispatch-page { padding: 0; }
