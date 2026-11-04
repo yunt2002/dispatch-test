@@ -2341,7 +2341,7 @@ body {
 .simulation-chart h4 { margin: 0; font-size: 15px; }
 .simulation-chart-difference { color: #334d43; font-size: 16px; overflow-wrap: anywhere; }
 .simulation-chart-difference.is-increase { color: #983b23; }
-.simulation-chart-row { display: grid; grid-template-columns: 72px minmax(30px, 1fr) 130px; gap: 10px; align-items: center; margin: 12px 0; font-size: 14px; }
+.simulation-chart-row { display: grid; grid-template-columns: 72px minmax(30px, 1fr) minmax(140px, 200px); gap: 10px; align-items: center; margin: 12px 0; font-size: 14px; }
 .simulation-chart-row strong { min-width: 0; text-align: right; font-size: 16px; overflow-wrap: anywhere; }
 .simulation-chart-row strong small { display: block; margin-top: 3px; color: #595d5a; font-size: 12px; font-weight: 500; text-align: right; }
 .simulation-ranking { padding: 10px 12px; border-radius: 8px; background: #f7f5f0; }

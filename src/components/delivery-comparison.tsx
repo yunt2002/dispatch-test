@@ -23,19 +23,31 @@ function storageKey(prefix: string, f: File, d: string) {
 }
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
-function ComparisonBars({ title, original, proposed, regional, format, isCost = false, regionalProvisional = false }: { title: string; original: number; proposed: number; regional?: number | null; format: (n: number) => string; isCost?: boolean; regionalProvisional?: boolean }) {
+type CostParts = { vehicle: number; charter: number };
+function ComparisonBars({ title, original, proposed, regional, format, isCost = false, regionalProvisional = false, costParts }: {
+  title: string; original: number; proposed: number; regional?: number | null; format: (n: number) => string; isCost?: boolean; regionalProvisional?: boolean;
+  costParts?: { original: CostParts; proposed: CostParts; regional?: CostParts | null };
+}) {
   const max = Math.max(original, proposed, regional ?? 0, 1);
   const delta = proposed - original;
   const percent = original > 0 && delta !== 0 ? Math.abs(delta / original * 100) : null;
   const difference = delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? (isCost ? "절감 예상" : "감소") : (isCost ? "증가 예상" : "증가")}`;
-  const values: [string, number][] = [["기존 계획", original], ["AI 제안", proposed]];
-  if (regional != null) values.push(["지방 집중", regional]);
+  const values: [string, number, CostParts | null | undefined][] = [
+    ["기존 계획", original, costParts?.original],
+    ["AI 제안", proposed, costParts?.proposed],
+  ];
+  if (regional != null) values.push(["지방 집중", regional, costParts?.regional]);
   const ranked = [...values].sort((a, b) => a[1] - b[1]);
+  const partsNote = (parts: CostParts | null | undefined) =>
+    parts ? `자사 ${format(parts.vehicle)} + 용차 ${format(parts.charter)}` : null;
   return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>기존 대비 AI {difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>
     <div className="simulation-ranking"><span className="simulation-ranking-caption">{isCost ? "예상 비용 낮은 순" : "운행 합계 짧은 순"}</span><div className="simulation-ranking-values">{ranked.map(([label, value], index) => <span className="simulation-ranking-part" key={label}>{index > 0 ? <span className="simulation-ranking-symbol" aria-label={value === ranked[index - 1][1] ? "같음" : "보다 작음"}>{value === ranked[index - 1][1] ? "=" : "<"}</span> : null}<span className={`simulation-ranking-item${label === "AI 제안" ? " is-ai" : label === "지방 집중" ? " is-regional" : ""}`}><span>{label}{label === "지방 집중" && regionalProvisional ? " (가배정)" : ""}</span><strong>{format(value)}</strong></span></span>)}</div>{regional == null ? <small>지방 집중안은 비교 가능한 값이 없어 순서에서 제외했습니다.</small> : null}</div>
-    {values.map(([label, value]) => <div className="simulation-chart-row" key={label}>
-    <span>{label}{label === "지방 집중" && regionalProvisional ? " (가배정)" : ""}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value / max * 100}%`, ...(label === "지방 집중" ? { backgroundColor: "#286895" } : {}) }} /></div><strong>{format(value)}<small>{label === "지방 집중" && regionalProvisional ? "주소·적재 확인 전 참고값 · " : ""}{label === "기존 계획" ? "비교 기준" : value === original ? "차이 없음" : `기존 대비 ${format(Math.abs(value - original))} ${value < original ? "감소" : "증가"}`}</small></strong>
-  </div>)}</div>;
+    {values.map(([label, value, parts]) => {
+      const note = partsNote(parts);
+      return <div className="simulation-chart-row" key={label}>
+      <span>{label}{label === "지방 집중" && regionalProvisional ? " (가배정)" : ""}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value / max * 100}%`, ...(label === "지방 집중" ? { backgroundColor: "#286895" } : {}) }} /></div><strong>{format(value)}<small>{label === "지방 집중" && regionalProvisional ? "주소·적재 확인 전 참고값 · " : ""}{note ? `${note} · ` : ""}{label === "기존 계획" ? "비교 기준" : value === original ? "차이 없음" : `기존 대비 ${format(Math.abs(value - original))} ${value < original ? "감소" : "증가"}`}</small></strong>
+    </div>;
+    })}</div>;
 }
 
 function difference(value: number | null, baseline: number | null, format: (n: number) => string) {
@@ -252,7 +264,13 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
         <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>
         <div className="simulation-charts">
-          {comparison ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} regionalProvisional={regionalUncertain} format={money} isCost /> : <div className="simulation-chart"><h4>예상 비용</h4><p className="dispatch-route-note-warn">비교 금액 확인 필요</p>{["기존 계획", "AI 제안", "지방 집중"].map((label) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true" /><strong>확인 필요</strong></div>)}<p className="comparison-note">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : costIssues.length ? costIssues.join(" / ") : originalCharterCost == null ? "기존 용차 운행·운임을 확인하세요." : proposedCharterCost == null ? "AI 용차 운행·운임을 확인하세요." : "주소와 경로·운임을 확인하세요."}</p></div>}
+          {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} regionalProvisional={regionalUncertain} format={money} isCost costParts={{
+            original: { vehicle: baseVehicleCost, charter: originalCharterCost },
+            proposed: { vehicle: cost(result.proposed)!, charter: proposedCharterCost },
+            regional: regionalComparison && regionalCharterCost != null && cost(regional!.routes) != null
+              ? { vehicle: cost(regional!.routes)!, charter: regionalCharterCost }
+              : null,
+          }} /> : <div className="simulation-chart"><h4>예상 비용</h4><p className="dispatch-route-note-warn">비교 금액 확인 필요</p>{["기존 계획", "AI 제안", "지방 집중"].map((label) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true" /><strong>확인 필요</strong></div>)}<p className="comparison-note">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : costIssues.length ? costIssues.join(" / ") : originalCharterCost == null ? "기존 용차 운행·운임을 확인하세요." : proposedCharterCost == null ? "AI 용차 운행·운임을 확인하세요." : "주소와 경로·운임을 확인하세요."}</p></div>}
           {complete && !packingDirty ? <ComparisonBars title="자사 차량 운행 시간 합계" original={total(result.original)} proposed={total(result.proposed)} regional={regionalTrips != null ? regionalTime : null} regionalProvisional={regionalUncertain} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : <div className="simulation-chart"><h4>자사 차량 운행 시간 합계</h4><p className="dispatch-route-note-warn">주소·경로 또는 적재 설정을 확인하세요.</p></div>}
         </div>
         {comparison ? <>
