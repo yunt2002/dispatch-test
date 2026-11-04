@@ -4,6 +4,7 @@ import {
   addReturnCharterTrip,
   charterDestinationKey,
   charterFareDestinations,
+  charterGroupsSignature,
   charterGroupsCost,
   defaultOriginalCharterTrips,
   estimateCharterTrips,
@@ -14,12 +15,26 @@ import {
   hasComparableRoutes,
   mergeCharterTrips,
   parseCharterTrips,
+  restoreEditedCharterTrips,
   simulationCostIssues,
   syncOriginalCharterTrips,
   tripLabel,
   tripsFromCharterGroups,
   type CharterTrip,
 } from "./simulation-cost";
+
+test("AI 운행을 묶으면 비용이 변경되고 같은 AI 결과에서만 수정안을 복원한다", () => {
+  const a = { rowNumber: 1, customer: "A", location: "광주" };
+  const b = { rowNumber: 2, customer: "B", location: "광주" };
+  const groups = [{ items: [a] }, { items: [b] }];
+  const initial = tripsFromCharterGroups(groups, "proposed");
+  const edited = mergeCharterTrips(initial, initial.map((trip) => trip.id));
+  assert.equal(estimatedTripsCost(initial), 400000);
+  assert.equal(estimatedTripsCost(edited), 200000);
+  assert.deepEqual(restoreEditedCharterTrips(groups, parseCharterTrips(edited), charterGroupsSignature(groups)), edited);
+  assert.equal(restoreEditedCharterTrips(groups, edited, charterGroupsSignature([{ items: [a, b] }])).length, 2);
+  assert.equal(restoreEditedCharterTrips(groups, [{ ...edited[0], rowNumbers: [1] }], charterGroupsSignature(groups)).length, 2);
+});
 
 test("기존 운행 비용 제외는 저장 후 유지되며 다시 포함할 수 있다", () => {
   const item = { rowNumber: 1, customer: "거래처", location: "안양" };

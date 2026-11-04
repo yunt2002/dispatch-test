@@ -5,10 +5,12 @@ import { isPackingMode } from "@/lib/simulation-packing";
 import {
   addReturnCharterTrip,
   charterItemsFromPlan,
+  charterGroupsSignature,
   estimatedTripsCost,
   hasComparableRoutes,
   mergeCharterTrips,
   parseCharterTrips,
+  restoreEditedCharterTrips,
   simulationCostIssues,
   splitCharterTrip,
   syncOriginalCharterTrips,
@@ -116,6 +118,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const [proposedCharterTrips, setProposedCharterTrips] = useState<CharterTrip[]>([]);
   const [regionalCharterTrips, setRegionalCharterTrips] = useState<CharterTrip[]>([]);
   const [selectedTripIds, setSelectedTripIds] = useState<string[]>([]);
+  const [selectedProposedTripIds, setSelectedProposedTripIds] = useState<string[]>([]);
   const [packing, setPacking] = useState<Record<string, PackingMode>>({}); const [packingDirty, setPackingDirty] = useState(false);
   useEffect(() => { const controller = new AbortController(); fetch("/api/diesel-price", { signal: controller.signal }).then(async (r) => { if (!r.ok) throw new Error(); return r.json() as Promise<{ price: number; date: string }>; }).then((d) => { setPrice((current) => current || String(d.price)); setPriceSource(`오피넷 전국 평균 ${d.date} 기준 · 수정 가능`); }).catch(() => { if (!controller.signal.aborted) setPriceSource("오피넷 조회 실패 · 경유 가격을 직접 입력해 주세요."); }); return () => controller.abort(); }, []);
 
@@ -123,21 +126,22 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     if (!f || !d) return;
     try { localStorage.setItem(storageKey("simulation-input:v2", f, d), JSON.stringify(values)); } catch { /* Storage may be unavailable. */ }
   }
-  function saveCharterTrips(f: File | null, d: string, trips: { original: CharterTrip[]; proposed: CharterTrip[]; regional: CharterTrip[] }) {
+  function saveCharterTrips(f: File | null, d: string, trips: { original: CharterTrip[]; proposed: CharterTrip[]; regional: CharterTrip[] }, proposedSignature = result?.charterGroups ? charterGroupsSignature(result.charterGroups) : null) {
     if (!f || !d) return;
-    try { localStorage.setItem(storageKey("simulation-charter-trips:v1", f, d), JSON.stringify(trips)); } catch { /* Storage may be unavailable. */ }
+    try { localStorage.setItem(storageKey("simulation-charter-trips:v1", f, d), JSON.stringify({ ...trips, proposedSignature })); } catch { /* Storage may be unavailable. */ }
   }
   function loadSavedTrips(f: File | null, d: string) {
     try {
-      if (!f || !d) return { original: [] as CharterTrip[], proposed: [] as CharterTrip[], regional: [] as CharterTrip[] };
+      if (!f || !d) return { original: [] as CharterTrip[], proposed: [] as CharterTrip[], regional: [] as CharterTrip[], proposedSignature: null };
       const raw = JSON.parse(localStorage.getItem(storageKey("simulation-charter-trips:v1", f, d)) || "{}");
       return {
         original: parseCharterTrips(raw?.original),
         proposed: parseCharterTrips(raw?.proposed),
         regional: parseCharterTrips(raw?.regional),
+        proposedSignature: raw?.proposedSignature,
       };
     } catch {
-      return { original: [] as CharterTrip[], proposed: [] as CharterTrip[], regional: [] as CharterTrip[] };
+      return { original: [] as CharterTrip[], proposed: [] as CharterTrip[], regional: [] as CharterTrip[], proposedSignature: null };
     }
   }
   function restorePreferences(f: File | null, d: string) {
@@ -148,14 +152,15 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     setProposedCharterTrips(trips.proposed);
     setRegionalCharterTrips(trips.regional);
     setSelectedTripIds([]);
+    setSelectedProposedTripIds([]);
     setPacking(Object.fromEntries(Object.entries(saved?.packing || {}).filter(([key, value]) => /^\d+$/.test(key) && isPackingMode(value))) as Record<string, PackingMode>);
     if (typeof saved?.price === "string" && Number(saved.price) > 0) { setPrice(saved.price); setPriceSource("이 브라우저에 저장한 경유 가격 · 수정 가능"); }
   }
-  function applyTripsFromResult(next: SimulationResult, f: File, d: string) {
+  function applyTripsFromResult(next: SimulationResult, f: File, d: string, regenerate: boolean) {
     const saved = loadSavedTrips(f, d);
     const charterItems = charterItemsFromPlan(next.items);
     const original = syncOriginalCharterTrips(charterItems, saved.original);
-    const proposed = next.charterGroups ? tripsFromCharterGroups(next.charterGroups, "proposed", saved.proposed) : [];
+    const proposed = next.charterGroups ? regenerate ? tripsFromCharterGroups(next.charterGroups, "proposed") : restoreEditedCharterTrips(next.charterGroups, saved.proposed, saved.proposedSignature) : [];
     const regional = next.regional && !next.regional.error
       ? tripsFromCharterGroups(next.regional.charterGroups, "regional", saved.regional)
       : [];
@@ -163,7 +168,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     setProposedCharterTrips(proposed);
     setRegionalCharterTrips(regional);
     setSelectedTripIds([]);
-    saveCharterTrips(f, d, { original, proposed, regional });
+    setSelectedProposedTripIds([]);
+    saveCharterTrips(f, d, { original, proposed, regional }, next.charterGroups ? charterGroupsSignature(next.charterGroups) : null);
   }
   function persistTrips(next: { original?: CharterTrip[]; proposed?: CharterTrip[]; regional?: CharterTrip[] }) {
     const original = next.original ?? originalCharterTrips;
@@ -193,7 +199,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "시뮬레이션에 실패했습니다.");
       const next = data as SimulationResult;
-      applyTripsFromResult(next, file, date);
+      applyTripsFromResult(next, file, date, mode === "regenerate");
       savePreferences(file, date, { packing, price });
       setPackingDirty(false);
       setResult(next);
@@ -205,7 +211,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const total = (routes: SimulationRoute[]) => routes.reduce((n, r) => n + (r.minutes ?? 0), 0);
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
-  const proposedTrips = result?.charterGroups == null ? null : result.charterGroups.length;
+  const proposedTrips = result?.charterGroups == null ? null : proposedCharterTrips.length;
+  const proposedGroupingEdited = !!result?.charterGroups && charterGroupsSignature(result.charterGroups) !== charterGroupsSignature(proposedCharterTrips.map((trip) => ({ items: trip.rowNumbers.map((rowNumber) => ({ rowNumber })) })));
   const itemsByRow = useMemo(() => {
     const map = new Map<number, SimulationItem>();
     for (const item of result?.items ?? []) map.set(item.rowNumber, item);
@@ -265,6 +272,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {result.items.some((item) => item.packing === "auto" && item.pallets != null) ? <p className="comparison-note">별도 설정이 없는 품목은 제품 기준표의 1PLT당 박스 수로 PLT를 추정합니다. 실제 합적·적재 방식은 확인이 필요합니다.</p> : null}
         {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
         {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn"><strong>기존 용차 {excludedOriginalTrips.length}회 비용 제외 중: AI안과 납품 비용을 같은 조건으로 비교할 수 없습니다.</strong></p> : null}
+        {proposedGroupingEdited ? <p className="dispatch-route-note-warn"><strong>AI 제안의 용차 묶음을 사용자가 직접 변경했습니다. AI 제안 비용은 수정된 운행 기준이며 실제 경유·운임 확인이 필요합니다.</strong></p> : null}
         <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>
         <div className="simulation-charts">
           {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} regional={regionalComparison?.proposed} regionalProvisional={regionalUncertain} format={money} isCost costParts={{
@@ -317,9 +325,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           </section>
           <section className="simulation-trip-column" aria-label="AI 제안 용차">
             <h5 className="simulation-trip-heading">AI 제안 용차 · {proposedCharterTrips.length}회</h5>
+            <p className="comparison-note">AI 제안을 직접 조정할 수 있습니다. 묶은 운행의 실제 경유·적재 가능 여부와 운임을 확인하세요. 묶은 운행은 운임을 다시 입력해야 하며, 미입력 시 20만 원으로 가정합니다. 원래 묶음으로 되돌리거나 AI 배차안을 다시 만들면 AI 용차 운임 입력값도 초기화됩니다.</p>
+            <div className="comparison-controls"><button type="button" className="dispatch-secondary-button" disabled={selectedProposedTripIds.length < 2} onClick={() => { const merged = mergeCharterTrips(proposedCharterTrips, selectedProposedTripIds); persistTrips({ proposed: merged.map((trip) => trip.id.startsWith("original:merged:") && !proposedCharterTrips.some((old) => old.id === trip.id) ? { ...trip, fare: "" } : trip) }); setSelectedProposedTripIds([]); }}>선택 운행 묶기</button><button type="button" className="dispatch-secondary-button" disabled={!result.charterGroups} onClick={() => { persistTrips({ proposed: tripsFromCharterGroups(result.charterGroups ?? [], "proposed") }); setSelectedProposedTripIds([]); }}>AI 원래 묶음으로 되돌리기</button></div>
             {!proposedCharterTrips.length ? <p className="comparison-note">{proposedTrips == null ? "AI 용차 묶음이 없습니다." : "AI가 용차 없이 처리하는 안입니다."}</p> : null}
             {proposedCharterTrips.map((trip) => (
               <div key={trip.id} className="simulation-trip-row">
+                <label className="simulation-trip-select"><input type="checkbox" checked={selectedProposedTripIds.includes(trip.id)} onChange={(e) => setSelectedProposedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`AI 제안 ${tripLabel(trip, itemsByRow)} 선택`} /></label>
                 <div className="simulation-trip-body">
                   <strong>{tripLabel(trip, itemsByRow)}</strong>
                   <div className="simulation-trip-fields">
@@ -356,7 +367,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       </details>
       <div className="comparison-plans"><Plan title="기존 배차 계획" routes={result.original} external={result.items.filter((item) => !item.vehicle)} /><Plan title="AI 시뮬레이션" routes={result.proposed} external={result.proposed.length ? result.remaining : undefined} />{regional?.routes.length ? <Plan title={regional.note.includes("규칙 기반 대체안") ? "지방 집중 규칙 기반 대체안" : "지방 집중 AI안"} routes={regional.routes} external={regional.remaining} /> : null}</div>
       {regional && !regional.error ? <><h3>지방 집중안 용차 제안 ({regional.charterGroups.length}회)</h3><ol>{regional.charterGroups.map((group, index) => <li key={index}>용차 {index + 1}회: {group.items.map((item) => `${item.customer || "업체 미확인"} (${item.rowNumber}행 · ${item.product})`).join(" / ")}</li>)}</ol>{regional.routes.some((route) => !route.items.length) ? <p className="dispatch-route-note-warn">물량 또는 조건에 따라 운행 품목이 없는 차량이 있습니다.</p> : null}</> : null}
-      <h3>AI 용차 운행 제안 {proposedTrips == null ? "" : `(${proposedTrips}회)`}</h3>
+      <h3>AI가 처음 제안한 용차 운행 {result.charterGroups == null ? "" : `(${result.charterGroups.length}회)`}</h3><p className="comparison-note">위에서 직접 조정한 용차 묶음과 다를 수 있습니다.</p>
       {result.charterGroups == null ? <p>AI 용차 묶음을 만들지 못했습니다. 다시 시도하세요.</p> : result.charterGroups.length === 0 ? <p>AI가 용차 운행 없이 처리하는 안을 제안했습니다.</p> : <ol>{result.charterGroups.map((group, index) => <li key={index}><strong>용차 {index + 1}회:</strong> {group.items.map((item) => `${item.customer || "업체 미확인"} (${item.rowNumber}행 · ${item.product})`).join(" / ")}</li>)}</ol>}
       <p className="dispatch-route-note-warn">AI가 묶은 용차는 차량 톤수·적재량, 납품 기한과 경유 가능 여부가 미확인인 후보입니다. 실제 운행과 1회 운임으로 확정된 결과가 아닙니다.</p>
       {complete ? <p><strong>자사 차량 운행 합계:</strong> 기존 {total(result.original)}분 / {money(cost(result.original))} · 제안 {total(result.proposed)}분 / {money(cost(result.proposed))} (경유비 + 통행료) · {total(result.proposed) === total(result.original) ? "시간 차이 없음" : `제안 ${Math.abs(total(result.proposed) - total(result.original))}분 ${total(result.proposed) > total(result.original) ? "증가" : "감소"}`}</p> : <p className="comparison-note">누락된 자사 납품이나 경로가 있으면 전체 자사 차량 운행 합계는 비교하지 않습니다.</p>}

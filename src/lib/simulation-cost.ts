@@ -92,6 +92,19 @@ export function charterGroupTripId(rowNumbers: number[], prefix: string): string
   return `${prefix}:${[...new Set(rowNumbers)].sort((a, b) => a - b).join(",")}`;
 }
 
+/** AI 결과의 용차 품목과 묶음이 같은 경우에만 사용자의 수정안을 복원한다. */
+export function charterGroupsSignature(groups: { items: { rowNumber: number }[] }[]): string {
+  return JSON.stringify(groups.map((group) => [...new Set(group.items.map((item) => item.rowNumber))].sort((a, b) => a - b)).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))));
+}
+
+export function restoreEditedCharterTrips<T extends Destination>(groups: { items: T[] }[], saved: CharterTrip[], savedSignature: unknown): CharterTrip[] {
+  const defaults = tripsFromCharterGroups(groups, "proposed", saved);
+  if (savedSignature !== charterGroupsSignature(groups)) return defaults;
+  const expected = groups.flatMap((group) => group.items.map((item) => item.rowNumber)).sort((a, b) => a - b);
+  const actual = saved.flatMap((trip) => trip.rowNumbers).sort((a, b) => a - b);
+  return JSON.stringify(expected) === JSON.stringify(actual) && saved.every((trip) => !trip.excluded) ? saved : defaults;
+}
+
 /** AI·지방 집중 묶음을 운행 목록으로 만든다. 저장된 leg/fare가 있으면 유지. */
 export function tripsFromCharterGroups<T extends Destination>(
   groups: { items: T[] }[],
