@@ -5,7 +5,7 @@ import type { SimulationRoute } from "./simulation";
 import { simulationStageError } from "./simulation-errors";
 
 const route = (fuel: number | null, toll: number | null, over = false): SimulationRoute => ({ vehicle: "1호차", items: [{} as SimulationRoute["items"][number]], pallets: 0, weight: 0, unknownPallets: 1, unknownWeight: 1, distance: 1, minutes: 1, toll, fuel, over });
-const candidate = (charterCount: number, fuel: number | null, over = false, courierMovedIds: string[] = []): CandidateForRanking => ({ routes: [route(fuel, 10000, over), { ...route(0, 0), items: [] }], charterCount, courierMovedIds });
+const candidate = (charterCount: number, fuel: number | null, over = false, courierMovedIds: string[] = []): CandidateForRanking => ({ routes: [route(fuel, 10000, over), { ...route(0, 0), vehicle: "2호차", items: [] }], charterCount, courierMovedIds });
 test("과적 후보를 제외하고 실제 계산된 용차·자사 비용 합계가 낮은 후보를 선택한다", () => {
   assert.equal(chooseSimulationCandidate([candidate(2, 100000), candidate(1, 120000), candidate(0, 1, true)]).index, 1);
   assert.equal(chooseSimulationCandidate([candidate(1, 100, true)]).index, null);
@@ -18,6 +18,15 @@ test("유효한 후보가 하나면 다른 후보와 비교했다고 표시하�
   const selected = chooseSimulationCandidate([candidate(7, 100)]);
   assert.equal(selected.index, 0);
   assert.match(selected.note, /1개.*비교하지 못했습니다/);
+});
+test("스타리아를 포함한 후보도 비교하고 스타리아 과적 후보는 제외한다", () => {
+  const valid = candidate(1, 100);
+  valid.routes.push({ ...route(1000, 0), vehicle: "스타리아" });
+  const over = candidate(0, 1);
+  over.routes.push({ ...route(1, 0, true), vehicle: "스타리아" });
+  const result = chooseSimulationCandidate([valid, over]);
+  assert.equal(result.index, 0);
+  assert.equal(result.validCount, 1);
 });
 test("후보 수는 적재 한도 초과 후보를 제외해 반환한다", () => {
   const selected = chooseSimulationCandidate([candidate(2, 100), candidate(1, 90, true), candidate(3, 200)]);

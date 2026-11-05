@@ -78,6 +78,15 @@ test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 �
   assert.deepEqual(charterFareDestinations([own, parcel], null, { charterGroups: [{ items: [regional] }], error: "계산 실패" }), []);
 });
 
+test("스타리아가 포함되면 세 차량 경로가 모두 있어야 시간과 비용을 비교한다", () => {
+  const staria = { rowNumber: 3, vehicle: "스타리아" };
+  const makeRoute = (vehicle: string, ids: number[]) => ({ vehicle, items: ids.map((rowNumber) => ({ rowNumber })), minutes: ids.length ? 30 : null });
+  const routes = [makeRoute("1호차", [1]), makeRoute("2호차", [2]), makeRoute("스타리아", [3])];
+  const result = { items: [{ rowNumber: 1, vehicle: "1호차" }, { rowNumber: 2, vehicle: "2호차" }, staria], original: routes, proposed: routes };
+  assert.equal(hasComparableRoutes(result), true);
+  assert.equal(hasComparableRoutes({ ...result, proposed: routes.slice(0, 2) }), false);
+});
+
 test("목적지별 운임은 운행마다 반영하고 미입력은 계산하지 않는다", () => {
   const a = { rowNumber: 1, customer: "만도", location: "안양" };
   const b = { rowNumber: 2, customer: "삼현", location: "창원" };

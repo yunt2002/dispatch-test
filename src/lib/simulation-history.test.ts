@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { historyMetrics, validHistorySnapshot, type SimulationHistorySnapshot } from "./simulation-history";
+import { historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistorySnapshot } from "./simulation-history";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "./simulation";
 
 function fixture(): SimulationHistorySnapshot {
@@ -44,4 +44,27 @@ test("잘못된 기록 형식은 저장하지 않는다", () => {
   const snapshot = fixture();
   snapshot.memo = "x".repeat(2001);
   assert.equal(validHistorySnapshot(snapshot), false);
+});
+
+test("스타리아가 포함된 새 기록을 보관하고 시간과 비용을 합산한다", () => {
+  const snapshot = fixture();
+  const star = { ...snapshot.result.items[0], rowNumber: 3, customer: "스타리아 납품지", vehicle: "스타리아", transport: "스타리아" } as SimulationItem;
+  const starRoute = { ...snapshot.result.original[0], vehicle: "스타리아", items: [star], minutes: 30, fuel: 3000, toll: 0, maxPallet: 1, maxWeight: 1000 };
+  snapshot.result.items.push(star);
+  snapshot.result.original.push(starRoute);
+  snapshot.result.proposed.push(starRoute);
+  assert.equal(validHistorySnapshot(snapshot), true);
+  const metrics = historyMetrics(snapshot);
+  assert.equal(metrics.originalCost, 83000);
+  assert.equal(metrics.originalMinutes, 470);
+});
+
+test("스타리아가 기타로 처리된 과거 기록은 금액을 바꾸지 않고 비교 합계에서 제외한다", () => {
+  const snapshot = fixture();
+  const metrics = historyMetrics(snapshot);
+  snapshot.result.items.push({ ...snapshot.result.items[1], rowNumber: 3, transport: "스타리아", vehicle: null });
+  const record = markLegacyStariaRecord({ id: "test", savedAt: "2026-11-05T00:00:00.000Z", snapshot, metrics });
+  assert.equal(record.metrics.originalCost, metrics.originalCost);
+  assert.equal(record.metrics.comparable, false);
+  assert.ok(record.metrics.warnings.some((warning) => /스타리아.*이전/.test(warning)));
 });

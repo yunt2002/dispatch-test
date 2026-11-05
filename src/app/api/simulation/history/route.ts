@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { historyMetrics, validHistorySnapshot, type SimulationHistoryRecord } from "@/lib/simulation-history";
+import { historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistoryRecord } from "@/lib/simulation-history";
 
 const PREFIX = "simulation_history:v1:";
 const SELECTION = "simulation_history_selection:v1:";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
       if (!entry) return NextResponse.json({ error: "분석 기록을 찾을 수 없습니다." }, { status: 404 });
       const record = JSON.parse(entry.value) as SimulationHistoryRecord;
       if (!validHistorySnapshot(record.snapshot)) return NextResponse.json({ error: "저장된 기록을 읽을 수 없습니다." }, { status: 422 });
-      return NextResponse.json(record);
+      return NextResponse.json(markLegacyStariaRecord(record));
     }
     const before = params.get("before");
     if (before && !keyPattern.test(before)) return NextResponse.json({ error: "이전 기록 번호가 올바르지 않습니다." }, { status: 400 });
@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       try {
         const record = JSON.parse(entry.value) as SimulationHistoryRecord;
         if (!validHistorySnapshot(record.snapshot)) return [];
-        const { snapshot, metrics, savedAt } = record;
+        const { snapshot, metrics, savedAt } = markLegacyStariaRecord(record);
         return [{ id: entry.key, date: snapshot.date, fileName: snapshot.fileName, savedAt, review: snapshot.review, planSource: snapshot.result.planSource ?? "미확인", metrics }];
       } catch { return []; }
     }).sort((a, b) => b.date.localeCompare(a.date) || b.savedAt.localeCompare(a.savedAt));

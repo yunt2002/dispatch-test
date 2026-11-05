@@ -2,7 +2,10 @@ import type { SimulationRoute } from "./simulation";
 
 export type CandidateForRanking = { routes: SimulationRoute[]; charterCount: number; courierMovedIds: string[] };
 export function chooseSimulationCandidate(candidates: CandidateForRanking[]): { index: number | null; note: string; validCount: number } {
-  const valid = candidates.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => candidate.routes.length === 2 && !candidate.routes.some((route) => route.over));
+  const valid = candidates.map((candidate, index) => ({ candidate, index })).filter(({ candidate }) => {
+    const names = candidate.routes.map((route) => route.vehicle);
+    return (names.length === 2 || names.length === 3) && new Set(names).size === names.length && names.includes("1호차") && names.includes("2호차") && names.every((name) => ["1호차", "2호차", "스타리아"].includes(name)) && !candidate.routes.some((route) => route.over);
+  });
   if (!valid.length) return { index: null, validCount: 0, note: "적재 한도를 초과하지 않는 후보를 만들지 못했습니다." };
   if (valid.length === 1) return { index: valid[0].index, validCount: 1, note: "유효한 후보가 1개여서 다른 안과 비교하지 못했습니다. 실제 적재와 운임을 확인하세요." };
   const courierSets = valid.map(({ candidate }) => [...candidate.courierMovedIds].sort().join(","));

@@ -35,16 +35,19 @@ export function validHistorySnapshot(value: unknown): value is SimulationHistory
   if (v.version !== 1 || typeof v.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v.date) || typeof v.fileName !== "string" || !v.fileName || v.fileName.length > 255 || typeof v.dieselPrice !== "string" || v.dieselPrice.length > 30 || typeof v.memo !== "string" || v.memo.length > 2000 || !["확인 필요", "검토 완료", "실행 곤란"].includes(v.review)) return false;
   if (!Array.isArray(v.excludedItems) || v.excludedItems.length > 1000 || !v.excludedItems.every((item) => item && Number.isSafeInteger(item.rowNumber) && typeof item.customer === "string" && typeof item.product === "string")) return false;
   const result = v.result;
-  if (!result || !Array.isArray(result.items) || result.items.length > 1000 || !Array.isArray(result.original) || !Array.isArray(result.proposed) || result.original.length !== 2 || result.proposed.length !== 2 || !Array.isArray(result.remaining) || !Array.isArray(result.warnings) || typeof result.note !== "string") return false;
+  if (!result || !Array.isArray(result.items) || result.items.length > 1000 || !Array.isArray(result.original) || !Array.isArray(result.proposed) || ![2, 3].includes(result.original.length) || result.original.length !== result.proposed.length || !Array.isArray(result.remaining) || !Array.isArray(result.warnings) || typeof result.note !== "string") return false;
   const validItem = (item: unknown) => {
     if (!item || typeof item !== "object") return false;
     const i = item as SimulationResult["items"][number];
-    return Number.isSafeInteger(i.rowNumber) && typeof i.customer === "string" && typeof i.location === "string" && typeof i.product === "string" && typeof i.transport === "string" && (i.vehicle === null || i.vehicle === "1호차" || i.vehicle === "2호차") && (i.address == null || typeof i.address === "string") && (i.boxes == null || (Number.isFinite(i.boxes) && i.boxes >= 0)) && (i.pallets == null || (Number.isFinite(i.pallets) && i.pallets >= 0));
+    return Number.isSafeInteger(i.rowNumber) && typeof i.customer === "string" && typeof i.location === "string" && typeof i.product === "string" && typeof i.transport === "string" && (i.vehicle === null || i.vehicle === "1호차" || i.vehicle === "2호차" || i.vehicle === "스타리아") && (i.address == null || typeof i.address === "string") && (i.boxes == null || (Number.isFinite(i.boxes) && i.boxes >= 0)) && (i.pallets == null || (Number.isFinite(i.pallets) && i.pallets >= 0));
   };
   if (!result.items.every(validItem) || !result.remaining.every(validItem) || !result.warnings.every((w) => typeof w === "string")) return false;
   const validNumber = (x: unknown) => x === null || (typeof x === "number" && Number.isFinite(x) && x >= 0);
   const validRoute = (route: SimulationRoute) => route && typeof route.vehicle === "string" && Array.isArray(route.items) && route.items.length <= 1000 && route.items.every(validItem) && validNumber(route.minutes) && validNumber(route.fuel) && validNumber(route.toll) && typeof route.pallets === "number" && Number.isFinite(route.pallets) && typeof route.weight === "number" && Number.isFinite(route.weight) && Number.isSafeInteger(route.unknownPallets) && Number.isSafeInteger(route.unknownWeight) && typeof route.over === "boolean" && (route.legs == null || (Array.isArray(route.legs) && route.legs.length <= 1000 && route.legs.every((leg) => leg && typeof leg.from === "string" && typeof leg.to === "string" && validNumber(leg.distanceKm) && validNumber(leg.minutes))));
   if (![...result.original, ...result.proposed].every(validRoute)) return false;
+  const fleet = (routes: SimulationRoute[]) => routes.map((route) => route.vehicle).sort().join("|");
+  const expectedFleet = result.original.length === 3 ? "1호차|2호차|스타리아" : "1호차|2호차";
+  if (fleet(result.original) !== expectedFleet || fleet(result.proposed) !== expectedFleet) return false;
   if (result.charterGroups !== null && (!Array.isArray(result.charterGroups) || result.charterGroups.length > 1000 || !result.charterGroups.every((group) => group && Array.isArray(group.items) && group.items.every(validItem)))) return false;
   const validRows = new Set(result.items.map((item) => item.rowNumber));
   const validTrips = (trips: unknown) => Array.isArray(trips) && trips.length <= 2000 && trips.every((t) => t && typeof t.id === "string" && t.id.length <= 500 && typeof t.fare === "string" && /^\d*$/.test(t.fare) && (t.leg === "one_way" || t.leg === "round_trip") && Array.isArray(t.rowNumbers) && t.rowNumbers.length > 0 && t.rowNumbers.every((n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && validRows.has(n)));
@@ -66,6 +69,7 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   const complete = hasComparableRoutes(result);
   const aiAdjusted = snapshot.proposedExtras.length > 0 || snapshot.proposedTrips.some((trip) => trip.leg !== "one_way") || result.charterGroups == null || charterGroupsSignature(result.charterGroups) !== charterGroupsSignature(snapshot.proposedTrips.map((trip) => ({ items: trip.rowNumbers.map((rowNumber) => ({ rowNumber })) })));
   const warnings: string[] = [];
+  if (result.items.some((item) => /스타리아/.test(item.transport) && item.vehicle !== "스타리아")) warnings.push("스타리아가 반영되지 않은 이전 분석 기록");
   if (!courierIncluded) warnings.push("택배비 미확인: 양쪽 비용에서 택배비 제외");
   if (!complete) warnings.push("차량 경로 또는 납품 누락 확인 필요");
   if (snapshot.originalTrips.some((trip) => trip.excluded)) warnings.push("기존 용차 비용 제외: 동일 조건 비교 아님");
@@ -77,4 +81,11 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   if (/용차 묶음 검증 실패|규칙 기반 대체/.test(result.note)) warnings.push("AI 용차 묶음 대체안 확인 필요");
   if (!result.candidateCountVerified) warnings.push("AI 후보 검증 기록 확인 필요");
   return { originalCost, proposedCost, courierIncluded, originalMinutes: complete ? simulationTimeTotals(result.original)?.total ?? null : null, proposedMinutes: complete ? simulationTimeTotals(result.proposed)?.total ?? null : null, originalCharters: snapshot.originalTrips.filter((trip) => !trip.excluded).length + snapshot.originalExtras.length, proposedCharters: snapshot.proposedTrips.length + snapshot.proposedExtras.length, comparable: complete && originalCost != null && proposedCost != null && courierIncluded && warnings.length === 0, aiAdjusted, warnings };
+}
+
+/** 과거 저장된 금액은 다시 계산하지 않고 스타리아 누락만 경고해 합계에서 제외한다. */
+export function markLegacyStariaRecord(record: SimulationHistoryRecord): SimulationHistoryRecord {
+  if (!record.snapshot.result.items.some((item) => /스타리아/.test(item.transport) && item.vehicle !== "스타리아")) return record;
+  const warning = "스타리아가 반영되지 않은 이전 분석 기록";
+  return { ...record, metrics: { ...record.metrics, comparable: false, warnings: [...new Set([...(record.metrics.warnings ?? []), warning])] } };
 }

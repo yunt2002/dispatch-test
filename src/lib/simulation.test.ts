@@ -16,6 +16,14 @@ test("AI 응답의 잘못된 차량 형식과 반복 안내를 처리한다", ()
   const warning = "적재 정보 미확인 12품목은 가배정입니다.";
   assert.equal(appendSimulationNotes(`기존 안내 ${warning}`, warning), `기존 안내 ${warning}`);
 });
+test("스타리아가 포함된 경우 AI가 세 차량과 기존 스타리아 물량을 모두 반영해야 한다", () => {
+  const staria = { ...item(5, "스타리아"), transport: "스타리아", vehicle: "스타리아" as const };
+  const vehicles = ["1호차", "2호차", "스타리아"];
+  const orders = [{ vehicle: "1호차", ids: ["1"] }, { vehicle: "2호차", ids: ["2"] }, { vehicle: "스타리아", ids: ["5"] }];
+  assert.equal(validateSimulationOrders([items[0], items[1], staria], orders, vehicles), null);
+  assert.match(validateSimulationOrders([items[0], items[1], staria], orders.slice(0, 2), vehicles) ?? "", /차량 목록/);
+  assert.match(validateSimulationOrders([items[0], items[1], staria], [{ ...orders[0] }, { ...orders[1] }, { vehicle: "스타리아", ids: [] }], vehicles) ?? "", /누락/);
+});
 test("디아이씨 울주 납품지만 확인한 울산 주소를 사용한다", () => {
   assert.equal(confirmedSimulationAddress("디아이씨", "울주"), "울산광역시 울주군 상북면 길천산업로 401");
   assert.equal(confirmedSimulationAddress("DIC", "대구"), null);

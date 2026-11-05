@@ -244,10 +244,13 @@ export function estimatedOriginalCharterCost(groups: { items: Destination[] }[],
 /** 적재 초과는 실행 불가 경고이며 비용 자료의 누락과는 별개다. */
 export function hasComparableRoutes(result: {
   items: { rowNumber: number; vehicle: string | null }[];
-  original: { items: { rowNumber: number }[]; minutes: number | null }[];
-  proposed: { items: { rowNumber: number }[]; minutes: number | null }[];
+  original: { vehicle?: string; items: { rowNumber: number }[]; minutes: number | null }[];
+  proposed: { vehicle?: string; items: { rowNumber: number }[]; minutes: number | null }[];
 }): boolean {
-  if (result.original.length !== 2 || result.proposed.length !== 2) return false;
+  if (![2, 3].includes(result.original.length) || result.original.length !== result.proposed.length) return false;
+  if (result.items.some((item) => item.vehicle === "스타리아") || [...result.original, ...result.proposed].some((route) => route.vehicle === "스타리아")) {
+    if (result.original.length !== 3 || !result.original.some((route) => route.vehicle === "스타리아") || !result.proposed.some((route) => route.vehicle === "스타리아")) return false;
+  }
   const originalIds = new Set(result.original.flatMap((route) => route.items.map((item) => item.rowNumber)));
   const proposedIds = new Set(result.proposed.flatMap((route) => route.items.map((item) => item.rowNumber)));
   if (result.items.some((item) => item.vehicle && (!originalIds.has(item.rowNumber) || !proposedIds.has(item.rowNumber)))) return false;
