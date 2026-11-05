@@ -4,6 +4,7 @@ import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } f
 import { isPackingMode } from "@/lib/simulation-packing";
 import { simulationTime, simulationTimeTotals } from "@/lib/simulation-time";
 import { comparableCourierCosts, courierCost, courierTotal, type CourierChoice } from "@/lib/simulation-courier";
+import type { HistoryReview, SimulationHistorySnapshot } from "@/lib/simulation-history";
 import {
   addReturnCharterTrip,
   charterItemsFromPlan,
@@ -90,6 +91,10 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const [price, setPrice] = useState(""); const [priceSource, setPriceSource] = useState("경유 가격을 입력해 주세요.");
   const [result, setResult] = useState<SimulationResult | null>(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
   const [lastAction, setLastAction] = useState("");
+  const [historyReview, setHistoryReview] = useState<HistoryReview>("확인 필요");
+  const [historyMemo, setHistoryMemo] = useState("");
+  const [historyMessage, setHistoryMessage] = useState("");
+  const [historySaving, setHistorySaving] = useState(false);
   const [originalCharterTrips, setOriginalCharterTrips] = useState<CharterTrip[]>([]);
   const [proposedCharterTrips, setProposedCharterTrips] = useState<CharterTrip[]>([]);
   
@@ -177,6 +182,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     const regional = next.regional ?? loadSavedTrips(file, date).regional;
     if (next.original) setOriginalCharterTrips(original);
     if (next.proposed) setProposedCharterTrips(proposed);
+    setHistoryReview("확인 필요"); setHistoryMessage("");
     saveCharterTrips(file, date, { original, proposed, regional });
   }
   function updateTripList(
@@ -191,12 +197,14 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   function saveExtra(kind: "original" | "proposed", trips: CharterTrip[]) {
     const next = { ...extraTrips, [kind]: trips };
     setExtraTrips(next);
+    setHistoryReview("확인 필요"); setHistoryMessage("");
     try { if (file && date) localStorage.setItem(storageKey("simulation-extra:v1", file, date), JSON.stringify(next)); } catch { /* Storage may be unavailable. */ }
   }
   function updateCourier(row: number, choice: CourierChoice | null) {
     const next = { ...courierChoices };
     if (choice) next[String(row)] = choice; else delete next[String(row)];
     setCourierChoices(next);
+    setHistoryReview("확인 필요"); setHistoryMessage("");
     try { if (file && date) localStorage.setItem(storageKey("simulation-courier:v1", file, date), JSON.stringify(next)); } catch { /* Storage may be unavailable. */ }
   }
   function renderExtraTrips(kind: "original" | "proposed", items: SimulationItem[], trips: CharterTrip[]) {
@@ -219,6 +227,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       savePreferences(file, date, { packing, price });
       setPackingDirty(false);
       setResult(next);
+      setHistoryReview("확인 필요"); setHistoryMemo(""); setHistoryMessage("");
       setLastAction(mode === "refresh" ? "저장된 배차 유지 · 경로만 새로 조회" : next.restored ? "저장된 결과 불러옴" : "새 배차안 생성");
     } catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
@@ -260,6 +269,22 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const baseTrips = activeOriginalTrips;
   const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
   const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }], activeOriginalTrips, (originalHasCharter && (activeOriginalTrips > 0 || excludedOriginalTrips.length === 0)) || originalExtras.length > 0) : [];
+  async function saveHistory() {
+    if (!result || !file || packingDirty || loading) return;
+    const excludedItems = excludedRows.map((rowNumber) => {
+      const item = preview?.key === previewKey ? preview.items.find((row) => row.rowNumber === rowNumber) : undefined;
+      return { rowNumber, customer: item?.customer ?? "미확인", product: item?.product ?? "미확인" };
+    });
+    const snapshot: SimulationHistorySnapshot = { version: 1, date, fileName: file.name, dieselPrice: price, excludedItems, result, originalTrips: originalCharterTrips, proposedTrips: proposedCharterTrips, originalExtras, proposedExtras, courierChoices, packing, review: historyReview, memo: historyMemo.trim() };
+    setHistorySaving(true); setHistoryMessage("");
+    try {
+      const response = await fetch("/api/simulation/history", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "save", snapshot }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "분석 기록을 저장하지 못했습니다.");
+      setHistoryMessage("분석 기록을 저장했습니다. 분석 기록에서 확인하세요.");
+    } catch (err) { setHistoryMessage(err instanceof Error ? err.message : "분석 기록을 저장하지 못했습니다."); }
+    finally { setHistorySaving(false); }
+  }
   if (result && !complete) {
     const planned = new Set(result.original.flatMap((route) => route.items.map((item) => item.rowNumber)));
     const missing = result.items.filter((item) => item.vehicle && !planned.has(item.rowNumber));
@@ -267,6 +292,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   }
   return <section className="comparison-section" aria-labelledby="simulation-title"><h1 id="simulation-title">AI 배차 시뮬레이션</h1>
     <p>기존 계획과 AI 배차안을 비교합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
+    <p><a href="/simulation/history" className="dispatch-secondary-button">분석 기록 보기</a></p>
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { const selected = e.target.files?.[0] ?? null; setFile(selected); setResult(null); restorePreferences(selected, date); setPackingDirty(false); }} /></label>
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { const value = e.target.value; setPrice(value); setPriceSource("직접 입력한 경유 가격 · 수정 가능"); setResult(null); savePreferences(file, date, { packing, price: value }); }} placeholder="직접 입력" /></label>
@@ -357,6 +383,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           </section>
         </div></details>
       </div>
+      <section className="simulation-run-info" aria-label="분석 기록 저장"><h3>분석 결과 저장</h3><p className="comparison-note">현재 분석과 용차·택배 조정값을 별도 기록으로 저장합니다. 같은 날짜도 여러 번 저장할 수 있습니다.</p><div className="comparison-controls"><label>검토 상태 <select value={historyReview} onChange={(event) => setHistoryReview(event.target.value as HistoryReview)}><option>확인 필요</option><option>검토 완료</option><option>실행 곤란</option></select></label><label>검토 메모 <input type="text" maxLength={2000} value={historyMemo} onChange={(event) => setHistoryMemo(event.target.value)} placeholder="확인한 사항이나 미확인 사항" /></label><button type="button" className="dispatch-secondary-button" disabled={historySaving || loading || packingDirty} onClick={() => void saveHistory()}>{historySaving ? "저장 중…" : "분석 결과 저장"}</button><a href="/simulation/history" className="dispatch-secondary-button">분석 기록 보기</a></div>{packingDirty ? <p className="dispatch-route-note-warn">변경한 적재 설정을 적용한 뒤 저장하세요.</p> : null}{historyMessage ? <p role="status">{historyMessage}</p> : null}</section>
       <details className="simulation-details"><summary><span className="simulation-closed-label">분석 리포트 보기</span><span className="simulation-open-label">분석 리포트 접기</span></summary>
       <div className="simulation-run-info" aria-label="결과 기준">
         <strong>이 결과의 기준</strong>
