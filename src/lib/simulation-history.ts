@@ -4,6 +4,14 @@ import { courierTotal, type CourierChoice } from "./simulation-courier";
 import { simulationTimeTotals } from "./simulation-time";
 
 export type HistoryReview = "확인 필요" | "검토 완료" | "실행 곤란";
+export const fieldReviewStatuses = ["미검토", "운행 가능", "조건부 가능", "운행 어려움"] as const;
+export type FieldReview = { status: typeof fieldReviewStatuses[number]; reason: string };
+export const defaultFieldReview: FieldReview = { status: "미검토", reason: "" };
+export function validFieldReview(value: unknown): value is FieldReview {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const review = value as FieldReview;
+  return fieldReviewStatuses.some((status) => status === review.status) && typeof review.reason === "string" && review.reason.length <= 2000;
+}
 export type SimulationHistorySnapshot = {
   version: 1;
   date: string;
@@ -19,6 +27,7 @@ export type SimulationHistorySnapshot = {
   packing: Record<string, string>;
   review: HistoryReview;
   memo: string;
+  fieldReview?: FieldReview;
 };
 export type HistoryMetrics = {
   originalCost: number | null; proposedCost: number | null;
@@ -28,10 +37,23 @@ export type HistoryMetrics = {
 };
 export type SimulationHistoryRecord = { id: string; savedAt: string; snapshot: SimulationHistorySnapshot; metrics: HistoryMetrics };
 
+export function comparisonDistribution(records: { review: HistoryReview; metrics: HistoryMetrics }[]) {
+  const counts = { decrease: 0, equal: 0, increase: 0, excluded: 0 };
+  for (const { review, metrics } of records) {
+    const { originalCost, proposedCost } = metrics;
+    if (review !== "검토 완료" || !metrics.comparable || metrics.aiAdjusted || originalCost == null || proposedCost == null || !Number.isFinite(originalCost) || !Number.isFinite(proposedCost)) { counts.excluded++; continue; }
+    if (proposedCost < originalCost) counts.decrease++;
+    else if (proposedCost > originalCost) counts.increase++;
+    else counts.equal++;
+  }
+  return counts;
+}
+
 /** 클라이언트에서 전달된 기록은 크기·형식 검사를 거친 뒤 서버에서 합계를 다시 계산한다. */
 export function validHistorySnapshot(value: unknown): value is SimulationHistorySnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as SimulationHistorySnapshot;
+  if (v.fieldReview !== undefined && !validFieldReview(v.fieldReview)) return false;
   if (v.version !== 1 || typeof v.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v.date) || typeof v.fileName !== "string" || !v.fileName || v.fileName.length > 255 || typeof v.dieselPrice !== "string" || v.dieselPrice.length > 30 || typeof v.memo !== "string" || v.memo.length > 2000 || !["확인 필요", "검토 완료", "실행 곤란"].includes(v.review)) return false;
   if (!Array.isArray(v.excludedItems) || v.excludedItems.length > 1000 || !v.excludedItems.every((item) => item && Number.isSafeInteger(item.rowNumber) && typeof item.customer === "string" && typeof item.product === "string")) return false;
   const result = v.result;

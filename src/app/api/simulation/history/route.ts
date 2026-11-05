@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistoryRecord } from "@/lib/simulation-history";
+import { defaultFieldReview, historyMetrics, markLegacyStariaRecord, validFieldReview, validHistorySnapshot, type SimulationHistoryRecord } from "@/lib/simulation-history";
 
 const PREFIX = "simulation_history:v1:";
 const SELECTION = "simulation_history_selection:v1:";
@@ -32,7 +32,7 @@ export async function GET(request: Request) {
         const record = JSON.parse(entry.value) as SimulationHistoryRecord;
         if (!validHistorySnapshot(record.snapshot)) return [];
         const { snapshot, metrics, savedAt } = markLegacyStariaRecord(record);
-        return [{ id: entry.key, date: snapshot.date, fileName: snapshot.fileName, savedAt, review: snapshot.review, planSource: snapshot.result.planSource ?? "미확인", metrics }];
+        return [{ id: entry.key, date: snapshot.date, fileName: snapshot.fileName, savedAt, review: snapshot.review, fieldReview: snapshot.fieldReview ?? defaultFieldReview, planSource: snapshot.result.planSource ?? "미확인", metrics }];
       } catch { return []; }
     }).sort((a, b) => b.date.localeCompare(a.date) || b.savedAt.localeCompare(a.savedAt));
     return NextResponse.json({ records, selected, nextCursor: entries.length > 100 ? entries[99].key : null });
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     if (text.length > 2_000_000) return NextResponse.json({ error: "분석 기록이 너무 큽니다." }, { status: 413 });
     const body: unknown = JSON.parse(text);
     if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "요청 형식을 확인하세요." }, { status: 400 });
-    const value = body as { action?: unknown; snapshot?: unknown; date?: unknown; id?: unknown };
+    const value = body as { action?: unknown; snapshot?: unknown; date?: unknown; id?: unknown; fieldReview?: unknown };
     if (value.action === "save") {
       if (!validHistorySnapshot(value.snapshot)) return NextResponse.json({ error: "분석 기록의 내용과 조건을 확인하세요." }, { status: 400 });
       const id = `${PREFIX}${value.snapshot.date}:${randomUUID()}`;
@@ -61,6 +61,18 @@ export async function POST(request: Request) {
       const key = `${SELECTION}${value.date}`;
       await prisma.appSetting.upsert({ where: { key }, create: { key, value: value.id ?? "" }, update: { value: value.id ?? "" } });
       return NextResponse.json({ ok: true });
+    }
+    if (value.action === "field-review") {
+      if (typeof value.id !== "string" || !keyPattern.test(value.id) || !validFieldReview(value.fieldReview)) return NextResponse.json({ error: "현장 검토 상태와 사유를 확인하세요." }, { status: 400 });
+      const entry = await prisma.appSetting.findUnique({ where: { key: value.id } });
+      if (!entry) return NextResponse.json({ error: "분석 기록을 찾을 수 없습니다." }, { status: 404 });
+      const record = JSON.parse(entry.value) as SimulationHistoryRecord;
+      if (!validHistorySnapshot(record.snapshot)) return NextResponse.json({ error: "저장된 기록을 읽을 수 없습니다." }, { status: 422 });
+      const fieldReview = { status: value.fieldReview.status, reason: value.fieldReview.reason.trim() };
+      const updated = { ...record, snapshot: { ...record.snapshot, fieldReview } };
+      const result = await prisma.appSetting.updateMany({ where: { key: value.id, value: entry.value }, data: { value: JSON.stringify(updated) } });
+      if (!result.count) return NextResponse.json({ error: "기록이 변경되었거나 삭제됐습니다. 새로고침 후 다시 확인하세요." }, { status: 409 });
+      return NextResponse.json({ fieldReview });
     }
     return NextResponse.json({ error: "요청 형식을 확인하세요." }, { status: 400 });
   } catch { return NextResponse.json({ error: "분석 기록을 처리하지 못했습니다." }, { status: 500 }); }

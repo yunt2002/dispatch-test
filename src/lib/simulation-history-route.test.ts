@@ -13,6 +13,7 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
     findUnique: async ({ where }: { where: { key: string } }) => values.has(where.key) ? { key: where.key, value: values.get(where.key)! } : null,
     findMany: async ({ where, take }: { where: { key: { startsWith: string; lt?: string } }; take?: number }) => [...values].filter(([key]) => key.startsWith(where.key.startsWith) && (!where.key.lt || key < where.key.lt)).sort(([a], [b]) => a < b ? 1 : a > b ? -1 : 0).slice(0, take).map(([key, value]) => ({ key, value })),
     upsert: async ({ where, create, update }: { where: { key: string }; create: { key: string; value: string }; update: { value: string } }) => { values.set(where.key, values.has(where.key) ? update.value : create.value); return { key: where.key, value: values.get(where.key)! }; },
+    updateMany: async ({ where, data }: { where: { key: string; value: string }; data: { value: string } }) => { if (values.get(where.key) !== where.value) return { count: 0 }; values.set(where.key, data.value); return { count: 1 }; },
     deleteMany: async ({ where }: { where: { key: { startsWith?: string; in?: string[] }; value?: { in: string[] } } }) => { let count = 0; for (const [key, value] of values) { if ((where.key.startsWith === undefined || key.startsWith(where.key.startsWith)) && (where.key.in === undefined || where.key.in.includes(key)) && (!where.value || where.value.in.includes(value))) { values.delete(key); count++; } } return { count }; },
   };
   Object.defineProperty(prisma, "appSetting", { value: fake, configurable: true });
@@ -37,6 +38,14 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
   const detail = await (await GET(new Request(`http://localhost/api/simulation/history?id=${encodeURIComponent(one.id)}`))).json();
   assert.equal(detail.snapshot.fileName, "가상.xlsx");
   assert.equal(detail.metrics.originalCost, 3000);
+  assert.equal(list.records[0].fieldReview.status, "미검토");
+  assert.equal((await post({ action: "field-review", id: one.id, fieldReview: { status: "조건부 가능", reason: " 하차 시간 확인 " } })).status, 200);
+  const reviewed = await (await GET(new Request(`http://localhost/api/simulation/history?id=${encodeURIComponent(one.id)}`))).json();
+  assert.deepEqual(reviewed.snapshot.fieldReview, { status: "조건부 가능", reason: "하차 시간 확인" });
+  assert.equal(reviewed.metrics.originalCost, detail.metrics.originalCost);
+  const updatedList = await (await GET(new Request("http://localhost/api/simulation/history"))).json();
+  assert.equal(updatedList.records.find((entry: { id: string }) => entry.id === one.id).fieldReview.status, "조건부 가능");
+  assert.equal((await post({ action: "field-review", id: one.id, fieldReview: { status: "잘못된 상태", reason: "" } })).status, 400);
   assert.equal((await post({ action: "select", date: "2026-10-14", id: one.id })).status, 400);
   for (let i = 0; i < 100; i++) assert.equal((await post({ action: "save", snapshot })).status, 200);
   const page = await (await GET(new Request("http://localhost/api/simulation/history"))).json();

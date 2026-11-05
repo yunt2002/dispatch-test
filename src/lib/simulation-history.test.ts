@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistorySnapshot } from "./simulation-history";
+import { comparisonDistribution, historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistorySnapshot } from "./simulation-history";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "./simulation";
 
 function fixture(): SimulationHistorySnapshot {
@@ -43,6 +43,21 @@ test("잘못된 기록 형식은 저장하지 않는다", () => {
   assert.equal(validHistorySnapshot(null), false);
   const snapshot = fixture();
   snapshot.memo = "x".repeat(2001);
+  assert.equal(validHistorySnapshot(snapshot), false);
+});
+
+test("비용 분포는 검토 완료된 비교 가능 AI 원안만 집계한다", () => {
+  const metrics = historyMetrics(fixture());
+  const row = (originalCost: number, proposedCost: number) => ({ review: "검토 완료" as const, metrics: { ...metrics, originalCost, proposedCost } });
+  assert.deepEqual(comparisonDistribution([row(100, 90), row(100, 100), row(100, 110), { ...row(100, 80), metrics: { ...metrics, aiAdjusted: true } }, { ...row(100, 80), review: "확인 필요" }, { ...row(100, 80), metrics: { ...metrics, comparable: false } }]), { decrease: 1, equal: 1, increase: 1, excluded: 3 });
+});
+
+test("현장 검토는 예전 기록과 호환하고 상태 및 사유를 검증한다", () => {
+  const snapshot = fixture();
+  assert.equal(validHistorySnapshot(snapshot), true);
+  snapshot.fieldReview = { status: "조건부 가능", reason: "하차 시간 확인" };
+  assert.equal(validHistorySnapshot(snapshot), true);
+  snapshot.fieldReview.reason = "x".repeat(2001);
   assert.equal(validHistorySnapshot(snapshot), false);
 });
 
