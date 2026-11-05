@@ -14,3 +14,13 @@ export function simulationTime(route: SimulationRoute) {
   const lunch = 60;
   return { driving: route.minutes, lunch, unloading, total: route.minutes == null ? null : route.minutes + lunch + unloading, stops: stops.size };
 }
+
+/** 운행 차량별 시간을 합산하며 한 차량이라도 운전 시간이 미확인이면 비교하지 않는다. */
+export function simulationTimeTotals(routes: SimulationRoute[]) {
+  const parts = routes.map(simulationTime);
+  if (parts.some((part) => part.driving == null)) return null;
+  const driving = parts.reduce((sum, part) => sum + (part.driving ?? 0), 0);
+  const lunch = parts.reduce((sum, part) => sum + part.lunch, 0);
+  const unloading = parts.reduce((sum, part) => sum + part.unloading, 0);
+  return { driving, lunch, unloading, total: driving + lunch + unloading };
+}

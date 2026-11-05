@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { isPackingMode } from "@/lib/simulation-packing";
-import { simulationTime } from "@/lib/simulation-time";
+import { simulationTime, simulationTimeTotals } from "@/lib/simulation-time";
 import {
   addReturnCharterTrip,
   charterItemsFromPlan,
@@ -27,21 +27,23 @@ function storageKey(prefix: string, f: File, d: string) {
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
 type CostParts = { vehicle: number; charter: number };
-function ComparisonBars({ title, original, proposed, format, isCost = false, costParts }: {
+type TimeParts = { driving: number; lunch: number; unloading: number };
+function ComparisonBars({ title, original, proposed, format, isCost = false, costParts, timeParts }: {
   title: string; original: number; proposed: number; format: (n: number) => string; isCost?: boolean;
   costParts?: { original: CostParts; proposed: CostParts };
+  timeParts?: { original: TimeParts; proposed: TimeParts };
 }) {
   const max = Math.max(original, proposed, 1);
   const delta = proposed - original;
   const percent = original > 0 && delta !== 0 ? Math.abs(delta / original * 100) : null;
   const difference = delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? (isCost ? "절감 예상" : "감소") : (isCost ? "증가 예상" : "증가")}`;
-  const values: [string, number, CostParts | null | undefined][] = [
-    ["기존 계획", original, costParts?.original],
-    ["AI 제안", proposed, costParts?.proposed],
+  const values: [string, number, CostParts | TimeParts | null | undefined][] = [
+    ["기존 계획", original, costParts?.original ?? timeParts?.original],
+    ["AI 제안", proposed, costParts?.proposed ?? timeParts?.proposed],
   ];
   const ranked = [...values].sort((a, b) => a[1] - b[1]);
-  const partsNote = (parts: CostParts | null | undefined) =>
-    parts ? `자사 ${format(parts.vehicle)} + 용차 ${format(parts.charter)}` : null;
+  const partsNote = (parts: CostParts | TimeParts | null | undefined) =>
+    !parts ? null : "vehicle" in parts ? `자사 ${format(parts.vehicle)} + 용차 ${format(parts.charter)}` : `운전 ${format(parts.driving)} + 점심 ${format(parts.lunch)} + 하차 ${format(parts.unloading)}`;
   return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>기존 대비 AI {difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>
     <div className="simulation-ranking"><span className="simulation-ranking-caption">{isCost ? "예상 비용 낮은 순" : "운행 합계 짧은 순"}</span><div className="simulation-ranking-values">{ranked.map(([label, value], index) => <span className="simulation-ranking-part" key={label}>{index > 0 ? <span className="simulation-ranking-symbol" aria-label={value === ranked[index - 1][1] ? "같음" : "보다 작음"}>{value === ranked[index - 1][1] ? "=" : "<"}</span> : null}<span className={`simulation-ranking-item${label === "AI 제안" ? " is-ai" : ""}`}><span>{label}</span><strong>{format(value)}</strong></span></span>)}</div></div>
     {values.map(([label, value, parts]) => {
@@ -191,7 +193,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   }
   const moved = result?.proposed.flatMap((route) => route.items.filter((item) => !item.vehicle).map((item) => ({ ...item, target: route.vehicle }))) ?? [];
   const complete = !!result && hasComparableRoutes(result);
-  const total = (routes: SimulationRoute[]) => routes.reduce((n, r) => n + (simulationTime(r).total ?? 0), 0);
+  const total = (routes: SimulationRoute[]) => simulationTimeTotals(routes)?.total ?? 0;
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
   const proposedTrips = result?.charterGroups == null ? null : proposedCharterTrips.length;
@@ -212,6 +214,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     return { original, proposed, saving: original - proposed };
   };
   const comparison = result ? compare(cost(result.proposed), proposedCharterCost) : null;
+  const originalTime = result ? simulationTimeTotals(result.original) : null;
+  const proposedTime = result ? simulationTimeTotals(result.proposed) : null;
   const baseTrips = activeOriginalTrips;
   const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
   const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }], activeOriginalTrips, originalHasCharter && (activeOriginalTrips > 0 || excludedOriginalTrips.length === 0)) : [];
@@ -247,7 +251,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
             original: { vehicle: baseVehicleCost, charter: originalCharterCost },
             proposed: { vehicle: cost(result.proposed)!, charter: proposedCharterCost },
           }} /> : <div className="simulation-chart"><h4>예상 비용</h4><p className="dispatch-route-note-warn">비교 금액 확인 필요</p>{["기존 계획", "AI 제안"].map((label) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true" /><strong>확인 필요</strong></div>)}<p className="comparison-note">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : costIssues.length ? costIssues.join(" / ") : originalCharterCost == null ? "기존 용차 운행·운임을 확인하세요." : proposedCharterCost == null ? "AI 용차 운행·운임을 확인하세요." : "주소와 경로·운임을 확인하세요."}</p></div>}
-          {complete && !packingDirty ? <ComparisonBars title="자사 차량 총 소요 시간 합계" original={total(result.original)} proposed={total(result.proposed)} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : <div className="simulation-chart"><h4>자사 차량 총 소요 시간 합계</h4><p className="dispatch-route-note-warn">주소·경로 또는 적재 설정을 확인하세요.</p></div>}
+          {complete && !packingDirty && originalTime && proposedTime ? <ComparisonBars title="자사 차량 총 소요 시간 합계" original={originalTime.total} proposed={proposedTime.total} timeParts={{ original: originalTime, proposed: proposedTime }} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : <div className="simulation-chart"><h4>자사 차량 총 소요 시간 합계</h4><p className="dispatch-route-note-warn">주소·경로 또는 적재 설정을 확인하세요.</p></div>}
         </div>
         <details className="simulation-details"><summary>그래프의 차량별 경로·적재 품목 보기</summary><p className="comparison-note">각 차량을 확인하세요. PLT 미확인 품목은 합계에 포함되지 않습니다.</p><div className="comparison-plans"><Plan title="기존 계획" routes={result.original} /><Plan title="AI 제안" routes={result.proposed} /></div></details>
         {comparison ? <>
