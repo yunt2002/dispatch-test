@@ -192,6 +192,9 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     } catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
   const moved = result?.proposed.flatMap((route) => route.items.filter((item) => !item.vehicle).map((item) => ({ ...item, target: route.vehicle }))) ?? [];
+  const courierItems = (items: SimulationItem[]) => items.filter((item) => !item.vehicle && !/용차/.test(item.transport) && /택배|경동/.test(item.transport));
+  const originalCourier = result ? courierItems(result.items) : [];
+  const proposedCourier = result?.proposed.length ? courierItems(result.remaining) : null;
   const complete = !!result && hasComparableRoutes(result);
   const total = (routes: SimulationRoute[]) => simulationTimeTotals(routes)?.total ?? 0;
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
@@ -259,6 +262,11 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           <p className="simulation-charter-summary">용차 운행: 기존 <strong>{activeOriginalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 미입력 운임은 1회 200,000원 가정</p>
           </> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "용차 운임·주소·경로가 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
+        {proposedCourier && originalCourier.length !== proposedCourier.length ? <p className="dispatch-route-note-warn">기존안과 AI안의 택배 품목이 다릅니다. 택배비가 제외되어 전체 비용 차이는 확정할 수 없습니다.</p> : null}
+        <details className="simulation-details"><summary>택배 품목: 기존 {originalCourier.length}건 · AI 제안 {proposedCourier == null ? "확인 필요" : `${proposedCourier.length}건`} 보기</summary>
+          <p className="comparison-note">엑셀 품목 행 기준입니다. 택배 운임은 그래프 비용에 포함되지 않습니다.</p>
+          {[{ label: "기존 계획", items: originalCourier }, { label: "AI 제안", items: proposedCourier }].map(({ label, items }) => <div key={label}><strong>{label} 택배</strong>{items == null ? <p>AI 제안을 확인해 주세요.</p> : items.length ? <ul>{items.map((item) => <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.product} · {item.location || "지역 미확인"}</li>)}</ul> : <p>택배 품목 없음</p>}</div>)}
+        </details>
         <p className="comparison-note">시간은 자사 차량별 운전 + 점심 60분 + 업체별 하차 40분(현담산업 180분)의 합입니다. 용차·택배·기타 대기 시간은 제외됩니다. 비용에는 택배비·인건비가 빠져 있습니다.</p>
         <details className="simulation-details"><summary><span className="simulation-closed-label">용차 운행·운임 조정</span><span className="simulation-open-label">용차 운행·운임 접기</span></summary>
         <p className="comparison-note">운행 1건에 운임 1금액입니다. 편도는 납품 또는 회수, 왕복은 납품(+경유) 후 P박스 회수까지 패키지 총액입니다. 여러 목적지를 묶어 한 용차로 처리할 수 있습니다. 미입력 운임은 1회 20만 원으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다.</p>
