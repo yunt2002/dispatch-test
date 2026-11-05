@@ -12,6 +12,16 @@ export function validFieldReview(value: unknown): value is FieldReview {
   const review = value as FieldReview;
   return fieldReviewStatuses.some((status) => status === review.status) && typeof review.reason === "string" && review.reason.length <= 2000;
 }
+export const workChangeLevels = ["미확인", "수정 없음", "일부 수정", "대부분 수정", "전면 재작성"] as const;
+export const workChangeTypes = ["차량 배정", "방문 순서", "용차 묶음", "용차 운임", "택배 처리", "기타"] as const;
+export type WorkReview = { humanMinutes: number | null; aiGenerationMinutes: number | null; aiReviewMinutes: number | null; changeLevel: typeof workChangeLevels[number]; changes: (typeof workChangeTypes)[number][]; note: string };
+export const defaultWorkReview: WorkReview = { humanMinutes: null, aiGenerationMinutes: null, aiReviewMinutes: null, changeLevel: "미확인", changes: [], note: "" };
+export function validWorkReview(value: unknown): value is WorkReview {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const review = value as WorkReview;
+  const validMinutes = (n: unknown) => n === null || (typeof n === "number" && Number.isSafeInteger(n) && n >= 0 && n <= 10080);
+  return validMinutes(review.humanMinutes) && validMinutes(review.aiGenerationMinutes) && validMinutes(review.aiReviewMinutes) && workChangeLevels.some((level) => level === review.changeLevel) && Array.isArray(review.changes) && review.changes.every((change) => workChangeTypes.some((type) => type === change)) && new Set(review.changes).size === review.changes.length && !(review.changeLevel === "수정 없음" && review.changes.length > 0) && typeof review.note === "string" && review.note.length <= 2000;
+}
 export type SimulationHistorySnapshot = {
   version: 1;
   date: string;
@@ -28,6 +38,7 @@ export type SimulationHistorySnapshot = {
   review: HistoryReview;
   memo: string;
   fieldReview?: FieldReview;
+  workReview?: WorkReview;
 };
 export type HistoryMetrics = {
   originalCost: number | null; proposedCost: number | null;
@@ -49,11 +60,25 @@ export function comparisonDistribution(records: { review: HistoryReview; metrics
   return counts;
 }
 
+export function summarizeWorkReviews(records: { workReview?: WorkReview }[]) {
+  let pairedCount = 0; let humanMinutes = 0; let aiMinutes = 0;
+  const changes = Object.fromEntries(workChangeLevels.map((level) => [level, 0])) as Record<WorkReview["changeLevel"], number>;
+  for (const record of records) {
+    const review = record.workReview ?? defaultWorkReview;
+    changes[review.changeLevel]++;
+    if (review.humanMinutes != null && review.aiGenerationMinutes != null && review.aiReviewMinutes != null) {
+      pairedCount++; humanMinutes += review.humanMinutes; aiMinutes += review.aiGenerationMinutes + review.aiReviewMinutes;
+    }
+  }
+  return { pairedCount, humanMinutes, aiMinutes, changes };
+}
+
 /** 클라이언트에서 전달된 기록은 크기·형식 검사를 거친 뒤 서버에서 합계를 다시 계산한다. */
 export function validHistorySnapshot(value: unknown): value is SimulationHistorySnapshot {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as SimulationHistorySnapshot;
   if (v.fieldReview !== undefined && !validFieldReview(v.fieldReview)) return false;
+  if (v.workReview !== undefined && !validWorkReview(v.workReview)) return false;
   if (v.version !== 1 || typeof v.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v.date) || typeof v.fileName !== "string" || !v.fileName || v.fileName.length > 255 || typeof v.dieselPrice !== "string" || v.dieselPrice.length > 30 || typeof v.memo !== "string" || v.memo.length > 2000 || !["확인 필요", "검토 완료", "실행 곤란"].includes(v.review)) return false;
   if (!Array.isArray(v.excludedItems) || v.excludedItems.length > 1000 || !v.excludedItems.every((item) => item && Number.isSafeInteger(item.rowNumber) && typeof item.customer === "string" && typeof item.product === "string")) return false;
   const result = v.result;

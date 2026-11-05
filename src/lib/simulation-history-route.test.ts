@@ -46,6 +46,17 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
   const updatedList = await (await GET(new Request("http://localhost/api/simulation/history"))).json();
   assert.equal(updatedList.records.find((entry: { id: string }) => entry.id === one.id).fieldReview.status, "조건부 가능");
   assert.equal((await post({ action: "field-review", id: one.id, fieldReview: { status: "잘못된 상태", reason: "" } })).status, 400);
+  const workReview = { humanMinutes: 25, aiGenerationMinutes: 0, aiReviewMinutes: 12, changeLevel: "일부 수정", changes: ["차량 배정", "용차 묶음"], note: " 테스트 " };
+  assert.equal((await post({ action: "work-review", id: one.id, workReview })).status, 200);
+  const withWork = await (await GET(new Request(`http://localhost/api/simulation/history?id=${encodeURIComponent(one.id)}`))).json();
+  assert.equal(withWork.snapshot.workReview.humanMinutes, 25);
+  assert.equal(withWork.snapshot.workReview.aiGenerationMinutes, 0);
+  assert.equal(withWork.snapshot.workReview.note, "테스트");
+  assert.equal(withWork.snapshot.fieldReview.status, "조건부 가능");
+  assert.equal(withWork.metrics.originalCost, detail.metrics.originalCost);
+  assert.equal((await post({ action: "work-review", id: one.id, workReview: { ...workReview, humanMinutes: -1 } })).status, 400);
+  const withWorkList = await (await GET(new Request("http://localhost/api/simulation/history"))).json();
+  assert.equal(withWorkList.records.find((entry: { id: string }) => entry.id === one.id).workReview.aiReviewMinutes, 12);
   assert.equal((await post({ action: "select", date: "2026-10-14", id: one.id })).status, 400);
   for (let i = 0; i < 100; i++) assert.equal((await post({ action: "save", snapshot })).status, 200);
   const page = await (await GET(new Request("http://localhost/api/simulation/history"))).json();

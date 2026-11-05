@@ -41,7 +41,19 @@ test("가상 일정으로 스타리아 배차·경로·비용을 계산하고 �
     sheet.addRow(["10/15", "가상 2", "서울", "품목 2", 1, "2호 차량", "서울특별시 중구 세종대로 110"]);
     sheet.addRow(["10/15", "가상 3", "서울", "품목 3", 1, "스타리아", "서울특별시 중구 세종대로 110"]);
     const bytes = new Uint8Array(await workbook.xlsx.writeBuffer());
-    const request = () => { const form = new FormData(); form.set("file", new File([bytes], "가상.xlsx")); form.set("date", "2026-10-15"); form.set("price", "1800"); form.set("mode", "regenerate"); return new Request("http://localhost/api/route/compare", { method: "POST", body: form }); };
+    const request = (overrides?: Record<string, string>) => { const form = new FormData(); form.set("file", new File([bytes], "가상.xlsx")); form.set("date", "2026-10-15"); form.set("price", "1800"); form.set("mode", "regenerate"); if (overrides) form.set("addressOverrides", JSON.stringify(overrides)); return new Request("http://localhost/api/route/compare", { method: "POST", body: form }); };
+    const addressRequest = (overrides: unknown, excludedRows: number[] = []) => { const form = new FormData(); form.set("file", new File([bytes], "가상.xlsx")); form.set("date", "2026-10-15"); form.set("mode", "addresses"); form.set("addressOverrides", JSON.stringify(overrides)); form.set("excludedRows", JSON.stringify(excludedRows)); return new Request("http://localhost/api/route/compare", { method: "POST", body: form }); };
+    const check = await POST(addressRequest({ "3": "경기도 안양시 만안구 덕천로152번길 25" }, [4]));
+    const checked = await check.json();
+    assert.equal(check.status, 200, JSON.stringify(checked));
+    assert.equal(stariaRequests, 0, "주소 사전 확인은 AI를 호출하지 않는다");
+    assert.equal(checked.items.length, 2);
+    assert.equal(checked.items[1].address, "경기도 안양시 만안구 덕천로152번길 25");
+    assert.equal(checked.items[1].addressSource, "담당자 입력 주소");
+    assert.match(checked.items[1].addressWarning, /서울/);
+    assert.equal(checked.items[1].lat, 37.4);
+    assert.equal((await POST(addressRequest({ "999": "서울시 중구 세종대로 110" }))).status, 400);
+    assert.equal((await POST(addressRequest({ "3": "가".repeat(301) }))).status, 400);
     const response = await POST(request());
     const result = await response.json();
     assert.equal(response.status, 200, JSON.stringify(result));
@@ -54,6 +66,12 @@ test("가상 일정으로 스타리아 배차·경로·비용을 계산하고 �
       assert.equal(star.fuel, Math.round(71 / 11.6 * 1800));
       assert.equal(star.toll, 1000);
     }
+    const changed = await POST(request({ "3": "경기도 안양시 만안구 덕천로152번길 25" }));
+    const changedResult = await changed.json();
+    assert.equal(changed.status, 200, JSON.stringify(changedResult));
+    assert.notEqual(changedResult.inputFingerprint, result.inputFingerprint);
+    assert.equal(changedResult.original[1].items[0].address, "경기도 안양시 만안구 덕천로152번길 25");
+    assert.ok(changedResult.warnings.some((warning: string) => /입력 주소가 엑셀 지역과 다릅니다/.test(warning)));
     staria = null;
     const missing = await POST(request());
     assert.equal(missing.status, 422);

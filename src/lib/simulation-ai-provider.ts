@@ -9,6 +9,19 @@ export function formatGeminiAttempts(attempts: GeminiAttempt[]): string {
   return `Gemini 모델별 시도: ${attempts.map(({ model, outcome }) => `${/^gemini-[a-z0-9.-]{1,60}$/.test(model) ? model : "설정된 모델"} ${outcome}`).join(" → ")}.`;
 }
 
+/** 마지막 모델의 404가 앞선 할당량·서버 오류를 가리지 않도록 전체 시도를 요약한다. */
+export function summarizeGeminiFailure(attempts: GeminiAttempt[], finalStatus: number): string {
+  const outcomes = attempts.map((attempt) => attempt.outcome);
+  if (outcomes.some((outcome) => outcome === "HTTP 401" || outcome === "HTTP 403")) return "Groq 한도 초과 후 Gemini 인증 또는 모델 접근 권한을 확인하세요.";
+  const parts: string[] = [];
+  if (outcomes.includes("HTTP 429")) parts.push("Gemini 요청 한도 초과(429)");
+  if (outcomes.some((outcome) => /^HTTP 5\d\d$/.test(outcome))) parts.push("Gemini 일시적 서버 오류(5xx)");
+  if (outcomes.includes("시간 초과")) parts.push("Gemini 응답 시간 초과");
+  if (outcomes.includes("연결 실패")) parts.push("Gemini 연결 실패");
+  if (outcomes.includes("HTTP 404")) parts.push("일부 Gemini 모델 미지원 또는 접근 불가(404)");
+  return parts.length ? `Groq 한도 초과 후 ${parts.join(" · ")}가 발생했습니다. 잠시 후 재시도하거나 모델 접근 권한을 확인하세요.` : geminiHttpError(finalStatus);
+}
+
 /** 선호 모델 한도·미지원 시 아래로 이어 시도한다. */
 export const DEFAULT_GEMINI_MODELS = [
   "gemini-3.6-flash",
@@ -33,7 +46,7 @@ function shouldTryNextGeminiModel(status: number): boolean {
 /** Groq 429에만 Gemini로 즉시 전환한다. 키는 서버 요청 헤더로만 전달한다. */
 export async function requestSimulationAi(input: {
   groqKey: string; groqModel: string; geminiKey?: string; geminiModel?: string;
-  messages: SimulationAiMessage[]; fetcher?: typeof fetch;
+  messages: SimulationAiMessage[]; fetcher?: typeof fetch; sleep?: (ms: number) => Promise<void>;
 }): Promise<SimulationAiResponse> {
   const fetcher = input.fetcher ?? fetch;
   const groq = await fetcher("https://api.groq.com/openai/v1/chat/completions", {
@@ -42,6 +55,7 @@ export async function requestSimulationAi(input: {
     signal: AbortSignal.timeout(20000), cache: "no-store",
   });
   if (groq.status === 429 && input.geminiKey) {
+    const geminiKey = input.geminiKey;
     const models = resolveGeminiModelChain(input.geminiModel);
     const body = JSON.stringify({
       systemInstruction: { parts: [{ text: input.messages.filter((m) => m.role === "system").map((m) => m.content).join("\n") }] },
@@ -51,12 +65,20 @@ export async function requestSimulationAi(input: {
     let lastFailure: SimulationAiResponse | null = null;
     let timedOutAll = true;
     const attempts: GeminiAttempt[] = [];
-    for (const model of models) {
+    for (const [modelIndex, model] of models.entries()) {
       try {
-        const response = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
-          method: "POST", headers: { "x-goog-api-key": input.geminiKey, "Content-Type": "application/json" },
+        const request = () => fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: "POST", headers: { "x-goog-api-key": geminiKey, "Content-Type": "application/json" },
           body, signal: AbortSignal.timeout(20000), cache: "no-store",
         });
+        let response = await request();
+        if (modelIndex === 0 && (response.status === 429 || response.status === 503)) {
+          attempts.push({ model, outcome: `HTTP ${response.status}` });
+          const seconds = Number(response.headers.get("retry-after"));
+          const wait = Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 2000) : 1000;
+          await (input.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))))(wait);
+          response = await request();
+        }
         timedOutAll = false;
         if (response.ok) {
           const data = await response.json() as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };

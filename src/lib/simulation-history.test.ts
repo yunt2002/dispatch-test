@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { comparisonDistribution, historyMetrics, markLegacyStariaRecord, validHistorySnapshot, type SimulationHistorySnapshot } from "./simulation-history";
+import { comparisonDistribution, defaultWorkReview, historyMetrics, markLegacyStariaRecord, summarizeWorkReviews, validHistorySnapshot, validWorkReview, type SimulationHistorySnapshot } from "./simulation-history";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "./simulation";
 
 function fixture(): SimulationHistorySnapshot {
@@ -59,6 +59,29 @@ test("현장 검토는 예전 기록과 호환하고 상태 및 사유를 검증
   assert.equal(validHistorySnapshot(snapshot), true);
   snapshot.fieldReview.reason = "x".repeat(2001);
   assert.equal(validHistorySnapshot(snapshot), false);
+});
+
+test("작업 기록은 미입력과 0분을 구분하고 입력 범위를 검증한다", () => {
+  const snapshot = fixture();
+  assert.equal(validHistorySnapshot(snapshot), true);
+  snapshot.workReview = { ...defaultWorkReview, humanMinutes: 30, aiGenerationMinutes: 0, aiReviewMinutes: 10, changeLevel: "일부 수정", changes: ["용차 묶음"], note: "현장 확인" };
+  assert.equal(validHistorySnapshot(snapshot), true);
+  assert.equal(validWorkReview({ ...snapshot.workReview, humanMinutes: -1 }), false);
+  assert.equal(validWorkReview({ ...snapshot.workReview, aiReviewMinutes: 1.5 }), false);
+  assert.equal(validWorkReview({ ...snapshot.workReview, changes: ["기타", "기타"] }), false);
+  assert.equal(validWorkReview({ ...snapshot.workReview, changeLevel: "수정 없음", changes: ["차량 배정"] }), false);
+  assert.equal(validWorkReview({ ...snapshot.workReview, changeLevel: "잘못된 상태" }), false);
+});
+
+test("작업 시간 비교는 양쪽 시간이 모두 있는 날짜만 합산한다", () => {
+  const full = { ...defaultWorkReview, humanMinutes: 30, aiGenerationMinutes: 0, aiReviewMinutes: 10, changeLevel: "일부 수정" as const };
+  const missing = { ...defaultWorkReview, humanMinutes: 45, aiGenerationMinutes: null, aiReviewMinutes: 5 };
+  const result = summarizeWorkReviews([{ workReview: full }, { workReview: missing }, {}]);
+  assert.equal(result.pairedCount, 1);
+  assert.equal(result.humanMinutes, 30);
+  assert.equal(result.aiMinutes, 10);
+  assert.equal(result.changes["일부 수정"], 1);
+  assert.equal(result.changes["미확인"], 2);
 });
 
 test("스타리아가 포함된 새 기록을 보관하고 시간과 비용을 합산한다", () => {

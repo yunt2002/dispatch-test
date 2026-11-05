@@ -2392,6 +2392,12 @@ body {
 .simulation-order-column strong { display: block; margin-bottom: 8px; font-size: 13px; }
 .simulation-order-column ol { margin: 0; padding-left: 1.3rem; }
 .simulation-order-column li { margin: 4px 0; font-size: 14px; overflow-wrap: anywhere; }
+.simulation-address-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.simulation-address-list li { padding: 10px 12px; border: 1px solid #e6dfd2; border-radius: 8px; background: #fff; }
+.simulation-address-list li.is-unresolved { border-color: #edc4b0; background: #fffaf7; }
+.simulation-address-list li p { margin: 4px 0 8px; color: #595d5a; font-size: 13px; overflow-wrap: anywhere; }
+.simulation-address-list label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.simulation-address-list input[type="text"] { width: min(100%, 420px); padding: 6px 8px; border: 1px solid #d5cec2; border-radius: 6px; font-weight: 500; }
 .simulation-packing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee9df; }
 .simulation-packing-row select { padding: 6px; border: 1px solid #d8d2c8; border-radius: 6px; }
 .simulation-trip-columns {

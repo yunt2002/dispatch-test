@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { regionalGroup, simulationRegion } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
-import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
+import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi, summarizeGeminiFailure } from "@/lib/simulation-ai-provider";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
@@ -36,7 +36,14 @@ async function propose(items: SimulationItem[], objective: string, vehicles: Sim
     ] });
     const { response, provider } = aiResponse;
     const diagnostics = formatGeminiAttempts(aiResponse.geminiAttempts ?? []);
-    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : `${geminiHttpError(response.status)} ${diagnostics}`); if (aiResponse.switched) break; continue; }
+    if (!response.ok) {
+      const geminiMessage = aiResponse.geminiAttempts?.length
+        ? `${summarizeGeminiFailure(aiResponse.geminiAttempts, response.status)} ${diagnostics}`
+        : `${geminiHttpError(response.status)} ${diagnostics}`;
+      issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : geminiMessage);
+      if (aiResponse.switched) break;
+      continue;
+    }
     const content = aiResponse.content ?? "";
     let parsed: { orders?: unknown; charterGroups?: unknown } | null;
     try { parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}"); }
@@ -81,10 +88,16 @@ export async function POST(request: Request) {
     const file = form.get("file"); const date = String(form.get("date") ?? "");
     let packingOverrides: Record<string, unknown> = {};
     try { const parsed = JSON.parse(String(form.get("packing") || "{}")); if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) packingOverrides = parsed; } catch { return NextResponse.json({ error: "박스 적재 방식이 올바르지 않습니다." }, { status: 400 }); }
+    let addressOverrides: Record<string, string> = {};
+    try {
+      const parsed = JSON.parse(String(form.get("addressOverrides") || "{}"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || !Object.entries(parsed).every(([key, value]) => /^\d+$/.test(key) && typeof value === "string" && value.trim().length > 0 && value.trim().length <= 300)) throw new Error();
+      addressOverrides = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, (value as string).trim()]));
+    } catch { return NextResponse.json({ error: "확인 주소가 올바르지 않습니다." }, { status: 400 }); }
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const mode = String(form.get("mode") || "load");
-    if (!["load", "regenerate", "refresh", "preview"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
+    if (!["load", "regenerate", "refresh", "preview", "addresses"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
     stage = "workbook";
     const bytes = Buffer.from(await file.arrayBuffer());
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
@@ -92,6 +105,7 @@ export async function POST(request: Request) {
     if (!sheet) return NextResponse.json({ error: `선택한 날짜의 ${date.slice(0, 7)} 월별 시트를 찾을 수 없습니다.` }, { status: 400 });
     const allRows = extractComparisonShipments(sheet, date).map((row) => ({ ...row, originalLocation: row.location, location: correctedSimulationLocation(row.customer, row.location) }));
     if (!allRows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
+    if (Object.keys(addressOverrides).some((key) => !allRows.some((row) => String(row.rowNumber) === key))) return NextResponse.json({ error: "확인 주소에 해당하는 일정표 행을 찾을 수 없습니다." }, { status: 400 });
     if (mode === "preview") return NextResponse.json({ items: allRows.map(({ rowNumber, customer, product, location, transport }) => ({ rowNumber, customer, product, location, transport })) });
     let excludedRows: number[];
     try {
@@ -107,11 +121,13 @@ export async function POST(request: Request) {
     const stariaUsable = vehicles.some((vehicle) => vehicle.name === "스타리아");
     if (!stariaUsable && rows.some((row) => /스타리아/.test(row.transport))) return NextResponse.json({ error: "스타리아 납품이 있습니다. 설정 → 차량에서 사용 중인 스타리아의 적재 한도를 확인하세요." }, { status: 422 });
     const vehicleNames = vehicles.map((vehicle) => vehicle.name);
-    const addressFor = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
+    const overrideAddress = (row: typeof rows[number]) => addressOverrides[String(row.rowNumber)] || null;
+    const registeredAddress = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
+    const addressFor = (row: typeof rows[number]) => overrideAddress(row) || registeredAddress(row);
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 14, fileHash, date, price, vehicles, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "auto"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null), ...(excludedRows.length ? { excludedRows } : {}) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 16, fileHash, date, price, vehicles, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "auto"; }), addresses: rows.map((row) => addressFor(row)), addressOverrides, customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null), ...(excludedRows.length ? { excludedRows } : {}) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
-    const setting = await prisma.appSetting.findUnique({ where: { key } });
+    const setting = mode === "addresses" ? null : await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;
     if (setting) try {
       const value = JSON.parse(setting.value) as SimulationResult;
@@ -120,20 +136,35 @@ export async function POST(request: Request) {
     if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
     if ((mode === "refresh") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
     stage = "location";
-    const lookupRows = [...new Map(rows.filter((row) => !row.workbookAddress && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, addressFor(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
+    const lookupRows = [...new Map(rows.filter((row) => !overrideAddress(row) && !row.workbookAddress && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, registeredAddress(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
     const places = new Map(await Promise.all(lookupRows.map(async ([key, row]) => [key, await searchCompanyPlace(row.customer, row.location)] as const)));
-    const resolvedAddress = (row: typeof rows[number]) => row.workbookAddress || places.get(JSON.stringify([row.customer, row.location]))?.address || addressFor(row);
-    const addresses = [...new Set(rows.map((row) => { const address = resolvedAddress(row); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = await geocodeAddresses(addresses);
+    const resolvedAddress = (row: typeof rows[number]) => overrideAddress(row) || row.workbookAddress || places.get(JSON.stringify([row.customer, row.location]))?.address || registeredAddress(row);
+    const addresses = [...new Set(rows.map((row) => {
+      const address = resolvedAddress(row);
+      if (!address) return null;
+      if (overrideAddress(row)) return address;
+      return simulationAddressIssue(row.location, address) ? null : address;
+    }).filter((a): a is string => !!a))]; const points = await geocodeAddresses(addresses);
     const items: SimulationItem[] = rows.map((row) => {
-      const place = row.workbookAddress ? null : places.get(JSON.stringify([row.customer, row.location]));
-      const address = resolvedAddress(row); const addressIssue = simulationAddressIssue(row.location, address); const point = !addressIssue && place ? place : address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
+      const manual = overrideAddress(row);
+      const place = manual || row.workbookAddress ? null : places.get(JSON.stringify([row.customer, row.location]));
+      const address = resolvedAddress(row);
+      const addressIssue = manual ? null : simulationAddressIssue(row.location, address);
+      const point = !addressIssue && place ? place : address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const custom = findCustomProduct(customProducts, row.product); const family = custom ? null : matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "auto";
       return { ...row, vehicle: simulationVehicleName(row.transport),
-        address, addressSource: row.workbookAddress ? "엑셀 도착지" : confirmedSimulationAddress(row.customer, row.location) ? "확인된 업체·지역 주소" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
+        address, addressSource: manual ? "담당자 입력 주소" : row.workbookAddress ? "엑셀 도착지" : confirmedSimulationAddress(row.customer, row.location) ? "확인된 업체·지역 주소" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
         region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, custom ? custom.boxesPerPallet : family?.boxesPerPallet, packing),
         weight: boxes != null ? (custom ? (custom.boxWeightKg == null ? null : Math.round(boxes * custom.boxWeightKg * 1000) / 1000) : family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null) : null };
     });
+    if (mode === "addresses") {
+      return NextResponse.json({
+        items: items.map(({ rowNumber, customer, product, location, transport, vehicle, address, addressSource, addressIssue, lat, lng }) => ({
+          rowNumber, customer, product, location, transport, vehicle, address: address ?? null, addressSource: addressSource ?? "미확인", addressIssue: addressIssue ?? null, addressWarning: addressOverrides[String(rowNumber)] ? simulationAddressIssue(location, address ?? null) : null, lat, lng,
+        })),
+      });
+    }
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
     const eligible = items.filter((item) => !item.vehicle || item.lat != null);
     const originals: Order[] = vehicleNames.map((vehicle) => ({ vehicle, ids: eligible.filter((item) => item.vehicle === vehicle).map((item) => String(item.rowNumber)) }));
@@ -189,6 +220,7 @@ export async function POST(request: Request) {
     if (!stariaUsable) warnings.push("스타리아 차량 설정을 확인할 수 없어 이번 AI 배차 후보에서 제외했습니다.");
     for (const row of rows) if (row.originalLocation !== row.location) warnings.push(`${row.rowNumber}행 ${row.customer}: 엑셀 지역 ${row.originalLocation} → 확인된 납품지 ${row.location} 적용 (엑셀 원본은 변경되지 않음)`);
     for (const item of items) if (item.addressIssue) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: ${item.addressIssue}${item.address ? ` (${item.address})` : ""} · 경로 배정 제외`);
+    for (const item of items) if (item.addressSource === "담당자 입력 주소" && simulationAddressIssue(item.location, item.address ?? null)) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: 담당자 입력 주소가 엑셀 지역과 다릅니다. 실제 납품지를 확인하세요.`);
     for (const item of items) if (item.addressSource?.startsWith("카카오")) warnings.push(`${item.rowNumber}행 ${item.customer}: 엑셀 업체명·지역으로 찾은 장소를 사용했습니다. 실제 납품지 확인 필요 (${item.address})`);
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
