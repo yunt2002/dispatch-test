@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { geminiHttpError, GeminiFallbackError, requestSimulationAi, resolveGeminiModelChain } from "./simulation-ai-provider";
+import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi, resolveGeminiModelChain } from "./simulation-ai-provider";
 
 test("Groq 한도 초과일 때만 Gemini로 전환해 응답과 출처를 반환한다", async () => {
   const calls: { url: string; init?: RequestInit }[] = [];
@@ -31,7 +31,26 @@ test("Gemini 모델 할당이 끝나면 하위 모델로 이어 시도한다", a
   const result = await requestSimulationAi({ groqKey: "test", groqModel: "model", geminiKey: "test", messages: [], fetcher });
   assert.equal(result.provider, "Gemini");
   assert.equal(result.model, "gemini-2.0-flash");
+  assert.deepEqual(result.geminiAttempts?.map((attempt) => attempt.outcome), ["HTTP 429", "HTTP 404", "HTTP 200"]);
   assert.deepEqual(models.slice(0, 3), ["gemini-3.6-flash", "gemini-2.5-flash", "gemini-2.0-flash"]);
+});
+
+test("모델별 실패와 시간 초과를 구분하고 키와 응답 원문을 공개하지 않는다", async () => {
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls++;
+    if (calls === 1) return new Response("", { status: 429 });
+    if (calls === 2) return new Response("secret-response", { status: 429 });
+    if (calls === 3) throw new DOMException("secret-error", "TimeoutError");
+    return new Response("secret-response", { status: 404 });
+  };
+  const result = await requestSimulationAi({ groqKey: "secret-groq", groqModel: "model", geminiKey: "secret-key", messages: [{ role: "user", content: "secret-data" }], fetcher });
+  const diagnostic = formatGeminiAttempts(result.geminiAttempts ?? []);
+  assert.match(diagnostic, /gemini-3\.6-flash HTTP 429/);
+  assert.match(diagnostic, /gemini-2\.5-flash 시간 초과/);
+  assert.match(diagnostic, /gemini-1\.5-flash HTTP 404/);
+  assert.doesNotMatch(diagnostic, /secret/);
+  assert.equal(formatGeminiAttempts([{ model: "secret-key", outcome: "HTTP 404" }]), "Gemini 모델별 시도: 설정된 모델 HTTP 404.");
 });
 
 test("Groq 성공, 500 오류 또는 Gemini 키가 없는 429는 Gemini를 호출하지 않는다", async () => {

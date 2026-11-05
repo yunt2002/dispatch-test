@@ -1,6 +1,13 @@
 export type SimulationAiMessage = { role: "system" | "user"; content: string };
-export type SimulationAiResponse = { provider: "Groq" | "Gemini"; model: string; response: Response; content: string | null; switched: boolean };
+export type GeminiAttempt = { model: string; outcome: `HTTP ${number}` | "시간 초과" | "연결 실패" | "응답 형식 오류" };
+export type SimulationAiResponse = { provider: "Groq" | "Gemini"; model: string; response: Response; content: string | null; switched: boolean; geminiAttempts?: GeminiAttempt[] };
 export class GeminiFallbackError extends Error {}
+
+/** 오류 원문이나 환경 변수 값은 출력하지 않는다. */
+export function formatGeminiAttempts(attempts: GeminiAttempt[]): string {
+  if (!attempts.length) return "";
+  return `Gemini 모델별 시도: ${attempts.map(({ model, outcome }) => `${/^gemini-[a-z0-9.-]{1,60}$/.test(model) ? model : "설정된 모델"} ${outcome}`).join(" → ")}.`;
+}
 
 /** 선호 모델 한도·미지원 시 아래로 이어 시도한다. */
 export const DEFAULT_GEMINI_MODELS = [
@@ -43,6 +50,7 @@ export async function requestSimulationAi(input: {
     });
     let lastFailure: SimulationAiResponse | null = null;
     let timedOutAll = true;
+    const attempts: GeminiAttempt[] = [];
     for (const model of models) {
       try {
         const response = await fetcher(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -52,26 +60,30 @@ export async function requestSimulationAi(input: {
         timedOutAll = false;
         if (response.ok) {
           const data = await response.json() as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
+          attempts.push({ model, outcome: `HTTP ${response.status}` });
           return {
             provider: "Gemini",
             model,
             response,
             content: data.candidates?.[0]?.content?.parts?.filter((part) => !part.thought).map((part) => part.text ?? "").join("") ?? "",
             switched: true,
+            geminiAttempts: attempts,
           };
         }
-        lastFailure = { provider: "Gemini", model, response, content: null, switched: true };
+        attempts.push({ model, outcome: `HTTP ${response.status}` });
+        lastFailure = { provider: "Gemini", model, response, content: null, switched: true, geminiAttempts: attempts };
         if (response.status === 401 || response.status === 403) return lastFailure;
         if (!shouldTryNextGeminiModel(response.status)) return lastFailure;
       } catch (error) {
         if (error instanceof GeminiFallbackError) throw error;
-        if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) continue;
-        if (error instanceof SyntaxError) throw new GeminiFallbackError("Groq 한도 초과 후 Gemini 응답 형식을 읽지 못했습니다.");
-        throw new GeminiFallbackError("Groq 한도 초과 후 Gemini에 연결하지 못했습니다. 잠시 후 다시 시도하세요.");
+        if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) { attempts.push({ model, outcome: "시간 초과" }); continue; }
+        if (error instanceof SyntaxError) { attempts.push({ model, outcome: "응답 형식 오류" }); throw new GeminiFallbackError(`Groq 한도 초과 후 Gemini 응답 형식을 읽지 못했습니다. ${formatGeminiAttempts(attempts)}`); }
+        attempts.push({ model, outcome: "연결 실패" });
+        throw new GeminiFallbackError(`Groq 한도 초과 후 Gemini에 연결하지 못했습니다. 잠시 후 다시 시도하세요. ${formatGeminiAttempts(attempts)}`);
       }
     }
     if (lastFailure) return lastFailure;
-    if (timedOutAll) throw new GeminiFallbackError("Groq 한도 초과 후 Gemini 응답 시간이 초과됐습니다. 잠시 후 다시 시도하세요.");
+    if (timedOutAll) throw new GeminiFallbackError(`Groq 한도 초과 후 Gemini 응답 시간이 초과됐습니다. 잠시 후 다시 시도하세요. ${formatGeminiAttempts(attempts)}`);
     throw new GeminiFallbackError("Groq 한도 초과 후 Gemini에 연결하지 못했습니다. 잠시 후 다시 시도하세요.");
   }
   if (!groq.ok) return { provider: "Groq", model: input.groqModel, response: groq, content: null, switched: false };

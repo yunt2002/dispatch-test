@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
-import { geminiHttpError, GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
+import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
@@ -34,23 +34,24 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
       { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
     ] });
     const { response, provider } = aiResponse;
-    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : geminiHttpError(response.status)); if (aiResponse.switched) break; continue; }
+    const diagnostics = formatGeminiAttempts(aiResponse.geminiAttempts ?? []);
+    if (!response.ok) { issues.push(provider === "Groq" ? groqHttpError(response.status) + (response.status === 429 && !process.env.GEMINI_API_KEY?.trim() ? " Gemini 키가 없어 전환하지 못했습니다." : "") : `${geminiHttpError(response.status)} ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const content = aiResponse.content ?? "";
     let parsed: { orders?: unknown; charterGroups?: unknown } | null;
     try { parsed = JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? "{}"); }
-    catch { issues.push(`${provider} 응답 형식을 읽지 못했습니다.`); if (aiResponse.switched) break; continue; }
+    catch { issues.push(`${provider} 응답 형식을 읽지 못했습니다. ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const orders = parseSimulationAiOrders(parsed?.orders);
-    if (!orders) { issues.push(`${provider} 차량 배정 응답 형식이 올바르지 않습니다.`); if (aiResponse.switched) break; continue; }
+    if (!orders) { issues.push(`${provider} 차량 배정 응답 형식이 올바르지 않습니다. ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
-    if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem}`); if (aiResponse.switched) break; continue; }
+    if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem} ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const groups = Array.isArray(parsed?.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
     if (charterProblem) {
       const fallback = fallbackCharterGroups(items, orders);
-      if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 차량 배정 · AI 용차 묶음 검증 실패(${charterProblem})로 같은 거래처·지역 기준 묶음을 사용했습니다. 실제 운행 확인 필요.` };
+      if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 차량 배정 · AI 용차 묶음 검증 실패(${charterProblem})로 같은 거래처·지역 기준 묶음을 사용했습니다. 실제 운행 확인 필요. ${diagnostics}` };
     }
-    if (charterProblem) { issues.push(`후보 검증 실패: ${charterProblem}`); continue; }
-    return { orders, charterGroups: groups as string[][], model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다.` };
+    if (charterProblem) { issues.push(`후보 검증 실패: ${charterProblem} ${diagnostics}`); continue; }
+    return { orders, charterGroups: groups as string[][], model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다. ${diagnostics}` };
   } catch (error) { if (error instanceof GeminiFallbackError) { issues.push(error.message); break; } issues.push(groqException(error)); }
   return { orders: [], charterGroups: null, note: [...new Set(issues)].join(" / ") || "Groq 응답을 확인할 수 없습니다." };
 }
