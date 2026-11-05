@@ -214,25 +214,16 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     <p className="comparison-note">같은 조건은 저장된 안을 불러옵니다. 교통 정보만 갱신하려면 경로 새로고침을 누르세요.</p>
     {error ? <p className="dispatch-route-note-warn">{error}</p> : null}
     {result ? <><p>{result.items.length}품목 · {lastAction || (result.restored ? "저장된 배차안" : "새 배차안")}</p>
-      <div className="simulation-run-info" aria-label="결과 기준">
-        <strong>이 결과의 기준</strong>
-        <p>파일 {file?.name || "확인 불가"} · 납품일 {date} · 경유 {price ? `${Number(price).toLocaleString("ko-KR")}원/L` : "미입력"} · 박스 적재 설정 {Object.keys(packing).length}품목{packingDirty ? " (변경 전 결과)" : ""} · 조건 식별번호 {result.inputFingerprint || "미확인"}</p>
-        <p>기존·AI 배차안 생성 {result.savedAt ? new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 기존·AI 경로 조회 {result.routeUpdatedAt ? new Date(result.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"}</p>
-        <p>조건 식별번호는 파일 내용·납품일·경유 가격·적재 설정·주소・계산 버전을 구분합니다. 용차 운행(편도/왕복·묶음·운임)은 화면에서 변경하며 식별번호에 포함되지 않습니다.</p>
-      </div>
-      {result.warnings.map((w) => <p className="dispatch-route-note-warn" key={w}>{w}</p>)}
+      {result.warnings.length ? <p className="dispatch-route-note-warn">주소·경로 등 확인 사항 {result.warnings.length}건이 있습니다. 분석 리포트에서 확인하세요.</p> : null}
       {packingDirty ? <p className="dispatch-route-note-warn">적재 방식을 변경했습니다. 아래는 이전 결과입니다. 배차안을 불러오거나 다시 만드세요.</p> : null}
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>배차 결과 비교</h3>
-        {result.comparisonNote ? <p className="comparison-note"><strong>일반 AI안 선택 과정:</strong> {result.comparisonNote}</p> : null}
-        {!result.candidateCountVerified && result.candidateCount != null ? <p className="dispatch-route-note-warn">이전에 저장된 결과의 후보 수에는 적재 한도 초과 후보가 포함됐을 수 있습니다. 정확한 유효 후보 수는 AI 배차안을 다시 만들면 확인할 수 있습니다.</p> : null}
-        {result.note ? <p className="comparison-note"><strong>일반 AI안 생성:</strong> {result.note}</p> : null}
+        {!result.candidateCountVerified && result.candidateCount != null ? <p className="dispatch-route-note-warn">저장된 결과의 후보 수 확인이 필요합니다. 분석 리포트를 확인하세요.</p> : null}
+        {/실패|오류|한도 초과|시간 초과/.test(`${result.note} ${result.comparisonNote ?? ""}`) ? <p className="dispatch-route-note-warn">AI 분석 과정에 확인 사항이 있습니다. 분석 리포트를 확인하세요.</p> : null}
         {result.proposed.some((route) => route.over) ? <p className="dispatch-route-note-warn"><strong>AI 안은 적재 한도 초과로 실행할 수 없습니다. 아래 금액은 해당 안의 참고용 계산입니다.</strong></p> : null}
-        {result.items.some((item) => item.packing === "auto" && item.pallets != null) ? <p className="comparison-note">별도 설정이 없는 품목은 제품 기준표의 1PLT당 박스 수로 PLT를 추정합니다. 실제 합적·적재 방식은 확인이 필요합니다.</p> : null}
-        {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인 전의 참고 비용입니다. 선택한 합적이나 별도 박스도 현장 확인이 필요합니다.</p> : null}
+        {result.proposed.some((route) => route.unknownPallets || route.unknownWeight || route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간·중량 확인이 필요합니다.</p> : null}
         {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn"><strong>기존 용차 {excludedOriginalTrips.length}회 비용 제외 중: AI안과 납품 비용을 같은 조건으로 비교할 수 없습니다.</strong></p> : null}
         {proposedGroupingEdited ? <p className="dispatch-route-note-warn"><strong>AI 제안의 용차 묶음을 사용자가 직접 변경했습니다. AI 제안 비용은 수정된 운행 기준이며 실제 경유·운임 확인이 필요합니다.</strong></p> : null}
-        <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>
         <div className="simulation-charts">
           {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} format={money} isCost costParts={{
             original: { vehicle: baseVehicleCost, charter: originalCharterCost },
@@ -243,10 +234,10 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {comparison ? <>
           {proposedTrips != null && baseTrips != null && baseVehicleCost != null && cost(result.proposed) != null ? <p>AI 제안 비용 변화: 용차비 <strong>{difference(proposedCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(result.proposed), baseVehicleCost, money)}</strong></p> : null}
           <p className="simulation-charter-summary">용차 운행: 기존 <strong>{activeOriginalTrips}회</strong> · AI 제안 <strong>{proposedTrips}회</strong> · 미입력 운임은 1회 200,000원 가정</p>
-          <p>자사 차량 경유비·통행료 + 용차비 기준입니다.</p></> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "용차 운임·주소·경로가 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
+          </> : <p className="dispatch-route-note-warn">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 불러오거나 다시 만드세요." : "용차 운임·주소·경로가 미확인이라 비교 금액을 계산할 수 없습니다."}</p>}
         {!comparison && costIssues.length ? <p className="dispatch-route-note-warn">비용 확인 필요: {costIssues.join(" / ")}. 통행료는 경로가 여러 구간으로 나뉘면 중복을 피하기 위해 미확인으로 처리될 수 있습니다.</p> : null}
-        <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 용차비는 운행 단위 운임(편도/왕복)과 미입력 시 1회 20만 원 가정을 사용합니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
-        <h4>용차 운행 (편도/왕복 · 다중 경유)</h4>
+        <p className="comparison-note">시간은 자사 차량 기준이며 용차·대기 시간은 제외됩니다. 비용에는 택배비·인건비가 빠져 있습니다. 운임·적재 가능 여부를 확인하세요.</p>
+        <details className="simulation-details"><summary><span className="simulation-closed-label">용차 운행·운임 조정</span><span className="simulation-open-label">용차 운행·운임 접기</span></summary>
         <p className="comparison-note">운행 1건에 운임 1금액입니다. 편도는 납품 또는 회수, 왕복은 납품(+경유) 후 P박스 회수까지 패키지 총액입니다. 여러 목적지를 묶어 한 용차로 처리할 수 있습니다. 미입력 운임은 1회 20만 원으로 가정합니다. 입력값은 이 브라우저에 파일·날짜별로 저장됩니다.</p>
         <div className="simulation-trip-columns">
           <section className="simulation-trip-column" aria-label="기존 계획 용차">
@@ -290,9 +281,20 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
               </div>
             ))}
           </section>
-        </div>
+        </div></details>
       </div>
-      <details className="simulation-details"><summary>배차 결과 자세히 보기</summary>
+      <details className="simulation-details"><summary><span className="simulation-closed-label">분석 리포트 보기</span><span className="simulation-open-label">분석 리포트 접기</span></summary>
+      <div className="simulation-run-info" aria-label="결과 기준">
+        <strong>이 결과의 기준</strong>
+        <p>파일 {file?.name || "확인 불가"} · 납품일 {date} · 경유 {price ? `${Number(price).toLocaleString("ko-KR")}원/L` : "미입력"} · 박스 적재 설정 {Object.keys(packing).length}품목{packingDirty ? " (변경 전 결과)" : ""} · 조건 식별번호 {result.inputFingerprint || "미확인"}</p>
+        <p>기존·AI 배차안 생성 {result.savedAt ? new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 기존·AI 경로 조회 {result.routeUpdatedAt ? new Date(result.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"}</p>
+        <p>조건 식별번호는 파일 내용·납품일·경유 가격·적재 설정·주소·계산 버전을 구분합니다. 화면에서 변경한 용차 운행·운임은 포함되지 않습니다.</p>
+      </div>
+      {result.warnings.map((w) => <p className="dispatch-route-note-warn" key={w}>{w}</p>)}
+      {!result.candidateCountVerified && result.candidateCount != null ? <p className="dispatch-route-note-warn">이전에 저장된 결과의 후보 수에는 적재 한도 초과 후보가 포함됐을 수 있습니다. 정확한 유효 후보 수는 AI 배차안을 다시 만들면 확인할 수 있습니다.</p> : null}
+      {result.items.some((item) => item.packing === "auto" && item.pallets != null) ? <p className="comparison-note">별도 설정이 없는 품목은 제품 기준표의 1PLT당 박스 수로 PLT를 추정합니다. 실제 합적·적재 방식은 확인이 필요합니다.</p> : null}
+      <p className="comparison-note">부등호는 값의 크기 순서입니다. 낮은 비용이 실제 최적 배차를 뜻하지는 않습니다.</p>
+      <p className="comparison-note">시간은 자사 차량별 운행 시간의 합이며 하차·대기 및 용차·택배 시간은 제외됩니다. 용차비는 운행 단위 운임과 미입력 시 1회 20만 원 가정을 사용합니다. 택배비와 인건비는 제외되어 전체 실제 비용이 아닙니다. 안마다 택배 물량이 달라질 수 있어 표시된 비용 차이만으로 전체 비용의 우열을 확정할 수 없습니다.</p>
       <p className="comparison-note">{result.note} · 납품 기한·긴급 여부·택배 마감·하차 시간은 미확인이므로 실제 운행 가능성을 확인해야 합니다.</p>
       {result.savedAt ? <p className="comparison-note">배차안 생성: {new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })} · 경로 조회: {result.routeUpdatedAt ? new Date(result.routeUpdatedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" }) : "미확인"} · 후보 {result.candidateCount ?? 0}개 · {result.planSource || "Groq"}</p> : null}
       {result.comparisonNote ? <p className="comparison-note">{result.comparisonNote}</p> : null}
