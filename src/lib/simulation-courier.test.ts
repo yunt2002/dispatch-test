@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { courierCost, courierTotal } from "./simulation-courier";
+import { comparableCourierCosts, courierCost, courierTotal } from "./simulation-courier";
 import type { SimulationItem } from "./simulation";
 
 test("택배 출고 단위와 수량에 따라 요금을 계산한다", () => {
@@ -8,8 +8,16 @@ test("택배 출고 단위와 수량에 따라 요금을 계산한다", () => {
   assert.equal(courierCost({ transport: "택배 PLT", boxes: 10, pallets: 2 })?.amount, 100000);
   assert.equal(courierCost({ transport: "택배", boxes: 10, pallets: 2 }), null);
   assert.equal(courierCost({ transport: "택배", boxes: 10, pallets: null }, { mode: "pallet", quantity: 2 })?.amount, 100000);
+  assert.equal(courierCost({ transport: "경동택배", boxes: null, pallets: null }, { mode: "box", quantity: 10 })?.amount, 70000);
+  assert.equal(courierCost({ transport: "경동택배", boxes: null, pallets: null }, { mode: "box", quantity: 0 }), null);
   assert.equal(courierCost({ transport: "택배 PLT", boxes: 10, pallets: null }), null);
   assert.equal(courierCost({ transport: "택배", boxes: 4, pallets: 1 }, { mode: "pallet", quantity: 0 })?.amount, 0);
+});
+
+test("택배 요금이 한쪽이라도 미확인이면 양쪽 모두 제외하고 비교한다", () => {
+  assert.deepEqual(comparableCourierCosts(70000, null), { included: false, original: 0, proposed: 0 });
+  assert.deepEqual(comparableCourierCosts(null, 100000), { included: false, original: 0, proposed: 0 });
+  assert.deepEqual(comparableCourierCosts(70000, 100000), { included: true, original: 70000, proposed: 100000 });
 });
 
 test("택배 출고 방식이 모두 확인되어야 안별 운임을 합산한다", () => {

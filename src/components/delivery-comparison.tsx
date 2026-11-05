@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { isPackingMode } from "@/lib/simulation-packing";
 import { simulationTime, simulationTimeTotals } from "@/lib/simulation-time";
-import { courierCost, courierTotal, type CourierChoice } from "@/lib/simulation-courier";
+import { comparableCourierCosts, courierCost, courierTotal, type CourierChoice } from "@/lib/simulation-courier";
 import {
   addReturnCharterTrip,
   charterItemsFromPlan,
@@ -27,7 +27,7 @@ function storageKey(prefix: string, f: File, d: string) {
 }
 
 const money = (n: number | null) => n == null ? "확인 필요" : `${Math.round(n).toLocaleString("ko-KR")}원`;
-type CostParts = { vehicle: number; charter: number; courier: number };
+type CostParts = { vehicle: number; charter: number; courier: number | null };
 type TimeParts = { driving: number; lunch: number; unloading: number };
 function ComparisonBars({ title, original, proposed, format, isCost = false, costParts, timeParts }: {
   title: string; original: number; proposed: number; format: (n: number) => string; isCost?: boolean;
@@ -44,7 +44,7 @@ function ComparisonBars({ title, original, proposed, format, isCost = false, cos
   ];
   const ranked = [...values].sort((a, b) => a[1] - b[1]);
   const partsNote = (parts: CostParts | TimeParts | null | undefined) =>
-    !parts ? null : "vehicle" in parts ? `자사 ${format(parts.vehicle)} + 용차 ${format(parts.charter)} + 택배 ${format(parts.courier)}` : `운전 ${format(parts.driving)} + 점심 ${format(parts.lunch)} + 하차 ${format(parts.unloading)}`;
+    !parts ? null : "vehicle" in parts ? `자사 ${format(parts.vehicle)} + 용차 ${format(parts.charter)}${parts.courier == null ? " · 택배비 제외" : ` + 택배 ${format(parts.courier)}`}` : `운전 ${format(parts.driving)} + 점심 ${format(parts.lunch)} + 하차 ${format(parts.unloading)}`;
   return <div className="simulation-chart"><div className="simulation-chart-heading"><h4>{title}</h4><strong className={`simulation-chart-difference${delta > 0 ? " is-increase" : ""}`}>기존 대비 AI {difference}{percent != null ? ` · 약 ${Number(percent.toFixed(1))}% ${delta < 0 ? "감소" : "증가"}` : ""}</strong></div>
     <div className="simulation-ranking"><span className="simulation-ranking-caption">{isCost ? "예상 비용 낮은 순" : "운행 합계 짧은 순"}</span><div className="simulation-ranking-values">{ranked.map(([label, value], index) => <span className="simulation-ranking-part" key={label}>{index > 0 ? <span className="simulation-ranking-symbol" aria-label={value === ranked[index - 1][1] ? "같음" : "보다 작음"}>{value === ranked[index - 1][1] ? "=" : "<"}</span> : null}<span className={`simulation-ranking-item${label === "AI 제안" ? " is-ai" : ""}`}><span>{label}</span><strong>{format(value)}</strong></span></span>)}</div></div>
     {values.map(([label, value, parts]) => {
@@ -228,6 +228,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const proposedCourier = result?.proposed.length ? courierItems(result.remaining) : null;
   const originalCourierCost = courierTotal(originalCourier, courierChoices);
   const proposedCourierCost = proposedCourier ? courierTotal(proposedCourier, courierChoices) : null;
+  const comparableCourier = comparableCourierCosts(originalCourierCost, proposedCourierCost);
+  const courierCostsComplete = comparableCourier.included;
   const availableRows = new Set(result?.items.map((item) => item.rowNumber) ?? []);
   const originalExtras = extraTrips.original.filter((trip) => trip.rowNumbers.every((row) => availableRows.has(row)));
   const proposedExtras = extraTrips.proposed.filter((trip) => trip.rowNumbers.every((row) => availableRows.has(row)));
@@ -246,13 +248,13 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const excludedOriginalTrips = originalCharterTrips.filter((trip) => trip.excluded);
   const activeOriginalTrips = originalCharterTrips.length - excludedOriginalTrips.length + originalExtras.length;
   const proposedCharterCost = result?.charterGroups == null ? null : estimatedTripsCost([...proposedCharterTrips, ...proposedExtras]);
-  const compare = (vehicle: number | null, charter: number | null, courier: number | null) => {
+  const compare = (vehicle: number | null, charter: number | null) => {
     const base = result ? cost(result.original) : null;
-    if (!complete || packingDirty || base == null || vehicle == null || originalCharterCost == null || charter == null || originalCourierCost == null || courier == null) return null;
-    const original = base + originalCharterCost + originalCourierCost; const proposed = vehicle + charter + courier;
+    if (!complete || packingDirty || base == null || vehicle == null || originalCharterCost == null || charter == null) return null;
+    const original = base + originalCharterCost + comparableCourier.original; const proposed = vehicle + charter + comparableCourier.proposed;
     return { original, proposed, saving: original - proposed };
   };
-  const comparison = result ? compare(cost(result.proposed), proposedCharterCost, proposedCourierCost) : null;
+  const comparison = result ? compare(cost(result.proposed), proposedCharterCost) : null;
   const originalTime = result ? simulationTimeTotals(result.original) : null;
   const proposedTime = result ? simulationTimeTotals(result.proposed) : null;
   const baseTrips = activeOriginalTrips;
@@ -286,10 +288,11 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn"><strong>기존 용차 {excludedOriginalTrips.length}회 비용 제외 중: AI안과 납품 비용을 같은 조건으로 비교할 수 없습니다.</strong></p> : null}
         {proposedGroupingEdited ? <p className="dispatch-route-note-warn"><strong>AI 제안의 용차 묶음을 사용자가 직접 변경했습니다. AI 제안 비용은 수정된 운행 기준이며 실제 경유·운임 확인이 필요합니다.</strong></p> : null}
         {originalExtras.length || proposedExtras.length ? <p className="dispatch-route-note-warn">추가 용차는 운송 배정을 바꾸지 않고 비용에만 반영됩니다. 기존 운행과 중복되지 않는지 확인하세요.</p> : null}
+        {!courierCostsComplete ? <p className="dispatch-route-note-warn"><strong>택배 출고 방식 또는 수량이 미확인이라 양쪽 비용에서 택배비 전체를 제외했습니다. 전체 배송비나 실제 절감액으로 판단하지 마세요.</strong></p> : null}
         <div className="simulation-charts">
-          {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && originalCourierCost != null && proposedCourierCost != null && cost(result.proposed) != null ? <ComparisonBars title="예상 비용" original={comparison.original} proposed={comparison.proposed} format={money} isCost costParts={{
-            original: { vehicle: baseVehicleCost, charter: originalCharterCost, courier: originalCourierCost },
-            proposed: { vehicle: cost(result.proposed)!, charter: proposedCharterCost, courier: proposedCourierCost },
+          {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title={courierCostsComplete ? "예상 비용" : "예상 비용 (택배비 제외)"} original={comparison.original} proposed={comparison.proposed} format={money} isCost costParts={{
+            original: { vehicle: baseVehicleCost, charter: originalCharterCost, courier: courierCostsComplete ? originalCourierCost : null },
+            proposed: { vehicle: cost(result.proposed)!, charter: proposedCharterCost, courier: courierCostsComplete ? proposedCourierCost : null },
           }} /> : <div className="simulation-chart"><h4>예상 비용</h4><p className="dispatch-route-note-warn">비교 금액 확인 필요</p>{["기존 계획", "AI 제안"].map((label) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true" /><strong>확인 필요</strong></div>)}<p className="comparison-note">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : originalCourierCost == null || proposedCourierCost == null ? "택배 품목의 박스·파렛트 출고 방식과 수량을 확인하세요." : costIssues.length ? costIssues.join(" / ") : originalCharterCost == null ? "기존 용차 운행·운임을 확인하세요." : proposedCharterCost == null ? "AI 용차 운행·운임을 확인하세요." : "주소와 경로·운임을 확인하세요."}</p></div>}
           {complete && !packingDirty && originalTime && proposedTime ? <ComparisonBars title="자사 차량 총 소요 시간 합계" original={originalTime.total} proposed={proposedTime.total} timeParts={{ original: originalTime, proposed: proposedTime }} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : <div className="simulation-chart"><h4>자사 차량 총 소요 시간 합계</h4><p className="dispatch-route-note-warn">주소·경로 또는 적재 설정을 확인하세요.</p></div>}
         </div>
@@ -302,7 +305,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {proposedCourier && originalCourier.length !== proposedCourier.length ? <p className="dispatch-route-note-warn">기존안과 AI안의 택배 품목이 다릅니다. AI 후보 선택에는 택배비가 반영되지 않았습니다.</p> : null}
         <details className="simulation-details"><summary>택배 품목: 기존 {originalCourier.length}건 · AI 제안 {proposedCourier == null ? "확인 필요" : `${proposedCourier.length}건`} 보기</summary>
           <p className="comparison-note">박스당 7,000원, 파렛트당 50,000원입니다. 출고 방식이 불명확하면 직접 선택하세요. 제품 기준표의 PLT는 추정값이며 합적된 다른 행은 실제 PLT를 0으로 입력해 중복 계산을 피할 수 있습니다.</p>
-          {[{ label: "기존 계획", items: originalCourier }, { label: "AI 제안", items: proposedCourier }].map(({ label, items }) => <div key={label}><strong>{label} 택배 · {items == null ? "확인 필요" : money(courierTotal(items, courierChoices))}</strong>{items == null ? <p>AI 제안을 확인해 주세요.</p> : items.length ? <ul>{items.map((item) => { const choice = courierChoices[String(item.rowNumber)]; const estimate = courierCost(item, choice); return <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.product} · {item.location || "지역 미확인"} · {estimate ? `${estimate.quantity}${estimate.mode === "box" ? "박스" : "PLT"} / ${money(estimate.amount)}` : "출고 방식·수량 확인 필요"} <label>출고 방식 <select value={choice?.mode ?? "auto"} onChange={(event) => updateCourier(item.rowNumber, event.target.value === "auto" ? null : { mode: event.target.value as "box" | "pallet" })}><option value="auto">엑셀 자동 확인</option><option value="box">박스</option><option value="pallet">파렛트</option></select></label>{choice?.mode === "pallet" ? <label> 실제 PLT <input type="number" min="0" step="1" placeholder={item.pallets == null ? "수량 입력" : `추정 ${item.pallets}`} value={choice.quantity ?? ""} onChange={(event) => { const value = event.target.value; updateCourier(item.rowNumber, value && Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? { mode: "pallet", quantity: Number(value) } : { mode: "pallet" }); }} /></label> : null}</li>; })}</ul> : <p>택배 품목 없음</p>}</div>)}
+          {[{ label: "기존 계획", items: originalCourier }, { label: "AI 제안", items: proposedCourier }].map(({ label, items }) => <div key={label}><strong>{label} 택배 · {items == null ? "확인 필요" : money(courierTotal(items, courierChoices))}</strong>{items == null ? <p>AI 제안을 확인해 주세요.</p> : items.length ? <ul>{items.map((item) => { const choice = courierChoices[String(item.rowNumber)]; const estimate = courierCost(item, choice); return <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.product} · {item.location || "지역 미확인"} · {estimate ? `${estimate.quantity}${estimate.mode === "box" ? "박스" : "PLT"} / ${money(estimate.amount)}` : "출고 방식·수량 확인 필요"} <label>출고 방식 <select value={choice?.mode ?? "auto"} onChange={(event) => updateCourier(item.rowNumber, event.target.value === "auto" ? null : { mode: event.target.value as "box" | "pallet" })}><option value="auto">엑셀 자동 확인</option><option value="box">박스</option><option value="pallet">파렛트</option></select></label>{choice ? <label> {choice.mode === "box" ? "실제 박스 수" : "실제 PLT"} <input type="number" min={choice.mode === "box" ? "1" : "0"} step="1" placeholder={choice.mode === "box" ? (item.boxes != null && Number.isSafeInteger(item.boxes) && item.boxes > 0 ? `엑셀 ${item.boxes}` : "박스 수 입력") : (item.pallets == null ? "PLT 입력" : `추정 ${item.pallets}`)} value={choice.quantity ?? ""} onChange={(event) => { const value = event.target.value; const number = Number(value); const valid = value !== "" && Number.isSafeInteger(number) && (choice.mode === "box" ? number > 0 : number >= 0); updateCourier(item.rowNumber, valid ? { mode: choice.mode, quantity: number } : { mode: choice.mode }); }} /></label> : null}</li>; })}</ul> : <p>택배 품목 없음</p>}</div>)}
         </details>
         <p className="comparison-note">시간은 자사 차량별 운전 + 점심 60분 + 업체별 하차 40분(현담산업 180분)의 합입니다. 용차·택배·기타 대기 시간은 제외됩니다. 비용에는 인건비가 빠져 있으며 AI 후보 선택에는 택배비와 수동 추가 용차가 반영되지 않습니다.</p>
         <details className="simulation-details"><summary><span className="simulation-closed-label">용차 운행·운임 조정</span><span className="simulation-open-label">용차 운행·운임 접기</span></summary>

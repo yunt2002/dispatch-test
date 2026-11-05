@@ -24,3 +24,9 @@ export function courierTotal(items: SimulationItem[], choices: Record<string, Co
   }
   return total;
 }
+
+/** 택배비는 두 안이 모두 확인된 경우에만 양쪽에 포함한다. */
+export function comparableCourierCosts(original: number | null, proposed: number | null) {
+  if (original == null || proposed == null) return { included: false, original: 0, proposed: 0 };
+  return { included: true, original, proposed };
+}
