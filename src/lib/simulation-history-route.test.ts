@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { GET, POST } from "../app/api/simulation/history/route";
+import { DELETE, GET, POST } from "../app/api/simulation/history/route";
 import { prisma } from "./prisma";
 import type { SimulationHistorySnapshot } from "./simulation-history";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "./simulation";
@@ -13,8 +13,10 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
     findUnique: async ({ where }: { where: { key: string } }) => values.has(where.key) ? { key: where.key, value: values.get(where.key)! } : null,
     findMany: async ({ where, take }: { where: { key: { startsWith: string; lt?: string } }; take?: number }) => [...values].filter(([key]) => key.startsWith(where.key.startsWith) && (!where.key.lt || key < where.key.lt)).sort(([a], [b]) => a < b ? 1 : a > b ? -1 : 0).slice(0, take).map(([key, value]) => ({ key, value })),
     upsert: async ({ where, create, update }: { where: { key: string }; create: { key: string; value: string }; update: { value: string } }) => { values.set(where.key, values.has(where.key) ? update.value : create.value); return { key: where.key, value: values.get(where.key)! }; },
+    deleteMany: async ({ where }: { where: { key: { startsWith?: string; in?: string[] }; value?: { in: string[] } } }) => { let count = 0; for (const [key, value] of values) { if ((where.key.startsWith === undefined || key.startsWith(where.key.startsWith)) && (where.key.in === undefined || where.key.in.includes(key)) && (!where.value || where.value.in.includes(value))) { values.delete(key); count++; } } return { count }; },
   };
   Object.defineProperty(prisma, "appSetting", { value: fake, configurable: true });
+  Object.defineProperty(prisma, "$transaction", { value: (operations: Promise<unknown>[]) => Promise.all(operations), configurable: true });
   assert.equal(prisma.appSetting, fake);
   const own = { rowNumber: 1, customer: "테스트", location: "서울", product: "시험품", transport: "1호 차량", vehicle: "1호차", address: "가상 주소", boxes: 1, pallets: 1 } as SimulationItem;
   const route = { vehicle: "1호차", items: [own], minutes: 30, fuel: 1000, toll: 2000, pallets: 1, weight: 1, unknownPallets: 0, unknownWeight: 0, over: false } as SimulationRoute;
@@ -44,4 +46,16 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
   assert.equal(older.records.length, 2);
   assert.equal(older.nextCursor, null);
   assert.equal(new Set([...page.records, ...older.records].map((entry: { id: string }) => entry.id)).size, 102);
+  const remove = (body: unknown) => DELETE(new Request("http://localhost/api/simulation/history", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  values.set("unrelated-setting", "keep");
+  assert.equal((await remove({ ids: ["unrelated-setting"] })).status, 400);
+  assert.equal((await remove({ ids: [] })).status, 400);
+  assert.equal((await remove({ all: true, ids: [one.id] })).status, 400);
+  assert.equal((await (await remove({ ids: [one.id] })).json()).deleted, 1);
+  assert.equal(values.get(`simulation_history_selection:v1:${snapshot.date}`), two.id);
+  assert.equal((await (await remove({ ids: [two.id] })).json()).deleted, 1);
+  assert.equal(values.has(`simulation_history_selection:v1:${snapshot.date}`), false);
+  assert.equal((await (await remove({ all: true })).json()).deleted, 100);
+  assert.equal(values.get("unrelated-setting"), "keep");
+  assert.equal((await (await GET(new Request("http://localhost/api/simulation/history"))).json()).records.length, 0);
 });

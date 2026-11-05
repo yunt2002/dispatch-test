@@ -65,3 +65,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "요청 형식을 확인하세요." }, { status: 400 });
   } catch { return NextResponse.json({ error: "분석 기록을 처리하지 못했습니다." }, { status: 500 }); }
 }
+
+export async function DELETE(request: Request) {
+  let body: unknown;
+  try { body = await request.json(); } catch { return NextResponse.json({ error: "요청 형식을 확인하세요." }, { status: 400 }); }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "요청 형식을 확인하세요." }, { status: 400 });
+  const value = body as { all?: unknown; ids?: unknown };
+  const all = value.all === true && value.ids === undefined;
+  const ids = value.ids;
+  if (!all && (value.all !== undefined || !Array.isArray(ids) || ids.length === 0 || ids.length > 1000 || !ids.every((id) => typeof id === "string" && keyPattern.test(id)))) return NextResponse.json({ error: "삭제할 기록을 확인하세요." }, { status: 400 });
+  try {
+    const uniqueIds = all ? [] : [...new Set(ids as string[])];
+    const [deleted] = await prisma.$transaction([
+      prisma.appSetting.deleteMany({ where: { key: all ? { startsWith: PREFIX } : { in: uniqueIds } } }),
+      prisma.appSetting.deleteMany({ where: { key: { startsWith: SELECTION }, ...(all ? {} : { value: { in: uniqueIds } }) } }),
+    ]);
+    return NextResponse.json({ deleted: deleted.count });
+  } catch { return NextResponse.json({ error: "분석 기록을 삭제하지 못했습니다." }, { status: 500 }); }
+}
