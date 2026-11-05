@@ -17,6 +17,7 @@ import {
   parseCharterTrips,
   restoreEditedCharterTrips,
   simulationCostIssues,
+  splitCharterTrip,
   syncOriginalCharterTrips,
   tripLabel,
   tripsFromCharterGroups,
@@ -34,6 +35,22 @@ test("AI 운행을 묶으면 비용이 변경되고 같은 AI 결과에서만 �
   assert.deepEqual(restoreEditedCharterTrips(groups, parseCharterTrips(edited), charterGroupsSignature(groups)), edited);
   assert.equal(restoreEditedCharterTrips(groups, edited, charterGroupsSignature([{ items: [a, b] }])).length, 2);
   assert.equal(restoreEditedCharterTrips(groups, [{ ...edited[0], rowNumbers: [1] }], charterGroupsSignature(groups)).length, 2);
+});
+
+test("AI 용차를 목적지별로 분리하고 회수를 추가해도 저장된 운행과 비용을 복원한다", () => {
+  const a = { rowNumber: 1, customer: "A", location: "광주" };
+  const b = { rowNumber: 2, customer: "B", location: "창원" };
+  const groups = [{ items: [a, b] }];
+  const initial = tripsFromCharterGroups(groups, "proposed");
+  const parts = splitCharterTrip(initial[0], [a, b]);
+  const returnTrip = { ...addReturnCharterTrip(parts[0]), fare: "250000" };
+  const saved = [...parts, returnTrip];
+  assert.equal(parts.length, 2);
+  assert.equal(estimatedTripsCost(saved), 650000);
+  assert.deepEqual(restoreEditedCharterTrips(groups, parseCharterTrips(saved), charterGroupsSignature(groups)), saved);
+  assert.equal(estimatedTripsCost(saved.filter((trip) => trip.id !== returnTrip.id)), 400000);
+  const invalid = [...parts, { ...returnTrip, rowNumbers: [99] }];
+  assert.equal(restoreEditedCharterTrips(groups, invalid, charterGroupsSignature(groups)).length, 1);
 });
 
 test("기존 운행 비용 제외는 저장 후 유지되며 다시 포함할 수 있다", () => {

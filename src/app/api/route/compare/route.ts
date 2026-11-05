@@ -81,19 +81,28 @@ export async function POST(request: Request) {
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const mode = String(form.get("mode") || "load");
-    if (!["load", "regenerate", "refresh"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
+    if (!["load", "regenerate", "refresh", "preview"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
     stage = "workbook";
     const bytes = Buffer.from(await file.arrayBuffer());
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
     const sheet = findComparisonSheet(workbook, date);
     if (!sheet) return NextResponse.json({ error: `선택한 날짜의 ${date.slice(0, 7)} 월별 시트를 찾을 수 없습니다.` }, { status: 400 });
-    const rows = extractComparisonShipments(sheet, date).map((row) => ({ ...row, originalLocation: row.location, location: correctedSimulationLocation(row.customer, row.location) }));
-    if (!rows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
+    const allRows = extractComparisonShipments(sheet, date).map((row) => ({ ...row, originalLocation: row.location, location: correctedSimulationLocation(row.customer, row.location) }));
+    if (!allRows.length) return NextResponse.json({ error: "선택한 날짜에 납품 내역이 없습니다." }, { status: 400 });
+    if (mode === "preview") return NextResponse.json({ items: allRows.map(({ rowNumber, customer, product, location, transport }) => ({ rowNumber, customer, product, location, transport })) });
+    let excludedRows: number[];
+    try {
+      const parsed: unknown = JSON.parse(String(form.get("excludedRows") || "[]"));
+      if (!Array.isArray(parsed) || parsed.some((value) => !Number.isSafeInteger(value) || !allRows.some((row) => row.rowNumber === value))) throw new Error();
+      excludedRows = [...new Set(parsed as number[])].sort((a, b) => a - b);
+    } catch { return NextResponse.json({ error: "제외할 품목을 다시 확인하세요." }, { status: 400 }); }
+    const rows = allRows.filter((row) => !excludedRows.includes(row.rowNumber));
+    if (!rows.length) return NextResponse.json({ error: "모든 품목을 제외할 수 없습니다. 분석할 품목을 선택하세요." }, { status: 400 });
     stage = "data";
     const [customers, customProducts] = await Promise.all([prisma.customer.findMany({ where: { isActive: true }, select: { customerName: true, address: true } }), loadCustomProducts()]);
     const addressFor = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
     const fileHash = createHash("sha256").update(bytes).digest("hex");
-    const signature = createHash("sha256").update(JSON.stringify({ version: 13, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "auto"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null) })).digest("hex");
+    const signature = createHash("sha256").update(JSON.stringify({ version: 13, fileHash, date, price, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "auto"; }), addresses: rows.map((row) => addressFor(row)), customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null), ...(excludedRows.length ? { excludedRows } : {}) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
     const setting = await prisma.appSetting.findUnique({ where: { key } });
     let stored: SimulationResult | null = null;

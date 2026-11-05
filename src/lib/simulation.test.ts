@@ -21,6 +21,18 @@ test("디아이씨 울주 납품지만 확인한 울산 주소를 사용한다",
   assert.equal(confirmedSimulationAddress("DIC", "대구"), null);
   assert.equal(confirmedSimulationAddress("다른 업체", "울주"), null);
 });
+test("10월 15일 확인된 세 납품지는 일치하는 거래처와 지역에만 주소를 적용한다", () => {
+  for (const [name, region, address] of [
+    ["대양자석", "대구", "대구광역시 달서구 성서공단남로10길 24"],
+    ["현대엘리베이터 (비전모터)", "인천", "인천광역시 남동구 남동서로 311"],
+    ["코아비스", "세종", "세종특별자치시 연서면 공단로 117"],
+  ]) {
+    assert.equal(confirmedSimulationAddress(name, region), address);
+    assert.equal(simulationAddressIssue(region, address), null);
+    assert.equal(confirmedSimulationAddress(name, "부산"), null);
+    assert.equal(correctedSimulationLocation(name, region), region);
+  }
+});
 test("지엠비 코리아 창원 납품지에 확인된 주소를 적용한다", () => {
   const address = confirmedSimulationAddress("지엠비 코리아", "창원");
   assert.equal(address, "경상남도 창원시 성산구 웅남로 618");

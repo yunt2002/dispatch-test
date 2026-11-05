@@ -9,6 +9,9 @@ export function correctedSimulationLocation(customer: string, location: string):
 export function confirmedSimulationAddress(customer: string, location: string): string | null {
   const name = customer.trim().replace(/\s+/g, "").toLowerCase();
   const area = location.trim().replace(/\s+/g, "");
+  if (name === "대양자석" && ["대구", "대구시", "대구광역시"].includes(area)) return "대구광역시 달서구 성서공단남로10길 24";
+  if ((name === "현대엘리베이터" || name === "현대엘리베이터(비전모터)") && ["인천", "인천시", "인천광역시"].includes(area)) return "인천광역시 남동구 남동서로 311";
+  if (name === "코아비스" && ["세종", "세종시", "세종특별자치시"].includes(area)) return "세종특별자치시 연서면 공단로 117";
   if ((name === "디아이씨" || name === "dic") && (area === "울주" || area === "울주군")) return "울산광역시 울주군 상북면 길천산업로 401";
   if (name === "지엠비코리아" && (area === "창원" || area === "창원시")) return "경상남도 창원시 성산구 웅남로 618";
   if ((name === "엘지이노텍(삼현)" || name === "lgit(삼현)") && (area === "창원" || area === "창원시")) return "경상남도 창원시 의창구 죽전로 45";
