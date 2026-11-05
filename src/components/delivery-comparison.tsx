@@ -22,6 +22,13 @@ import {
   type CharterLeg,
   type CharterTrip,
 } from "@/lib/simulation-cost";
+import {
+  compareManagerToRecommended,
+  orderCompareSummary,
+  orderStatusLabel,
+  type OrderStop,
+  type VehicleOrderCompare,
+} from "@/lib/simulation-visit-order";
 
 function storageKey(prefix: string, f: File, d: string) {
   return `${prefix}:${f.name}:${f.size}:${f.lastModified}:${d}`;
@@ -60,6 +67,37 @@ function difference(value: number | null, baseline: number | null, format: (n: n
   if (value == null || baseline == null) return "확인 필요";
   const delta = value - baseline;
   return delta === 0 ? "차이 없음" : `${format(Math.abs(delta))} ${delta < 0 ? "감소" : "증가"}`;
+}
+
+function OrderList({ title, stops, accent }: { title: string; stops: OrderStop[] | null; accent?: "manager" | "recommend" }) {
+  return <div className={`simulation-order-column${accent ? ` is-${accent}` : ""}`}>
+    <strong>{title}</strong>
+    {!stops ? <p className="comparison-note">좌표가 부족해 추천 순서를 만들 수 없습니다.</p>
+      : !stops.length ? <p className="comparison-note">납품지 없음</p>
+      : <ol>{stops.map((stop, index) => <li key={`${stop.id}-${index}`}>{stop.label}</li>)}</ol>}
+  </div>;
+}
+
+function VisitOrderCompare({ routes }: { routes: SimulationRoute[] }) {
+  const rows = useMemo(() => compareManagerToRecommended(routes), [routes]);
+  const summary = orderCompareSummary(rows);
+  if (!rows.length) return null;
+  return <details className="simulation-details simulation-order-compare">
+    <summary>
+      <span className="simulation-closed-label">담당자 순서 · 추천 순서 비교 · {summary}</span>
+      <span className="simulation-open-label">담당자 순서 · 추천 순서 접기</span>
+    </summary>
+    <p className="comparison-note">기존 계획의 방문 순서와 직선거리 기준 추천 순서를 나란히 봅니다. 실제 도로·제약과 다를 수 있으며 일정에는 반영되지 않습니다.</p>
+    {rows.map((row: VehicleOrderCompare) => (
+      <div className={`simulation-order-vehicle${row.status === "different" ? " is-different" : ""}`} key={row.vehicle}>
+        <h5>{row.vehicle}<span>{orderStatusLabel(row.status)}</span></h5>
+        <div className="simulation-order-columns">
+          <OrderList title="담당자 순서" stops={row.manager} accent="manager" />
+          <OrderList title="추천 순서" stops={row.recommended} accent="recommend" />
+        </div>
+      </div>
+    ))}
+  </details>;
 }
 
 function ExternalDeliveries({ items }: { items: SimulationItem[] }) {
@@ -322,6 +360,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           }} /> : <div className="simulation-chart"><h4>예상 비용</h4><p className="dispatch-route-note-warn">비교 금액 확인 필요</p>{["기존 계획", "AI 제안"].map((label) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true" /><strong>확인 필요</strong></div>)}<p className="comparison-note">{packingDirty ? "적재 방식 변경을 적용하려면 배차안을 다시 만드세요." : originalCourierCost == null || proposedCourierCost == null ? "택배 품목의 박스·파렛트 출고 방식과 수량을 확인하세요." : costIssues.length ? costIssues.join(" / ") : originalCharterCost == null ? "기존 용차 운행·운임을 확인하세요." : proposedCharterCost == null ? "AI 용차 운행·운임을 확인하세요." : "주소와 경로·운임을 확인하세요."}</p></div>}
           {complete && !packingDirty && originalTime && proposedTime ? <ComparisonBars title="자사 차량 총 소요 시간 합계" original={originalTime.total} proposed={proposedTime.total} timeParts={{ original: originalTime, proposed: proposedTime }} format={(n) => `${n.toLocaleString("ko-KR")}분`} /> : <div className="simulation-chart"><h4>자사 차량 총 소요 시간 합계</h4><p className="dispatch-route-note-warn">주소·경로 또는 적재 설정을 확인하세요.</p></div>}
         </div>
+        <VisitOrderCompare routes={result.original} />
         <details className="simulation-details"><summary>그래프의 차량별 경로·적재 품목 보기</summary><p className="comparison-note">각 차량을 확인하세요. PLT 미확인 품목은 합계에 포함되지 않습니다.</p><div className="comparison-plans"><Plan title="기존 계획" routes={result.original} /><Plan title="AI 제안" routes={result.proposed} /></div></details>
         {comparison ? <>
           {proposedTrips != null && baseTrips != null && baseVehicleCost != null && cost(result.proposed) != null ? <p>AI 제안 비용 변화: 용차비 <strong>{difference(proposedCharterCost, originalCharterCost, money)}</strong> · 자사 경유비·통행료 <strong>{difference(cost(result.proposed), baseVehicleCost, money)}</strong> · 택배비 <strong>{difference(proposedCourierCost, originalCourierCost, money)}</strong></p> : null}

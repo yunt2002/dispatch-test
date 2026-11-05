@@ -2376,6 +2376,22 @@ body {
 .simulation-details > summary .simulation-open-label { display: none; }
 .simulation-details[open] > summary .simulation-open-label { display: inline; }
 .simulation-details[open] > summary .simulation-closed-label { display: none; }
+.simulation-order-compare { margin-top: 4px; }
+.simulation-order-vehicle { margin: 12px 0; padding: 12px; border: 1px solid #e6dfd2; border-radius: 8px; background: #fff; }
+.simulation-order-vehicle.is-different { border-color: #edc4b0; background: #fffaf7; }
+.simulation-order-vehicle h5 { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; margin: 0 0 10px; font-size: 15px; }
+.simulation-order-vehicle h5 span { color: #5b5b54; font-size: 13px; font-weight: 600; }
+.simulation-order-vehicle.is-different h5 span { color: #983b23; }
+.simulation-order-columns { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 720px) {
+  .simulation-order-columns { grid-template-columns: 1fr 1fr; }
+}
+.simulation-order-column { min-width: 0; padding: 10px 12px; border-radius: 6px; background: #f7f5f0; }
+.simulation-order-column.is-manager { border-left: 3px solid #8e999c; }
+.simulation-order-column.is-recommend { border-left: 3px solid #ed6b3d; }
+.simulation-order-column strong { display: block; margin-bottom: 8px; font-size: 13px; }
+.simulation-order-column ol { margin: 0; padding-left: 1.3rem; }
+.simulation-order-column li { margin: 4px 0; font-size: 14px; overflow-wrap: anywhere; }
 .simulation-packing-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid #eee9df; }
 .simulation-packing-row select { padding: 6px; border: 1px solid #d8d2c8; border-radius: 6px; }
 .simulation-trip-columns {
