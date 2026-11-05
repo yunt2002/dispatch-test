@@ -2320,7 +2320,7 @@ body {
 .dispatch-transport-fee label { display: block; font-size: 12px; margin-bottom: 4px; }
 .dispatch-transport-fee div { display: flex; gap: 6px; }
 .dispatch-transport-fee input { min-width: 0; flex: 1; }
-.comparison-section h2 { font-size: 20px; margin: 0 0 8px; }
+.comparison-section h1, .comparison-section h2 { font-size: 20px; margin: 0 0 8px; }
 .comparison-section h3 { font-size: 15px; }
 .comparison-section p, .comparison-section label, .comparison-section li { font-size: 14px; line-height: 1.6; }
 .comparison-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin: 14px 0; }

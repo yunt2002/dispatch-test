@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 
 const DAILY = [
   { href: "/help", label: "사용설명서", match: (p: string) => p.startsWith("/help") },
+  { href: "/simulation", label: "AI 배차 시뮬레이션", match: (p: string) => p === "/simulation" },
   { href: "/", label: "배차 신청", match: (p: string) => p === "/" || p.startsWith("/map") },
   { href: "/confirm", label: "배차 확정", match: (p: string) => p.startsWith("/confirm") },
 ];
@@ -20,9 +21,11 @@ const SETTINGS = [
 function NavLinks({
   items,
   pathname,
+  date,
 }: {
   items: { href: string; label: string; match: (path: string) => boolean }[];
   pathname: string;
+  date?: string;
 }) {
   return (
     <>
@@ -31,7 +34,7 @@ function NavLinks({
         return (
           <Link
             key={item.href}
-            href={item.href}
+            href={item.href === "/simulation" && date ? `${item.href}?date=${encodeURIComponent(date)}` : item.href}
             className={`nav-link ${active ? "nav-link-active" : ""}`}
             aria-current={active ? "page" : undefined}
           >
@@ -45,6 +48,8 @@ function NavLinks({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const selectedDate = useSearchParams().get("date") ?? "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate) ? selectedDate : undefined;
   const settingsActive = SETTINGS.some((item) => item.match(pathname));
   const [settingsOpen, setSettingsOpen] = useState(settingsActive);
 
@@ -62,7 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </span>
         </Link>
         <nav className="app-nav" aria-label="주 메뉴">
-          <NavLinks items={DAILY} pathname={pathname} />
+          <NavLinks items={DAILY} pathname={pathname} date={date} />
           <details className="nav-settings" open={settingsOpen || settingsActive}>
             <summary
               className="nav-settings-summary"

@@ -265,7 +265,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     const missing = result.items.filter((item) => item.vehicle && !planned.has(item.rowNumber));
     if (missing.length) costIssues.push(`기존 자사 납품 주소·경로 누락: ${missing.map((item) => `${item.rowNumber}행 ${item.customer}`).join(", ")}`);
   }
-  return <section className="comparison-section" aria-labelledby="simulation-title"><h2 id="simulation-title">AI 배차 시뮬레이션</h2>
+  return <section className="comparison-section" aria-labelledby="simulation-title"><h1 id="simulation-title">AI 배차 시뮬레이션</h1>
     <p>기존 계획과 AI 배차안을 비교합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { const selected = e.target.files?.[0] ?? null; setFile(selected); setResult(null); restorePreferences(selected, date); setPackingDirty(false); }} /></label>
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
