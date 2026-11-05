@@ -6,12 +6,12 @@ import { geocodeAddresses, searchCompanyPlace } from "@/lib/geocoding";
 import { matchProductLoading } from "@/lib/product-loading";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
-import { appendSimulationNotes, fallbackCharterGroups, parseSimulationAiOrders, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
+import { fallbackCharterGroups, parseSimulationAiOrders, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationRoute, type SimulationResult } from "@/lib/simulation";
 import { prisma } from "@/lib/prisma";
 import { isPackingMode, packingPallets } from "@/lib/simulation-packing";
 import { createHash } from "node:crypto";
 import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
-import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, simulationRegion, validateRegionalCandidate } from "@/lib/simulation-regions";
+import { regionalGroup, simulationRegion } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
 import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi } from "@/lib/simulation-ai-provider";
 import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
@@ -23,7 +23,7 @@ export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
 
 type ProposedPlan = { orders: Order[]; charterGroups: string[][] | null; note: string; model?: string };
-async function propose(items: SimulationItem[], objective: string, regionalOnly = false): Promise<ProposedPlan> {
+async function propose(items: SimulationItem[], objective: string): Promise<ProposedPlan> {
   const key = process.env.GROQ_API_KEY?.trim();
   if (!key) return { orders: [], charterGroups: null, note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
   const issues: string[] = [];
@@ -31,7 +31,7 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
   for (const model of models) try {
     const aiResponse = await requestSimulationAi({ groqKey: key, groqModel: model, geminiKey: process.env.GEMINI_API_KEY?.trim(), geminiModel: process.env.GEMINI_MODEL, messages: [
       { role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 현장 확인이 필요한 후보를 제안한다. 자사 차량 적재량은 1호차 4000kg/8PLT, 2호차 3500kg/8PLT 초과 금지. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. 각 배열은 한 번의 용차 운행이다. 같은 거래처·지역은 한 운행으로 묶고, 동일 일자·인접 권역이면 다른 거래처도 한 용차에 다중 경유로 묶을 수 있다(예: DIC와 GMB, 비엠씨 후 인근 업체). 멀거나 다른 권역은 분리한다. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 1호차와 2호차를 각각 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력: {\"orders\":[{\"vehicle\":\"1호차\",\"ids\":[\"1\"]},{\"vehicle\":\"2호차\",\"ids\":[\"2\"]}],\"charterGroups\":[[\"3\",\"4\"],[\"5\"]]}" },
-      { role: "user", content: JSON.stringify({ objective, restriction: regionalOnly ? "1호차와 2호차 모두 region이 regional인 용차 품목을 적어도 한 건씩 배정한다. 기존 택배는 유지하고 수도권 품목은 용차 또는 택배로 남긴다. 경상권과 전라권은 같은 차량에 섞지 않는다. 같은 업체·지역 품목을 두 차량에 나누지 않는다. 알려진 적재 한도를 초과하지 않는다. 좌표나 세부 권역이 없는 품목은 자사 차량에 배정하지 않는다." : undefined, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
+      { role: "user", content: JSON.stringify({ objective, depot: DEFAULT_DEPOT, items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
     ] });
     const { response, provider } = aiResponse;
     const diagnostics = formatGeminiAttempts(aiResponse.geminiAttempts ?? []);
@@ -42,7 +42,7 @@ async function propose(items: SimulationItem[], objective: string, regionalOnly 
     catch { issues.push(`${provider} 응답 형식을 읽지 못했습니다. ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const orders = parseSimulationAiOrders(parsed?.orders);
     if (!orders) { issues.push(`${provider} 차량 배정 응답 형식이 올바르지 않습니다. ${diagnostics}`); if (aiResponse.switched) break; continue; }
-    const problem = validateSimulationOrders(items, orders) || (regionalOnly ? validateRegionalCandidate(items, orders) : null);
+    const problem = validateSimulationOrders(items, orders);
     if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem} ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const groups = Array.isArray(parsed?.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
     if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
     const mode = String(form.get("mode") || "load");
-    if (!["load", "regenerate", "refresh", "regional"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
+    if (!["load", "regenerate", "refresh"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
     stage = "workbook";
     const bytes = Buffer.from(await file.arrayBuffer());
     const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(bytes as unknown as ExcelJS.Buffer);
@@ -102,13 +102,13 @@ export async function POST(request: Request) {
       if (Array.isArray(value.items) && Array.isArray(value.original) && Array.isArray(value.proposed) && Array.isArray(value.charterGroups) && typeof value.savedAt === "string") stored = value;
     } catch { /* 오래된 결과는 다시 생성한다. */ }
     if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
-    if ((mode === "refresh" || mode === "regional") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
+    if ((mode === "refresh") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
     stage = "location";
-    const lookupRows = mode === "regional" ? [] : [...new Map(rows.filter((row) => !row.workbookAddress && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, addressFor(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
+    const lookupRows = [...new Map(rows.filter((row) => !row.workbookAddress && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, addressFor(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
     const places = new Map(await Promise.all(lookupRows.map(async ([key, row]) => [key, await searchCompanyPlace(row.customer, row.location)] as const)));
     const resolvedAddress = (row: typeof rows[number]) => row.workbookAddress || places.get(JSON.stringify([row.customer, row.location]))?.address || addressFor(row);
-    const addresses = [...new Set(rows.map((row) => { const address = resolvedAddress(row); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = mode === "regional" ? new Map<string, { lat: number; lng: number }>() : await geocodeAddresses(addresses);
-    const items: SimulationItem[] = mode === "regional" && stored ? stored.items : rows.map((row) => {
+    const addresses = [...new Set(rows.map((row) => { const address = resolvedAddress(row); return simulationAddressIssue(row.location, address) ? null : address; }).filter((a): a is string => !!a))]; const points = await geocodeAddresses(addresses);
+    const items: SimulationItem[] = rows.map((row) => {
       const place = row.workbookAddress ? null : places.get(JSON.stringify([row.customer, row.location]));
       const address = resolvedAddress(row); const addressIssue = simulationAddressIssue(row.location, address); const point = !addressIssue && place ? place : address && !addressIssue ? points.get(address.trim().replace(/\s+/g, " ")) : null;
       const custom = findCustomProduct(customProducts, row.product); const family = custom ? null : matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
@@ -121,14 +121,6 @@ export async function POST(request: Request) {
     const excluded = items.filter((item) => item.vehicle && item.lat == null);
     const eligible = items.filter((item) => !item.vehicle || item.lat != null);
     const originals: Order[] = ["1호차", "2호차"].map((vehicle) => ({ vehicle, ids: eligible.filter((item) => item.vehicle === vehicle).map((item) => String(item.rowNumber)) }));
-    const regionalItems = regionalScenarioItems(items);
-    const unknownRegions = regionalItems.filter((item) => item.region === "unknown");
-    const unknownGroups = regionalItems.filter((item) => item.region === "regional" && !item.regionalGroup);
-    const missingLoads = regionalItems.filter((item) => item.region === "regional" && (item.vehicle || /용차/.test(item.transport)) && (item.pallets == null || item.weight == null));
-    const uncertainOwn = items.filter((item) => item.vehicle && item.region === "unknown");
-    const missingRegionalOwn = regionalItems.filter((item) => item.vehicle && (item.lat == null || item.lng == null));
-    const regionalEligible = regionalItems.filter((item) => !item.vehicle || item.lat != null);
-    const regionalPlan = buildRegionalPlan(regionalEligible);
     let ai: ProposedPlan;
     let original: SimulationRoute[];
     let proposed: SimulationRoute[];
@@ -137,14 +129,13 @@ export async function POST(request: Request) {
     let comparisonNote = stored?.comparisonNote ?? "";
     let savedAt = stored?.savedAt ?? new Date().toISOString();
     stage = "ai";
-    if ((mode === "refresh" || mode === "regional") && stored) {
+    if (mode === "refresh" && stored) {
       const orders = stored.proposed.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) }));
       const groups = stored.charterGroups!.map((group) => group.items.map((item) => String(item.rowNumber)));
       const problem = validateSimulationOrders(eligible, orders) || validateCharterGroups(eligible, orders, groups);
       if (problem) return NextResponse.json({ error: `저장된 배차안을 다시 확인해 주세요: ${problem}` }, { status: 409 });
       ai = { orders, charterGroups: groups, note: stored.note, model: stored.planSource };
-      if (mode === "regional") { original = stored.original; proposed = stored.proposed; }
-      else {
+      {
         stage = "route";
         [original, proposed] = await Promise.all([Promise.all(originals.map((order) => calculate(order, eligible, price))), Promise.all(orders.map((order) => calculate(order, eligible, price)))]);
         if ([...original, ...proposed].some((route) => route.items.length && route.distance == null)) return NextResponse.json({ error: "카카오 경로 조회에 실패해 저장된 결과를 유지했습니다. 다시 시도하세요." }, { status: 502 });
@@ -185,42 +176,10 @@ export async function POST(request: Request) {
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
     const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;
-    let regional: NonNullable<SimulationResult["regional"]> = { routes: [], remaining: [], charterGroups: [], note: "", error: "지방 집중안을 만들지 못했습니다." };
-    if (uncertainOwn.length) regional.error = `기존 자사 납품 지역 확인 필요: ${uncertainOwn.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"} (${item.location || "지역 미입력"})`).join(", ")}`;
-    else if (missingRegionalOwn.length) regional.error = `기존 지방 자사 납품 주소 미확인: ${missingRegionalOwn.map((item) => item.customer).join(", ")}`;
-    else {
-      const oldRegional = mode === "refresh" ? stored?.regional : undefined;
-      stage = "ai";
-      const attempts = mode !== "refresh" ? await Promise.all(["두 차량을 지방에 배정하며 용차 횟수를 줄이기", "두 차량을 지방에 배정하며 운행 동선을 줄이기"].map((objective) => propose(regionalPlan.items, objective, true))) : [];
-      const candidates = [...new Map(attempts.filter((attempt) => attempt.charterGroups).map((attempt) => [JSON.stringify([attempt.orders, attempt.charterGroups]), attempt])).values()];
-      if (mode !== "refresh" && !candidates.length) {
-        const fallback = buildRegionalFallback(regionalPlan.items);
-        if (fallback && !validateSimulationOrders(regionalPlan.items, fallback.orders) && !validateRegionalCandidate(regionalPlan.items, fallback.orders) && !validateCharterGroups(regionalPlan.items, fallback.orders, fallback.charterGroups)) {
-          candidates.push({ ...fallback, note: `AI 지방 집중 후보를 만들지 못해 규칙 기반 참고안을 표시합니다.${fallback.limited ? " 계산 시간을 제한하기 위해 우선 40품목만 자사 차량 후보로 검토했습니다." : ""} ${[...new Set(attempts.map((attempt) => attempt.note).filter(Boolean))].join(" / ")} 실제 적재·운임 확인이 필요합니다.` });
-        }
-      }
-      stage = "route";
-      const calculated = await Promise.all(candidates.map(async (candidate) => ({ candidate, routes: await Promise.all(candidate.orders.map((order) => calculate(order, regionalPlan.items, price))) })));
-      const selected = chooseSimulationCandidate(calculated.map(({ candidate, routes }) => ({ routes, charterCount: candidate.charterGroups!.length, courierMovedIds: [] })));
-      const chosen = selected.index == null ? null : calculated[selected.index];
-      const plan = oldRegional && !oldRegional.error ? { orders: oldRegional.routes.map((route) => ({ vehicle: route.vehicle, ids: route.items.map((item) => String(item.rowNumber)) })), charterGroups: oldRegional.charterGroups.map((group) => group.items.map((item) => String(item.rowNumber))), note: oldRegional.note } : chosen ? { ...chosen.candidate, note: `${chosen.candidate.model ? `AI 보조 유효 후보 ${selected.validCount}개` : "규칙 기반 대체안"} · ${selected.note} ${chosen.candidate.note}` } : null;
-      if (plan?.charterGroups) {
-        const problem = validateSimulationOrders(regionalPlan.items, plan.orders) || validateRegionalCandidate(regionalPlan.items, plan.orders) || validateCharterGroups(regionalPlan.items, plan.orders, plan.charterGroups);
-        if (problem) regional.error = problem;
-        else {
-          const routes = chosen && mode !== "refresh" ? chosen.routes : await Promise.all(plan.orders.map((order) => calculate(order, regionalPlan.items, price)));
-          const assignedIds = new Set(plan.orders.flatMap((order) => order.ids));
-          regional = { routes, remaining: regionalPlan.items.filter((item) => !item.vehicle && !assignedIds.has(String(item.rowNumber))), charterGroups: plan.charterGroups.map((group) => ({ items: group.map((id) => regionalPlan.items.find((item) => String(item.rowNumber) === id)!) })), savedAt: mode === "refresh" ? oldRegional?.savedAt : new Date().toISOString(), routeUpdatedAt: new Date().toISOString(), note: appendSimulationNotes(plan.note, unknownRegions.length ? `지역 미확인 ${unknownRegions.length}품목은 기존 운송 방식을 유지했습니다: ${unknownRegions.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.` : "", unknownGroups.length ? `세부 권역 미확인 ${unknownGroups.length}품목은 자사 차량에 배정하지 않았습니다.` : "", missingLoads.length ? `적재 정보 미확인 ${missingLoads.length}품목은 가배정될 수 있으며 확정 전에 반드시 적재를 확인해야 합니다.` : "") };
-          if (routes.some((route) => route.over)) regional.error = "지방 집중안이 알려진 차량 적재 한도를 초과합니다.";
-          else if (routes.some((route) => route.items.length && route.distance == null)) regional.error = "지방 집중안의 카카오 경로 조회에 실패했습니다.";
-        }
-      } else regional.error = `1·2호차가 모두 지방을 운행하는 유효한 AI 후보를 만들지 못했습니다. ${attempts.find((attempt) => attempt.note)?.note || "납품지·적재 정보와 AI 연결을 확인하세요."}`;
-    }
-    if (mode === "regional" && regional.error) return NextResponse.json({ error: `지방 집중안 재시도 실패: ${regional.error} 기존 결과는 유지됩니다.` }, { status: 422 });
-    const result: SimulationResult = mode === "regional" && stored ? replaceRegionalScenario(stored, regional, signature.slice(0, 12)) : { items, original, proposed, remaining, charterGroups, regional, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), inputFingerprint: signature.slice(0, 12), candidateCount, candidateCountVerified, comparisonNote, planSource: ai.model ?? stored?.planSource };
+    const result: SimulationResult = { items, original, proposed, remaining, charterGroups, note: ai.note, warnings, savedAt, routeUpdatedAt: new Date().toISOString(), inputFingerprint: signature.slice(0, 12), candidateCount, candidateCountVerified, comparisonNote, planSource: ai.model ?? stored?.planSource };
     stage = "save";
     const value = JSON.stringify(result);
-    if ((mode === "refresh" || mode === "regional") && setting) {
+    if ((mode === "refresh") && setting) {
       const updated = await prisma.appSetting.updateMany({ where: { key, value: setting.value }, data: { value } });
       if (!updated.count) return NextResponse.json({ error: "다른 사용자가 배차안을 변경했습니다. 저장된 배차안을 다시 불러오세요." }, { status: 409 });
     } else if (mode === "load" && !setting) {
