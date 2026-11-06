@@ -66,6 +66,16 @@ test("기존 운행 비용 제외는 저장 후 유지되며 다시 포함할 �
   assert.equal(estimatedTripsCost([original, returnTrip].filter((trip) => trip.id !== returnTrip.id)), 200000);
 });
 
+test("AI 운행 비용 제외는 저장 후 복원되고 다시 포함하면 원래 운임이 반영된다", () => {
+  const item = { rowNumber: 1, customer: "거래처", location: "안양" };
+  const groups = [{ items: [item] }];
+  const trip = { ...tripsFromCharterGroups(groups, "proposed")[0], fare: "350000", excluded: true };
+  const restored = restoreEditedCharterTrips(groups, parseCharterTrips([trip]), charterGroupsSignature(groups));
+  assert.equal(restored[0].excluded, true);
+  assert.equal(estimatedTripsCost(restored), 0);
+  assert.equal(estimatedTripsCost([{ ...restored[0], excluded: false }]), 350000);
+});
+
 test("운임 입력에는 각 비교안에서 용차가 필요한 목적지만 표시한다", () => {
   const item = (rowNumber: number, customer: string, transport: string, vehicle: string | null = null) => ({ rowNumber, customer, location: "경기", transport, vehicle });
   const own = item(1, "자사", "자사", "1호차");

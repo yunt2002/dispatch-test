@@ -39,6 +39,17 @@ test("택배 미확인 또는 임의 용차는 합계 적격 기록으로 표시
   assert.equal(historyMetrics(snapshot).aiAdjusted, true);
 });
 
+test("AI 용차 비용 제외는 저장 금액과 횟수에 반영하고 비교 요약에서 제외한다", () => {
+  const snapshot = fixture();
+  snapshot.proposedTrips = [{ id: "proposed:1", leg: "one_way", rowNumbers: [1], fare: "300000", excluded: true }];
+  assert.equal(validHistorySnapshot(snapshot), true);
+  const metrics = historyMetrics(snapshot);
+  assert.equal(metrics.proposedCost, 80000);
+  assert.equal(metrics.proposedCharters, 0);
+  assert.equal(metrics.comparable, false);
+  assert.ok(metrics.warnings.some((warning) => warning.includes("AI 용차 비용 제외")));
+});
+
 test("잘못된 기록 형식은 저장하지 않는다", () => {
   assert.equal(validHistorySnapshot(null), false);
   const snapshot = fixture();

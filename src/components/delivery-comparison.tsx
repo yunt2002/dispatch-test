@@ -355,7 +355,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const total = (routes: SimulationRoute[]) => simulationTimeTotals(routes)?.total ?? 0;
   const cost = (routes: SimulationRoute[]) => routes.some((r) => r.items.length && (r.fuel == null || r.toll == null)) ? null : routes.reduce((n, r) => n + (r.fuel ?? 0) + (r.toll ?? 0), 0);
   const originalHasCharter = !!result?.items.some((item) => !item.vehicle && /용차/.test(item.transport));
-  const proposedTrips = result?.charterGroups == null ? null : proposedCharterTrips.length + proposedExtras.length;
+  const excludedProposedTrips = proposedCharterTrips.filter((trip) => trip.excluded);
+  const proposedTrips = result?.charterGroups == null ? null : proposedCharterTrips.length - excludedProposedTrips.length + proposedExtras.length;
   const proposedGroupingEdited = !!result?.charterGroups && charterGroupsSignature(result.charterGroups) !== charterGroupsSignature(proposedCharterTrips.map((trip) => ({ items: trip.rowNumbers.map((rowNumber) => ({ rowNumber })) })));
   const itemsByRow = useMemo(() => {
     const map = new Map<number, SimulationItem>();
@@ -445,6 +446,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {planHasUnknownLoad(result.original) || planHasUnknownLoad(result.proposed) ? <p className="dispatch-route-note-warn"><strong>미확인 적재 품목이 있는 안은 현장 확인 전까지 운행 가능으로 판단하지 마세요.</strong> 차량별 확인된 PLT·중량과 미확인 품목을 함께 확인하세요.</p> : null}
         {result.proposed.some((route) => route.items.some((item) => item.packing === "shared" || item.packing === "loose")) ? <p className="dispatch-route-note-warn">적재 방식·공간 확인이 필요합니다.</p> : null}
         {excludedOriginalTrips.length ? <p className="dispatch-route-note-warn"><strong>기존 용차 {excludedOriginalTrips.length}회 비용 제외 중: AI안과 납품 비용을 같은 조건으로 비교할 수 없습니다.</strong></p> : null}
+        {excludedProposedTrips.length ? <p className="dispatch-route-note-warn"><strong>AI 용차 {excludedProposedTrips.length}회 비용 제외 중: 납품 비용을 같은 조건으로 비교할 수 있는지 확인하세요.</strong></p> : null}
         {proposedGroupingEdited ? <p className="dispatch-route-note-warn"><strong>AI 제안의 용차 묶음을 사용자가 직접 변경했습니다. AI 제안 비용은 수정된 운행 기준이며 실제 경유·운임 확인이 필요합니다.</strong></p> : null}
         {originalExtras.length || proposedExtras.length ? <p className="dispatch-route-note-warn">추가 용차는 운송 배정을 바꾸지 않고 비용에만 반영됩니다. 기존 운행과 중복되지 않는지 확인하세요.</p> : null}
         {!courierCostsComplete ? <p className="dispatch-route-note-warn"><strong>택배 출고 방식 또는 수량이 미확인이라 양쪽 비용에서 택배비 전체를 제외했습니다. 전체 배송비나 실제 절감액으로 판단하지 마세요.</strong></p> : null}
@@ -496,20 +498,21 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
             ))}
           </section>
           <section className="simulation-trip-column" aria-label="AI 제안 용차">
-            <h5 className="simulation-trip-heading">AI 제안 용차 · {proposedTrips ?? 0}회</h5>
+            <h5 className="simulation-trip-heading">AI 제안 용차 · {proposedTrips ?? 0}회{excludedProposedTrips.length ? ` · 비용 제외 ${excludedProposedTrips.length}회` : ""}</h5>
             {renderExtraTrips("proposed", result.items, proposedExtras)}
+            {excludedProposedTrips.length ? <p className="dispatch-route-note-warn">AI 제안에서 선택한 용차 비용만 제외했습니다. 납품 품목은 그대로이며 실제 운행 및 양쪽 비교 조건을 확인하세요.</p> : null}
             <p className="comparison-note">목적지별로 분리하거나 묶고 회수 편도를 추가할 수 있습니다. 변경한 운행의 운임을 다시 입력하세요. 미입력 시 20만 원을 가정합니다. 실제 경유·적재 가능 여부를 확인하세요. 원래 묶음으로 되돌리거나 AI 배차안을 다시 만들면 AI 용차 운임 입력값도 초기화됩니다.</p>
             <div className="comparison-controls"><button type="button" className="dispatch-secondary-button" disabled={selectedProposedTripIds.length < 2} onClick={() => { const merged = mergeCharterTrips(proposedCharterTrips, selectedProposedTripIds); persistTrips({ proposed: merged.map((trip) => trip.id.startsWith("original:merged:") && !proposedCharterTrips.some((old) => old.id === trip.id) ? { ...trip, fare: "" } : trip) }); setSelectedProposedTripIds([]); }}>선택 운행 묶기</button><button type="button" className="dispatch-secondary-button" disabled={!result.charterGroups} onClick={() => { persistTrips({ proposed: tripsFromCharterGroups(result.charterGroups ?? [], "proposed") }); setSelectedProposedTripIds([]); }}>AI 원래 묶음으로 되돌리기</button></div>
             {!proposedCharterTrips.length ? <p className="comparison-note">{proposedTrips == null ? "AI 용차 묶음이 없습니다." : "AI가 용차 없이 처리하는 안입니다."}</p> : null}
             {proposedCharterTrips.map((trip) => (
               <div key={trip.id} className="simulation-trip-row">
-                {!trip.id.includes(":return:") ? <label className="simulation-trip-select"><input type="checkbox" checked={selectedProposedTripIds.includes(trip.id)} onChange={(e) => setSelectedProposedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`AI 제안 ${tripLabel(trip, itemsByRow)} 선택`} /></label> : null}
+                {!trip.id.includes(":return:") ? <label className="simulation-trip-select"><input type="checkbox" disabled={trip.excluded} checked={selectedProposedTripIds.includes(trip.id)} onChange={(e) => setSelectedProposedTripIds((ids) => e.target.checked ? [...ids, trip.id] : ids.filter((id) => id !== trip.id))} aria-label={`AI 제안 ${tripLabel(trip, itemsByRow)} 선택`} /></label> : null}
                 <div className="simulation-trip-body">
-                  <strong>{tripLabel(trip, itemsByRow)}</strong>
+                  <strong>{tripLabel(trip, itemsByRow)}{trip.excluded ? " · 비용 제외" : ""}</strong>
                   <div className="simulation-trip-fields">
                     <label>운행<select value={trip.leg} disabled={trip.id.includes(":return:")} onChange={(e) => updateTripList("proposed", trip.id, { leg: e.target.value as CharterLeg })}><option value="one_way">편도</option><option value="round_trip">왕복</option></select></label>
                     <label>운임<input type="number" min="0" step="1" placeholder="미입력 시 20만" value={trip.fare} onChange={(e) => updateTripList("proposed", trip.id, { fare: e.target.value })} /> 원</label>
-                    {trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ proposed: proposedCharterTrips.filter((row) => row.id !== trip.id) })}>회수 운행 삭제</button> : <><button type="button" className="dispatch-secondary-button" disabled={splitCharterTrip(trip, result.items).length < 2} onClick={() => { const parts = splitCharterTrip(trip, result.items).map((part) => ({ ...part, id: `proposed:split:${trip.id}:${part.id}`, fare: "" })); persistTrips({ proposed: [...proposedCharterTrips.filter((row) => row.id !== trip.id), ...parts] }); setSelectedProposedTripIds((ids) => ids.filter((id) => id !== trip.id)); }}>목적지별 분리</button><button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ proposed: [...proposedCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button></>}
+                    {trip.id.includes(":return:") ? <button type="button" className="dispatch-secondary-button" onClick={() => persistTrips({ proposed: proposedCharterTrips.filter((row) => row.id !== trip.id) })}>회수 운행 삭제</button> : <><button type="button" className="dispatch-secondary-button" disabled={trip.excluded || splitCharterTrip(trip, result.items).length < 2} onClick={() => { const parts = splitCharterTrip(trip, result.items).map((part) => ({ ...part, id: `proposed:split:${trip.id}:${part.id}`, fare: "" })); persistTrips({ proposed: [...proposedCharterTrips.filter((row) => row.id !== trip.id), ...parts] }); setSelectedProposedTripIds((ids) => ids.filter((id) => id !== trip.id)); }}>목적지별 분리</button><button type="button" className="dispatch-secondary-button" disabled={trip.excluded} onClick={() => persistTrips({ proposed: [...proposedCharterTrips, addReturnCharterTrip(trip)] })}>회수 편도 추가</button><button type="button" className="dispatch-secondary-button" onClick={() => { updateTripList("proposed", trip.id, { excluded: !trip.excluded }); setSelectedProposedTripIds((ids) => ids.filter((id) => id !== trip.id)); }}>{trip.excluded ? "비용에 다시 포함" : "비용에서 제외"}</button></>}
                   </div>
                 </div>
               </div>

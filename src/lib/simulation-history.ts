@@ -97,7 +97,7 @@ export function validHistorySnapshot(value: unknown): value is SimulationHistory
   if (fleet(result.original) !== expectedFleet || fleet(result.proposed) !== expectedFleet) return false;
   if (result.charterGroups !== null && (!Array.isArray(result.charterGroups) || result.charterGroups.length > 1000 || !result.charterGroups.every((group) => group && Array.isArray(group.items) && group.items.every(validItem)))) return false;
   const validRows = new Set(result.items.map((item) => item.rowNumber));
-  const validTrips = (trips: unknown) => Array.isArray(trips) && trips.length <= 2000 && trips.every((t) => t && typeof t.id === "string" && t.id.length <= 500 && typeof t.fare === "string" && /^\d*$/.test(t.fare) && (t.leg === "one_way" || t.leg === "round_trip") && Array.isArray(t.rowNumbers) && t.rowNumbers.length > 0 && t.rowNumbers.every((n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && validRows.has(n)));
+  const validTrips = (trips: unknown) => Array.isArray(trips) && trips.length <= 2000 && trips.every((t) => t && typeof t.id === "string" && t.id.length <= 500 && typeof t.fare === "string" && /^\d*$/.test(t.fare) && (t.excluded === undefined || typeof t.excluded === "boolean") && (t.leg === "one_way" || t.leg === "round_trip") && Array.isArray(t.rowNumbers) && t.rowNumbers.length > 0 && t.rowNumbers.every((n: unknown) => typeof n === "number" && Number.isSafeInteger(n) && validRows.has(n)));
   if (![v.originalTrips, v.proposedTrips, v.originalExtras, v.proposedExtras].every(validTrips)) return false;
   if (!v.courierChoices || typeof v.courierChoices !== "object" || Array.isArray(v.courierChoices) || !Object.entries(v.courierChoices).every(([key, choice]) => /^\d+$/.test(key) && choice && (choice.mode === "box" || choice.mode === "pallet") && (choice.quantity === undefined || (Number.isSafeInteger(choice.quantity) && choice.quantity >= 0)))) return false;
   return !!v.packing && typeof v.packing === "object" && !Array.isArray(v.packing) && Object.values(v.packing).every((mode) => typeof mode === "string");
@@ -120,6 +120,7 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   if (!courierIncluded) warnings.push("택배비 미확인: 양쪽 비용에서 택배비 제외");
   if (!complete) warnings.push("차량 경로 또는 납품 누락 확인 필요");
   if (snapshot.originalTrips.some((trip) => trip.excluded)) warnings.push("기존 용차 비용 제외: 동일 조건 비교 아님");
+  if (snapshot.proposedTrips.some((trip) => trip.excluded)) warnings.push("AI 용차 비용 제외: 동일 조건 비교 확인 필요");
   if (snapshot.originalExtras.length || snapshot.proposedExtras.length) warnings.push("수동 추가 용차 비용 포함: 배정 중복 확인 필요");
   if (result.original.some((r) => r.unknownPallets || r.unknownWeight || r.over) || result.proposed.some((r) => r.unknownPallets || r.unknownWeight || r.over)) warnings.push("차량 적재량 또는 중량 확인 필요");
   const originalCost = complete && beforeVehicle != null && beforeCharter != null ? beforeVehicle + beforeCharter + (courierIncluded ? beforeCourier : 0) : null;
@@ -127,7 +128,7 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   if (result.warnings.length) warnings.push("시뮬레이션 경고 확인 필요");
   if (/용차 묶음 검증 실패|규칙 기반 대체/.test(result.note)) warnings.push("AI 용차 묶음 대체안 확인 필요");
   if (!result.candidateCountVerified) warnings.push("AI 후보 검증 기록 확인 필요");
-  return { originalCost, proposedCost, courierIncluded, originalMinutes: complete ? simulationTimeTotals(result.original)?.total ?? null : null, proposedMinutes: complete ? simulationTimeTotals(result.proposed)?.total ?? null : null, originalCharters: snapshot.originalTrips.filter((trip) => !trip.excluded).length + snapshot.originalExtras.length, proposedCharters: snapshot.proposedTrips.length + snapshot.proposedExtras.length, comparable: complete && originalCost != null && proposedCost != null && courierIncluded && warnings.length === 0, aiAdjusted, warnings };
+  return { originalCost, proposedCost, courierIncluded, originalMinutes: complete ? simulationTimeTotals(result.original)?.total ?? null : null, proposedMinutes: complete ? simulationTimeTotals(result.proposed)?.total ?? null : null, originalCharters: snapshot.originalTrips.filter((trip) => !trip.excluded).length + snapshot.originalExtras.length, proposedCharters: snapshot.proposedTrips.filter((trip) => !trip.excluded).length + snapshot.proposedExtras.length, comparable: complete && originalCost != null && proposedCost != null && courierIncluded && warnings.length === 0, aiAdjusted, warnings };
 }
 
 /** 과거 저장된 금액은 다시 계산하지 않고 스타리아 누락만 경고해 합계에서 제외한다. */

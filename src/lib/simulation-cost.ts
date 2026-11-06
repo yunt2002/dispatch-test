@@ -103,7 +103,7 @@ export function restoreEditedCharterTrips<T extends Destination>(groups: { items
   const expected = groups.flatMap((group) => group.items.map((item) => item.rowNumber)).sort((a, b) => a - b);
   const actual = saved.filter((trip) => !trip.id.includes(":return:")).flatMap((trip) => trip.rowNumbers).sort((a, b) => a - b);
   const validReturns = saved.filter((trip) => trip.id.includes(":return:")).every((trip) => trip.rowNumbers.every((row) => expected.includes(row)));
-  return JSON.stringify(expected) === JSON.stringify(actual) && validReturns && saved.every((trip) => !trip.excluded) ? saved : defaults;
+  return JSON.stringify(expected) === JSON.stringify(actual) && validReturns ? saved : defaults;
 }
 
 /** AI·지방 집중 묶음을 운행 목록으로 만든다. 저장된 leg/fare가 있으면 유지. */
