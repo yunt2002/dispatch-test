@@ -14,7 +14,7 @@ import { chooseSimulationCandidate } from "@/lib/simulation-candidates";
 import { regionalGroup, simulationRegion } from "@/lib/simulation-regions";
 import { groqException, groqHttpError } from "@/lib/groq-errors";
 import { formatGeminiAttempts, geminiHttpError, GeminiFallbackError, requestSimulationAi, summarizeGeminiFailure } from "@/lib/simulation-ai-provider";
-import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "@/lib/simulation-address";
+import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue, simulationPortReference } from "@/lib/simulation-address";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
 import { simulationStageError, type SimulationStage } from "@/lib/simulation-errors";
@@ -123,7 +123,8 @@ export async function POST(request: Request) {
     const vehicleNames = vehicles.map((vehicle) => vehicle.name);
     const overrideAddress = (row: typeof rows[number]) => addressOverrides[String(row.rowNumber)] || null;
     const registeredAddress = (row: typeof rows[number]) => row.workbookAddress || confirmedSimulationAddress(row.customer, row.location) || customers.find((c) => c.customerName.trim() === row.customer.trim())?.address?.trim() || resolveCustomerAddress(row.customer) || null;
-    const addressFor = (row: typeof rows[number]) => overrideAddress(row) || registeredAddress(row);
+    const portReference = (row: typeof rows[number]) => !overrideAddress(row) && !row.workbookAddress && simulationAddressIssue(row.location, registeredAddress(row)) ? simulationPortReference(row.location) : null;
+    const addressFor = (row: typeof rows[number]) => overrideAddress(row) || portReference(row)?.address || registeredAddress(row);
     const fileHash = createHash("sha256").update(bytes).digest("hex");
     const signature = createHash("sha256").update(JSON.stringify({ version: 16, fileHash, date, price, vehicles, packing: rows.map((row) => { const value = packingOverrides[String(row.rowNumber)]; return isPackingMode(value) ? value : "auto"; }), addresses: rows.map((row) => addressFor(row)), addressOverrides, customProducts: rows.map((row) => findCustomProduct(customProducts, row.product) ?? null), ...(excludedRows.length ? { excludedRows } : {}) })).digest("hex");
     const key = `simulation_snapshot:v1:${signature}`;
@@ -136,9 +137,9 @@ export async function POST(request: Request) {
     if (mode === "load" && stored) return NextResponse.json({ ...stored, inputFingerprint: signature.slice(0, 12), restored: true });
     if ((mode === "refresh") && !stored) return NextResponse.json({ error: "현재 조건으로 저장된 배차안이 없습니다. 먼저 배차안을 만드세요." }, { status: 409 });
     stage = "location";
-    const lookupRows = [...new Map(rows.filter((row) => !overrideAddress(row) && !row.workbookAddress && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, registeredAddress(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
+    const lookupRows = [...new Map(rows.filter((row) => !overrideAddress(row) && !row.workbookAddress && !portReference(row) && !confirmedSimulationAddress(row.customer, row.location) && !!simulationAddressIssue(row.location, registeredAddress(row))).map((row) => [JSON.stringify([row.customer, row.location]), row])).entries()];
     const places = new Map(await Promise.all(lookupRows.map(async ([key, row]) => [key, await searchCompanyPlace(row.customer, row.location)] as const)));
-    const resolvedAddress = (row: typeof rows[number]) => overrideAddress(row) || row.workbookAddress || places.get(JSON.stringify([row.customer, row.location]))?.address || registeredAddress(row);
+    const resolvedAddress = (row: typeof rows[number]) => overrideAddress(row) || row.workbookAddress || portReference(row)?.address || places.get(JSON.stringify([row.customer, row.location]))?.address || registeredAddress(row);
     const addresses = [...new Set(rows.map((row) => {
       const address = resolvedAddress(row);
       if (!address) return null;
@@ -154,7 +155,7 @@ export async function POST(request: Request) {
       const custom = findCustomProduct(customProducts, row.product); const family = custom ? null : matchProductLoading(row.productCode, row.product); const boxes = row.boxes != null && row.boxes > 0 ? Math.ceil(row.boxes) : null;
       const override = packingOverrides[String(row.rowNumber)]; const packing = isPackingMode(override) ? override : "auto";
       return { ...row, vehicle: simulationVehicleName(row.transport),
-        address, addressSource: manual ? "담당자 입력 주소" : row.workbookAddress ? "엑셀 도착지" : confirmedSimulationAddress(row.customer, row.location) ? "확인된 업체·지역 주소" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
+        address, addressSource: manual ? "담당자 입력 주소" : row.workbookAddress ? "엑셀 도착지" : portReference(row) ? `${portReference(row)!.name} 대표 지점 · 실제 반입지 확인 필요` : confirmedSimulationAddress(row.customer, row.location) ? "확인된 업체·지역 주소" : place ? "카카오 업체명 검색 후보 · 실제 납품지 확인 필요" : address ? "등록 주소" : "미확인", addressIssue, lat: point?.lat ?? null, lng: point?.lng ?? null,
         region: simulationRegion(row.location, address), regionalGroup: regionalGroup(row.location, address), packing, pallets: packingPallets(boxes, custom ? custom.boxesPerPallet : family?.boxesPerPallet, packing),
         weight: boxes != null ? (custom ? (custom.boxWeightKg == null ? null : Math.round(boxes * custom.boxWeightKg * 1000) / 1000) : family?.boxWeightG ? Math.round(boxes * family.boxWeightG / 1000) : null) : null };
     });
@@ -222,6 +223,7 @@ export async function POST(request: Request) {
     for (const item of items) if (item.addressIssue) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: ${item.addressIssue}${item.address ? ` (${item.address})` : ""} · 경로 배정 제외`);
     for (const item of items) if (item.addressSource === "담당자 입력 주소" && simulationAddressIssue(item.location, item.address ?? null)) warnings.push(`${item.rowNumber}행 ${item.customer || "거래처 미확인"}: 담당자 입력 주소가 엑셀 지역과 다릅니다. 실제 납품지를 확인하세요.`);
     for (const item of items) if (item.addressSource?.startsWith("카카오")) warnings.push(`${item.rowNumber}행 ${item.customer}: 엑셀 업체명·지역으로 찾은 장소를 사용했습니다. 실제 납품지 확인 필요 (${item.address})`);
+    for (const item of items) if (item.addressSource?.includes("대표 지점")) warnings.push(`${item.rowNumber}행 ${item.customer}: ${item.addressSource} (${item.address}). 실제 반입지에 따라 거리·시간·비용이 달라질 수 있습니다.`);
     if (proposed.some((route) => route.over)) warnings.push("AI 제안이 알려진 차량 적재 한도를 초과합니다. 이 안을 실제 배차에 사용하지 마세요.");
     if ([...original, ...proposed].some((route) => route.items.length > 0 && route.distance == null)) warnings.push("카카오 길찾기에 실패한 차량이 있어 해당 운행 비용을 계산하지 못했습니다.");
     const charterGroups = ai.charterGroups?.map((group) => ({ items: group.map((id) => eligible.find((item) => String(item.rowNumber) === id)!) })) ?? null;

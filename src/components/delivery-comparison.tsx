@@ -318,6 +318,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     });
   }, [addressCheck, addressCheckKey]);
   const differingAddresses = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => item.addressWarning) : [];
+  const portReferences = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => item.addressSource.includes("대표 지점")) : [];
   const unresolvedExternalAddresses = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => !(item.vehicle ?? simulationVehicleName(item.transport)) && (item.addressIssue != null || item.lat == null)) : [];
   async function run(mode: "load" | "regenerate" | "refresh" = "load") {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
@@ -411,11 +412,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     <p className="comparison-note">{priceSource} · 사람 계획은 엑셀 행 순서 · 자사 차량 왕복 · 1·2호차 연비 7.1km/L, 스타리아 11.6km/L(디젤 사양 참고, 실제 연료·사양 확인 필요)</p>
     <p className="comparison-note">같은 조건은 저장된 안을 불러옵니다. 교통 정보만 갱신하려면 경로 새로고침을 누르세요.</p>
     {file && date ? preview?.key !== previewKey ? <p className="comparison-note">선택한 날짜의 품목을 불러오는 중입니다.</p> : preview.error ? <p className="dispatch-route-note-warn">{preview.error}</p> : <details className="simulation-details"><summary>분석 제외 품목 선택 · {excludedRows.length}건 제외</summary><p className="comparison-note">샘플 등 제외할 품목에 체크하세요. 기존 계획과 AI안에서 모두 제외하며 원본 엑셀은 바뀌지 않습니다.</p>{preview.items.map((item) => <label key={item.rowNumber} className="simulation-packing-row"><input type="checkbox" disabled={loading} checked={excludedRows.includes(item.rowNumber)} onChange={(event) => { const next = event.target.checked ? [...excludedRows, item.rowNumber] : excludedRows.filter((row) => row !== item.rowNumber); setExcludedRows(next); setAddressAck(false); setResult(null); setError(""); try { localStorage.setItem(storageKey("simulation-excluded:v1", file, date), JSON.stringify(next)); } catch { /* Storage may be unavailable. */ } }} /> <span>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.location || "지역 미확인"} · {item.product} · {item.transport || "운송 미확인"}</span></label>)}</details> : null}
-    {file && date && preview?.key === previewKey && !preview.error ? addressCheck?.key !== addressCheckKey ? <p className="comparison-note">납품 주소를 확인하는 중입니다.</p> : addressCheck.error ? <p className="dispatch-route-note-warn">{addressCheck.error}</p> : <details className="simulation-details" open={unresolvedOwnAddresses.length > 0 || unresolvedExternalAddresses.length > 0 || differingAddresses.length > 0}>
-      <summary>분석 전 주소 확인 · 자사 미확인 {unresolvedOwnAddresses.length}건 · 외부 운송 미확인 {unresolvedExternalAddresses.length}건{differingAddresses.length ? ` · 입력 주소 지역 확인 ${differingAddresses.length}건` : ""}</summary>
+    {file && date && preview?.key === previewKey && !preview.error ? addressCheck?.key !== addressCheckKey ? <p className="comparison-note">납품 주소를 확인하는 중입니다.</p> : addressCheck.error ? <p className="dispatch-route-note-warn">{addressCheck.error}</p> : <details className="simulation-details" open={unresolvedOwnAddresses.length > 0 || unresolvedExternalAddresses.length > 0 || differingAddresses.length > 0 || portReferences.length > 0}>
+      <summary>분석 전 주소 확인 · 자사 미확인 {unresolvedOwnAddresses.length}건 · 외부 운송 미확인 {unresolvedExternalAddresses.length}건{differingAddresses.length ? ` · 입력 주소 지역 확인 ${differingAddresses.length}건` : ""}{portReferences.length ? ` · 항만 대표 지점 ${portReferences.length}건` : ""}</summary>
       <p className="comparison-note">주소가 확인되지 않은 자사 납품은 경로에서 빠지므로 공정한 비용 비교가 어렵습니다. 확인된 주소를 입력한 뒤 다시 분석하세요. 입력값은 이 브라우저에만 저장됩니다.</p>
       {unresolvedOwnAddresses.length ? <p className="dispatch-route-note-warn">미확인 주소가 있으면 기본으로 분석을 막습니다. 주소를 보완하거나, 아래 확인 후 진행을 선택하세요.</p> : <p className="comparison-note">현재 자사 납품 주소는 경로 계산에 사용할 수 있습니다. 실제 납품지와 일치하는지는 확인하세요.</p>}
       {differingAddresses.length ? <p className="dispatch-route-note-warn">입력 주소가 엑셀 지역과 다른 납품이 있습니다. 엑셀 지역 오류일 수도 있으니 실제 납품지를 확인하세요.</p> : null}
+      {portReferences.length ? <p className="dispatch-route-note-warn">항만 대표 지점은 임시 비교용입니다. 실제 부두·터미널 주소가 있으면 아래에 입력하세요. 반입지에 따라 거리·시간·비용이 달라질 수 있습니다.</p> : null}
       {unresolvedExternalAddresses.length ? <p className="comparison-note">외부 운송 주소가 미확인이면 해당 품목의 자사 차량 전환을 검토할 수 없습니다. 해외 납품 등은 실제 운송 방식을 확인하세요.</p> : null}
       <ul className="simulation-address-list">{addressCheck.items.map((item) => {
         const unresolved = item.addressIssue != null || item.lat == null;

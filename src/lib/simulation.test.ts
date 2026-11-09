@@ -2,12 +2,18 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { appendSimulationNotes, fallbackCharterGroups, parseSimulationAiOrders, replaceRegionalScenario, validateCharterGroups, validateSimulationOrders, type SimulationItem, type SimulationResult } from "./simulation";
 import { groqException, groqHttpError } from "./groq-errors";
-import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue } from "./simulation-address";
+import { confirmedSimulationAddress, correctedSimulationLocation, simulationAddressIssue, simulationPortReference } from "./simulation-address";
 import { uniqueCompanyPlace } from "./simulation-place-match";
 import { buildRegionalFallback, buildRegionalPlan, regionalGroup, regionalScenarioItems, similarCorridor, simulationRegion, validateRegionalCandidate, validateRegionalOrders } from "./simulation-regions";
 
 const item = (id: number, vehicle: SimulationItem["vehicle"], hasLocation = true): SimulationItem => ({ rowNumber: id, date: "2026-10-14", customer: "업체", location: "지역", product: "품목", productCode: "", quantity: 1, boxes: 1, transport: vehicle ?? "용차", vehicle, lat: hasLocation ? 37 : null, lng: hasLocation ? 127 : null, pallets: 1, weight: 100, packing: "pallet" });
 const items = [item(1, "1호차"), item(2, "2호차"), item(3, null), item(4, null, false)];
+test("항만명만 있으면 임시 지점을 제공하고 다른 항만명은 추정하지 않는다", () => {
+  assert.equal(simulationPortReference(" 인천항 ")?.name, "인천항");
+  assert.equal(simulationPortReference("부산항")?.name, "부산항");
+  assert.equal(simulationPortReference("부산 신항"), null);
+  assert.match(simulationAddressIssue("인천항", "부산광역시 동구 충장대로 206") ?? "", /다릅니다/);
+});
 test("AI 응답의 잘못된 차량 형식과 반복 안내를 처리한다", () => {
   assert.equal(parseSimulationAiOrders(null), null);
   assert.equal(parseSimulationAiOrders([null]), null);
