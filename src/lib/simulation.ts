@@ -37,7 +37,8 @@ export function validateSimulationOrders(items: SimulationItem[], orders: { vehi
   if (!Array.isArray(orders) || orders.length !== vehicles.length || new Set(orders.map((o) => o.vehicle)).size !== vehicles.length || orders.some((o) => !vehicles.includes(o.vehicle) || !Array.isArray(o.ids))) return "AI 차량 목록이 올바르지 않습니다.";
   const ids = orders.flatMap((o) => o.ids);
   if (new Set(ids).size !== ids.length || ids.some((id) => !items.some((item) => String(item.rowNumber) === id))) return "AI가 납품을 중복하거나 알 수 없는 품목을 반환했습니다.";
-  if (items.some((item) => item.vehicle && !ids.includes(String(item.rowNumber)))) return "AI가 기존 자사 납품을 누락했습니다.";
+  const missing = items.filter((item) => item.vehicle && !ids.includes(String(item.rowNumber)));
+  if (missing.length) return `AI가 기존 자사 납품을 누락했습니다: ${missing.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(", ")}.`;
   if (ids.some((id) => { const item = items.find((row) => String(row.rowNumber) === id)!; return !item.vehicle && !/용차|택배|경동/.test(item.transport); })) return "운송 방식이 확인되지 않은 품목은 옮길 수 없습니다.";
   if (ids.some((id) => { const item = items.find((row) => String(row.rowNumber) === id)!; return item.lat == null || item.lng == null; })) return "좌표가 없는 납품은 차량 경로에 포함할 수 없습니다.";
   return null;

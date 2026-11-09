@@ -28,11 +28,12 @@ async function propose(items: SimulationItem[], objective: string, vehicles: Sim
   const key = process.env.GROQ_API_KEY?.trim();
   if (!key) return { orders: [], charterGroups: null, note: "Groq 키가 없어 AI 제안을 만들지 못했습니다." };
   const issues: string[] = [];
+  let retryFeedback = "";
   const models = [...new Set([process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-20b", "openai/gpt-oss-120b"])];
   for (const model of models) try {
     const aiResponse = await requestSimulationAi({ groqKey: key, groqModel: model, geminiKey: process.env.GEMINI_API_KEY?.trim(), geminiModel: process.env.GEMINI_MODEL, messages: [
       { role: "system", content: "너는 납품 배차 시뮬레이션 도우미다. 기존 자사 차량 품목은 빠짐없이 자사 차량에 포함하고 외부 용차/택배 품목도 가능한 한 합쳐라. 현장 확인이 필요한 후보를 제안한다. vehicles에 명시된 각 차량의 kg·PLT 한도를 초과하지 마라. 스타리아는 긴급·소량 운행을 우선 고려하고 실제 운행 여부를 확인한다. null은 미확인이지 0이 아니다. 자사 차량으로 보내지 않은 용차 품목은 모두 charterGroups에 넣는다. 각 배열은 한 번의 용차 운행이다. 같은 거래처·지역은 한 운행으로 묶고, 동일 일자·인접 권역이면 다른 거래처도 한 용차에 다중 경유로 묶을 수 있다. 멀거나 다른 권역은 분리한다. 택배는 자사 차량으로 옮기지 않으면 택배로 남긴다. id는 중복 없이 입력에 있는 문자열만 사용한다. 좌표 없는 품목을 자사 차량에 배정하지 마라. orders에는 vehicles에 있는 모든 차량을 각각 반드시 포함한다. 빈 차량이나 용차가 없어도 빈 배열을 사용한다. JSON만 출력한다: {\"orders\":[{\"vehicle\":\"차량명\",\"ids\":[\"행번호\"]}],\"charterGroups\":[[\"행번호\"]]}" },
-      { role: "user", content: JSON.stringify({ objective, depot: DEFAULT_DEPOT, vehicles: vehicles.map(({ name, maxPallet, maxWeight }) => ({ name, maxPallet, maxWeight })), items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
+      { role: "user", content: JSON.stringify({ objective, depot: DEFAULT_DEPOT, vehicles: vehicles.map(({ name, maxPallet, maxWeight }) => ({ name, maxPallet, maxWeight })), requiredOwnItemIds: items.filter((i) => i.vehicle).map((i) => String(i.rowNumber)), ...(retryFeedback ? { previousValidationError: retryFeedback } : {}), items: items.map((i) => ({ id: String(i.rowNumber), customer: i.customer, location: i.location, region: i.region, regionalGroup: i.regionalGroup, transport: i.transport, vehicle: i.vehicle, lat: i.lat, lng: i.lng, pallets: i.pallets, weight: i.weight, packing: i.packing })) }) },
     ] });
     const { response, provider } = aiResponse;
     const diagnostics = formatGeminiAttempts(aiResponse.geminiAttempts ?? []);
@@ -51,7 +52,7 @@ async function propose(items: SimulationItem[], objective: string, vehicles: Sim
     const orders = parseSimulationAiOrders(parsed?.orders);
     if (!orders) { issues.push(`${provider} 차량 배정 응답 형식이 올바르지 않습니다. ${diagnostics}`); if (aiResponse.switched) break; continue; }
     const problem = validateSimulationOrders(items, orders, vehicles.map((vehicle) => vehicle.name));
-    if (problem) { issues.push(`${provider} 후보 검증 실패: ${problem} ${diagnostics}`); if (aiResponse.switched) break; continue; }
+    if (problem) { retryFeedback = `${problem} 모든 requiredOwnItemIds를 orders에 각각 정확히 한 번 포함해 다시 제안하세요.`; issues.push(`${provider} 후보 검증 실패: ${problem} ${diagnostics}`); continue; }
     const groups = Array.isArray(parsed?.charterGroups) ? parsed.charterGroups.map((group: unknown) => Array.isArray(group) ? group.map(String) : group) : null;
     const charterProblem = groups ? validateCharterGroups(items, orders, groups as string[][]) : "AI가 용차 운행 묶음을 제안하지 않았습니다.";
     if (charterProblem) {
@@ -59,7 +60,7 @@ async function propose(items: SimulationItem[], objective: string, vehicles: Sim
       if (!validateCharterGroups(items, orders, fallback)) return { orders, charterGroups: fallback, model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 차량 배정 · AI 용차 묶음 검증 실패(${charterProblem})로 같은 거래처·지역 기준 묶음을 사용했습니다. 실제 운행 확인 필요. ${diagnostics}` };
     }
     if (charterProblem) { issues.push(`후보 검증 실패: ${charterProblem} ${diagnostics}`); continue; }
-    return { orders, charterGroups: groups as string[][], model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 제안 · 용차 묶음과 적재량·납품 기한 확인이 필요합니다. ${diagnostics}` };
+    return { orders, charterGroups: groups as string[][], model: `${provider} · ${aiResponse.model}`, note: `${aiResponse.switched ? "Groq 한도 초과 → Gemini 전환 · " : ""}${provider} 제안${retryFeedback ? " · 이전 후보의 품목 누락 등 검증 실패를 알려 재요청 후 검증" : ""} · 용차 묶음과 적재량·납품 기한 확인이 필요합니다. ${diagnostics}` };
   } catch (error) { if (error instanceof GeminiFallbackError) { issues.push(error.message); break; } issues.push(groqException(error)); }
   return { orders: [], charterGroups: null, note: [...new Set(issues)].join(" / ") || "Groq 응답을 확인할 수 없습니다." };
 }
@@ -194,7 +195,7 @@ export async function POST(request: Request) {
       const unique = new Map<string, ProposedPlan>();
       for (const plan of attempts) if (plan.charterGroups) unique.set(JSON.stringify({ orders: plan.orders, groups: plan.charterGroups }), plan);
       const plans = [...unique.values()];
-      if (!plans.length) return NextResponse.json({ error: attempts.find((attempt) => attempt.note)?.note ?? "유효한 AI 배차안을 만들지 못했습니다. 저장된 결과는 유지됩니다." }, { status: 502 });
+      if (!plans.length) return NextResponse.json({ error: [...new Set(attempts.map((attempt) => attempt.note).filter(Boolean))].join(" / ") || "유효한 AI 배차안을 만들지 못했습니다. 저장된 결과는 유지됩니다." }, { status: 502 });
       stage = "route";
       const [originalRoutes, candidates] = await Promise.all([
         Promise.all(originals.map((order) => calculate(order, eligible, price, vehicles))),

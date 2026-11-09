@@ -21,13 +21,18 @@ test("가상 일정으로 스타리아 배차·경로·비용을 계산하고 �
   process.env.GROQ_API_KEY = "가상테스트키";
   process.env.KAKAO_REST_API_KEY = "가상테스트키";
   let stariaRequests = 0;
+  let testMissingRetry = false;
+  let retryPromptCount = 0;
   globalThis.fetch = async (input, init) => {
     const url = String(input);
     if (url.includes("api.groq.com")) {
       const body = JSON.parse(String(init?.body));
       const user = JSON.parse(body.messages.find((message: { role: string }) => message.role === "user").content);
       assert.ok(user.vehicles.some((vehicle: { name: string; maxPallet: number }) => vehicle.name === "스타리아" && vehicle.maxPallet === 1));
+      assert.deepEqual(user.requiredOwnItemIds, ["2", "3", "4"]);
       stariaRequests++;
+      if (testMissingRetry && !user.previousValidationError) return Response.json({ choices: [{ message: { content: JSON.stringify({ orders: [{ vehicle: "1호차", ids: ["2"] }, { vehicle: "2호차", ids: [] }, { vehicle: "스타리아", ids: ["4"] }], charterGroups: [] }) } }] });
+      if (testMissingRetry) { assert.match(user.previousValidationError, /3행/); retryPromptCount++; }
       return Response.json({ choices: [{ message: { content: JSON.stringify({ orders: [{ vehicle: "1호차", ids: ["2"] }, { vehicle: "2호차", ids: ["3"] }, { vehicle: "스타리아", ids: ["4"] }], charterGroups: [] }) } }] });
     }
     if (url.includes("apis-navi.kakaomobility.com")) return Response.json({ routes: [{ result_code: 0, summary: { distance: 71000, duration: 1800, fare: { toll: 1000 } }, sections: [{ roads: [{ vertexes: [127.1, 37.4, 127.2, 37.5] }] }] }] });
@@ -88,6 +93,13 @@ test("가상 일정으로 스타리아 배차·경로·비용을 계산하고 �
     const manualPort = await (await POST(portRequest({ "2": "인천광역시 연수구 국제항만대로 438" }))).json();
     assert.equal(manualPort.items[0].addressSource, "담당자 입력 주소");
     assert.equal(manualPort.items[0].address, "인천광역시 연수구 국제항만대로 438");
+    testMissingRetry = true;
+    const retried = await POST(request());
+    const retriedResult = await retried.json();
+    assert.equal(retried.status, 200, JSON.stringify(retriedResult));
+    assert.equal(retryPromptCount, 3);
+    assert.match(retriedResult.note, /재요청 후 검증/);
+    testMissingRetry = false;
     staria = null;
     const missing = await POST(request());
     assert.equal(missing.status, 422);
