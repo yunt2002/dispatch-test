@@ -10,7 +10,7 @@ export function ExcelImportForm({ excelCount }: { excelCount: number }) {
       onSubmit={(event) => {
         if (excelCount <= 0) return;
         const ok = confirm(
-          `엑셀에서 가져온 일정 ${excelCount}건이 이 파일로 교체됩니다.\n홈에서 직접 등록한 일정은 그대로 남습니다.`,
+          `엑셀에서 가져온 모든 날짜의 일정 ${excelCount}건이 선택한 시트의 내용으로 교체됩니다.\n새 시트에 없는 날짜의 엑셀 일정도 삭제됩니다. 홈에서 직접 등록한 일정은 그대로 남습니다.`,
         );
         if (!ok) event.preventDefault();
       }}

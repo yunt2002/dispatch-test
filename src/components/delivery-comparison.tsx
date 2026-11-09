@@ -19,6 +19,7 @@ import {
   syncOriginalCharterTrips,
   tripLabel,
   tripsFromCharterGroups,
+  unpricedTransportItems,
   type CharterLeg,
   type CharterTrip,
 } from "@/lib/simulation-cost";
@@ -349,6 +350,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const proposedCourierCost = proposedCourier ? courierTotal(proposedCourier, courierChoices) : null;
   const comparableCourier = comparableCourierCosts(originalCourierCost, proposedCourierCost);
   const courierCostsComplete = comparableCourier.included;
+  const unpricedTransport = result ? unpricedTransportItems(result.items) : [];
   const availableRows = new Set(result?.items.map((item) => item.rowNumber) ?? []);
   const originalExtras = extraTrips.original.filter((trip) => trip.rowNumbers.every((row) => availableRows.has(row)));
   const proposedExtras = extraTrips.proposed.filter((trip) => trip.rowNumbers.every((row) => availableRows.has(row)));
@@ -452,6 +454,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         {proposedGroupingEdited ? <p className="dispatch-route-note-warn"><strong>AI 제안의 용차 묶음을 사용자가 직접 변경했습니다. AI 제안 비용은 수정된 운행 기준이며 실제 경유·운임 확인이 필요합니다.</strong></p> : null}
         {originalExtras.length || proposedExtras.length ? <p className="dispatch-route-note-warn">추가 용차는 운송 배정을 바꾸지 않고 비용에만 반영됩니다. 기존 운행과 중복되지 않는지 확인하세요.</p> : null}
         {!courierCostsComplete ? <p className="dispatch-route-note-warn"><strong>택배 출고 방식 또는 수량이 미확인이라 양쪽 비용에서 택배비 전체를 제외했습니다. 전체 배송비나 실제 절감액으로 판단하지 마세요.</strong></p> : null}
+        {unpricedTransport.length ? <p className="dispatch-route-note-warn"><strong>운송 방식 미확인 또는 기타 운송 {unpricedTransport.length}품목의 비용이 양쪽에서 빠져 있습니다.</strong> {unpricedTransport.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(" · ")}의 운송 방식과 비용을 확인하세요.</p> : null}
         <div className="simulation-charts">
           {comparison && baseVehicleCost != null && originalCharterCost != null && proposedCharterCost != null && cost(result.proposed) != null ? <ComparisonBars title={courierCostsComplete ? "예상 비용" : "예상 비용 (택배비 제외)"} original={comparison.original} proposed={comparison.proposed} format={money} isCost costParts={{
             original: { vehicle: baseVehicleCost, charter: originalCharterCost, courier: courierCostsComplete ? originalCourierCost : null },

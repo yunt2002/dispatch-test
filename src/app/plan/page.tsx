@@ -33,8 +33,7 @@ export default async function PlanUploadPage({
       </Alert>
       {excelCount > 0 ? (
         <Alert variant="warn" title="다시 가져오면 엑셀 일정이 교체됩니다">
-          지금 엑셀에서 온 일정 {excelCount}건이 이 파일 내용으로 바뀝니다. 홈에서 직접 등록한
-          일정은 남습니다.
+          모든 날짜의 기존 엑셀 일정 {excelCount}건이 선택한 시트의 내용으로 교체됩니다. 새 시트에 없는 날짜의 엑셀 일정도 삭제됩니다. 홈에서 직접 등록한 일정은 남습니다.
         </Alert>
       ) : null}
 

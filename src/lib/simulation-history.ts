@@ -1,5 +1,5 @@
 import type { SimulationResult, SimulationRoute } from "./simulation";
-import { charterGroupsSignature, hasComparableRoutes, estimatedTripsCost, type CharterTrip } from "./simulation-cost";
+import { charterGroupsSignature, hasComparableRoutes, estimatedTripsCost, unpricedTransportItems, type CharterTrip } from "./simulation-cost";
 import { courierTotal, type CourierChoice } from "./simulation-courier";
 import { simulationTimeTotals } from "./simulation-time";
 
@@ -118,6 +118,7 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   const warnings: string[] = [];
   if (result.items.some((item) => /스타리아/.test(item.transport) && item.vehicle !== "스타리아")) warnings.push("스타리아가 반영되지 않은 이전 분석 기록");
   if (!courierIncluded) warnings.push("택배비 미확인: 양쪽 비용에서 택배비 제외");
+  if (unpricedTransportItems(result.items).length) warnings.push("운송 방식 미확인 또는 기타 운송 비용 제외: 운송 방식과 비용 확인 필요");
   if (!complete) warnings.push("차량 경로 또는 납품 누락 확인 필요");
   if (snapshot.originalTrips.some((trip) => trip.excluded)) warnings.push("기존 용차 비용 제외: 동일 조건 비교 아님");
   if (snapshot.proposedTrips.some((trip) => trip.excluded)) warnings.push("AI 용차 비용 제외: 동일 조건 비교 확인 필요");
@@ -129,6 +130,13 @@ export function historyMetrics(snapshot: SimulationHistorySnapshot): HistoryMetr
   if (/용차 묶음 검증 실패|규칙 기반 대체/.test(result.note)) warnings.push("AI 용차 묶음 대체안 확인 필요");
   if (!result.candidateCountVerified) warnings.push("AI 후보 검증 기록 확인 필요");
   return { originalCost, proposedCost, courierIncluded, originalMinutes: complete ? simulationTimeTotals(result.original)?.total ?? null : null, proposedMinutes: complete ? simulationTimeTotals(result.proposed)?.total ?? null : null, originalCharters: snapshot.originalTrips.filter((trip) => !trip.excluded).length + snapshot.originalExtras.length, proposedCharters: snapshot.proposedTrips.filter((trip) => !trip.excluded).length + snapshot.proposedExtras.length, comparable: complete && originalCost != null && proposedCost != null && courierIncluded && warnings.length === 0, aiAdjusted, warnings };
+}
+
+/** 예전 기록의 금액은 유지하면서 누락된 외부 운송에 대한 경고만 보완한다. */
+export function markUnpricedTransportRecord(record: SimulationHistoryRecord): SimulationHistoryRecord {
+  if (!unpricedTransportItems(record.snapshot.result.items).length) return record;
+  const warning = "운송 방식 미확인 또는 기타 운송 비용 제외: 운송 방식과 비용 확인 필요";
+  return { ...record, metrics: { ...record.metrics, comparable: false, warnings: [...new Set([...(record.metrics.warnings ?? []), warning])] } };
 }
 
 /** 과거 저장된 금액은 다시 계산하지 않고 스타리아 누락만 경고해 합계에서 제외한다. */

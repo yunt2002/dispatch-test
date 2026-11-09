@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { defaultFieldReview, defaultWorkReview, historyMetrics, markLegacyStariaRecord, validFieldReview, validHistorySnapshot, validWorkReview, type SimulationHistoryRecord } from "@/lib/simulation-history";
+import { defaultFieldReview, defaultWorkReview, historyMetrics, markLegacyStariaRecord, markUnpricedTransportRecord, validFieldReview, validHistorySnapshot, validWorkReview, type SimulationHistoryRecord } from "@/lib/simulation-history";
 
 const PREFIX = "simulation_history:v1:";
 const SELECTION = "simulation_history_selection:v1:";
@@ -18,24 +18,27 @@ export async function GET(request: Request) {
       if (!entry) return NextResponse.json({ error: "분석 기록을 찾을 수 없습니다." }, { status: 404 });
       const record = JSON.parse(entry.value) as SimulationHistoryRecord;
       if (!validHistorySnapshot(record.snapshot)) return NextResponse.json({ error: "저장된 기록을 읽을 수 없습니다." }, { status: 422 });
-      return NextResponse.json(markLegacyStariaRecord(record));
+      return NextResponse.json(markUnpricedTransportRecord(markLegacyStariaRecord(record)));
     }
     const before = params.get("before");
     if (before && !keyPattern.test(before)) return NextResponse.json({ error: "이전 기록 번호가 올바르지 않습니다." }, { status: 400 });
     const [entries, selections] = await Promise.all([
-      prisma.appSetting.findMany({ where: { key: { startsWith: PREFIX, ...(before ? { lt: before } : {}) } }, orderBy: { key: "desc" }, take: 101 }),
+      prisma.appSetting.findMany({ where: { key: { startsWith: PREFIX } } }),
       prisma.appSetting.findMany({ where: { key: { startsWith: SELECTION } } }),
     ]);
     const selected = Object.fromEntries(selections.map((entry) => [entry.key.slice(SELECTION.length), entry.value]));
-    const records = entries.slice(0, 100).flatMap((entry) => {
+    const sorted = entries.flatMap((entry) => {
       try {
         const record = JSON.parse(entry.value) as SimulationHistoryRecord;
         if (!validHistorySnapshot(record.snapshot)) return [];
-        const { snapshot, metrics, savedAt } = markLegacyStariaRecord(record);
+        const { snapshot, metrics, savedAt } = markUnpricedTransportRecord(markLegacyStariaRecord(record));
         return [{ id: entry.key, date: snapshot.date, fileName: snapshot.fileName, savedAt, review: snapshot.review, fieldReview: snapshot.fieldReview ?? defaultFieldReview, workReview: snapshot.workReview ?? defaultWorkReview, planSource: snapshot.result.planSource ?? "미확인", metrics }];
       } catch { return []; }
-    }).sort((a, b) => b.date.localeCompare(a.date) || b.savedAt.localeCompare(a.savedAt));
-    return NextResponse.json({ records, selected, nextCursor: entries.length > 100 ? entries[99].key : null });
+    }).sort((a, b) => b.date.localeCompare(a.date) || b.savedAt.localeCompare(a.savedAt) || b.id.localeCompare(a.id));
+    const cursorIndex = before ? sorted.findIndex((record) => record.id === before) : -1;
+    if (before && cursorIndex < 0) return NextResponse.json({ error: "기록이 변경되었습니다. 새로고침 후 다시 확인하세요." }, { status: 409 });
+    const records = sorted.slice(cursorIndex + 1, cursorIndex + 101);
+    return NextResponse.json({ records, selected, nextCursor: cursorIndex + 1 + records.length < sorted.length ? records[records.length - 1].id : null });
   } catch { return NextResponse.json({ error: "분석 기록을 불러오지 못했습니다." }, { status: 500 }); }
 }
 

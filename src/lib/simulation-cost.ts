@@ -5,6 +5,10 @@ export function estimateCharterTrips(items: { rowNumber: number; customer: strin
 }
 
 type Destination = { rowNumber: number; customer: string; location: string };
+/** 계산 방식이 분류되지 않은 외부 운송은 비용에 포함되지 않는다. */
+export function unpricedTransportItems<T extends { vehicle: string | null; transport: string }>(items: T[]): T[] {
+  return items.filter((item) => !item.vehicle && !/용차|택배|경동/.test(item.transport));
+}
 export function charterDestinationKey(item: Destination): string {
   return item.customer.trim() ? JSON.stringify([item.customer.trim().replace(/\s+/g, " "), item.location.trim().replace(/\s+/g, " ")]) : `row:${item.rowNumber}`;
 }

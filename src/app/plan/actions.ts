@@ -115,7 +115,6 @@ export async function uploadPlanExcel(formData: FormData) {
           },
           update: {
             customerName: row.customerName,
-            address: row.location || undefined,
           },
           select: { id: true },
         });

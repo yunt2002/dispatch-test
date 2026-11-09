@@ -59,12 +59,17 @@ test("분석 기록을 별도로 누적하고 날짜당 한 건을 선택한다"
   assert.equal(withWorkList.records.find((entry: { id: string }) => entry.id === one.id).workReview.aiReviewMinutes, 12);
   assert.equal((await post({ action: "select", date: "2026-10-14", id: one.id })).status, 400);
   for (let i = 0; i < 100; i++) assert.equal((await post({ action: "save", snapshot })).status, 200);
+  // UUID의 사전순과 저장 시각을 반대 순서로 만들어 페이지 경계 정렬을 확인한다.
+  const keys = [...values.keys()].filter((key) => key.startsWith("simulation_history:v1:")).sort();
+  keys.forEach((key, index) => { const entry = JSON.parse(values.get(key)!); entry.savedAt = new Date(Date.UTC(2026, 9, 15, 0, 0, keys.length - index)).toISOString(); values.set(key, JSON.stringify(entry)); });
   const page = await (await GET(new Request("http://localhost/api/simulation/history"))).json();
   assert.equal(page.records.length, 100);
+  assert.equal(page.records[0].id, keys[0]);
   assert.ok(page.nextCursor);
   const older = await (await GET(new Request(`http://localhost/api/simulation/history?before=${encodeURIComponent(page.nextCursor)}`))).json();
   assert.equal(older.records.length, 2);
   assert.equal(older.nextCursor, null);
+  assert.equal(older.records[1].id, keys[keys.length - 1]);
   assert.equal(new Set([...page.records, ...older.records].map((entry: { id: string }) => entry.id)).size, 102);
   const remove = (body: unknown) => DELETE(new Request("http://localhost/api/simulation/history", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
   values.set("unrelated-setting", "keep");

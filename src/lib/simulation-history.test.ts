@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { comparisonDistribution, defaultWorkReview, historyMetrics, markLegacyStariaRecord, summarizeWorkReviews, validHistorySnapshot, validWorkReview, type SimulationHistorySnapshot } from "./simulation-history";
+import { comparisonDistribution, defaultWorkReview, historyMetrics, markLegacyStariaRecord, markUnpricedTransportRecord, summarizeWorkReviews, validHistorySnapshot, validWorkReview, type SimulationHistorySnapshot } from "./simulation-history";
 import type { SimulationItem, SimulationResult, SimulationRoute } from "./simulation";
 
 function fixture(): SimulationHistorySnapshot {
@@ -37,6 +37,20 @@ test("택배 미확인 또는 임의 용차는 합계 적격 기록으로 표시
   snapshot.originalExtras = [];
   snapshot.proposedExtras = [{ id: "extra:2", leg: "one_way", rowNumbers: [1], fare: "300000" }];
   assert.equal(historyMetrics(snapshot).aiAdjusted, true);
+});
+
+test("운송 방식 미확인 품목은 새 기록과 과거 기록 모두 비교 요약에서 제외한다", () => {
+  const snapshot = fixture();
+  const unknown = { ...snapshot.result.items[1], rowNumber: 3, customer: "고려전자", transport: "" };
+  snapshot.result.items.push(unknown);
+  snapshot.result.remaining.push(unknown);
+  const metrics = historyMetrics(snapshot);
+  assert.equal(metrics.comparable, false);
+  assert.ok(metrics.warnings.some((warning) => warning.includes("운송 방식 미확인")));
+  const legacy = markUnpricedTransportRecord({ id: "old", savedAt: "2026-11-09T00:00:00Z", snapshot, metrics: { ...metrics, comparable: true, warnings: [] } });
+  assert.equal(legacy.metrics.comparable, false);
+  assert.equal(legacy.metrics.originalCost, metrics.originalCost);
+  assert.ok(legacy.metrics.warnings.some((warning) => warning.includes("운송 방식 미확인")));
 });
 
 test("AI 용차 비용 제외는 저장 금액과 횟수에 반영하고 비교 요약에서 제외한다", () => {
