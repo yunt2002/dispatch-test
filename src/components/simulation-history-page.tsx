@@ -7,6 +7,7 @@ import type { SimulationItem, SimulationRoute } from "@/lib/simulation";
 import { courierCost } from "@/lib/simulation-courier";
 import { tripLabel, type CharterTrip } from "@/lib/simulation-cost";
 import { simulationTime } from "@/lib/simulation-time";
+import { SimulationPeriodReport } from "@/components/simulation-period-report";
 
 type Summary = { id: string; date: string; fileName: string; savedAt: string; review: HistoryReview; fieldReview: FieldReview; workReview: WorkReview; planSource: string; metrics: HistoryMetrics };
 type Listing = { records: Summary[]; selected: Record<string, string>; nextCursor: string | null };
@@ -51,6 +52,7 @@ export function SimulationHistoryPage() {
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [reportRevision, setReportRevision] = useState(0);
   const [detail, setDetail] = useState<SimulationHistoryRecord | null>(null);
   const [deleteIds, setDeleteIds] = useState<string[]>([]);
   const [fieldEdit, setFieldEdit] = useState<{ id: string; review: FieldReview } | null>(null);
@@ -90,6 +92,7 @@ export function SimulationHistoryPage() {
       setListing((current) => current ? { ...current, records: current.records.map((record) => record.id === fieldEdit.id ? { ...record, fieldReview: data.fieldReview } : record) } : current);
       setDetail((current) => current?.id === fieldEdit.id ? { ...current, snapshot: { ...current.snapshot, fieldReview: data.fieldReview } } : current);
       setFieldEdit(null);
+      setReportRevision((current) => current + 1);
     } catch (err) { setError(err instanceof Error ? err.message : "현장 검토를 저장하지 못했습니다."); } finally { setBusy(false); }
   }
   async function saveWorkReview() {
@@ -103,6 +106,7 @@ export function SimulationHistoryPage() {
       setListing((current) => current ? { ...current, records: current.records.map((record) => record.id === workEdit.id ? { ...record, workReview: data.workReview } : record) } : current);
       setDetail((current) => current?.id === workEdit.id ? { ...current, snapshot: { ...current.snapshot, workReview: data.workReview } } : current);
       setWorkEdit(null);
+      setReportRevision((current) => current + 1);
     } catch (err) { setError(err instanceof Error ? err.message : "작업 기록을 저장하지 못했습니다."); } finally { setBusy(false); }
   }
   async function removeRecords(all: boolean) {
@@ -116,6 +120,7 @@ export function SimulationHistoryPage() {
       if (!response.ok) throw new Error(data.error || "분석 기록을 삭제하지 못했습니다.");
       setListing((current) => current ? all ? { records: [], selected: {}, nextCursor: null } : { ...current, records: current.records.filter((record) => !deleteIds.includes(record.id)), selected: Object.fromEntries(Object.entries(current.selected).filter(([, id]) => !deleteIds.includes(id))) } : current);
       setDeleteIds([]); setDetail(null); setFieldEdit(null); setWorkEdit(null);
+      setReportRevision((current) => current + 1);
       const refreshed = await fetch("/api/simulation/history", { cache: "no-store" });
       const next = await refreshed.json();
       if (!refreshed.ok) throw new Error(next.error || "기록을 다시 불러오지 못했습니다.");
@@ -131,6 +136,7 @@ export function SimulationHistoryPage() {
   const proposed = verified.reduce((sum, record) => sum + (record.metrics.proposedCost ?? 0), 0);
   const maximum = Math.max(1, ...selected.flatMap((record) => [record.metrics.originalCost ?? 0, record.metrics.proposedCost ?? 0]));
   return <div className="dispatch-page"><section className="comparison-section"><h1>AI 배차 분석 기록</h1><p>날짜마다 비교에 사용할 기록을 하나씩 선택하세요. 저장한 결과는 실제 운행 실적이 아닌 시뮬레이션입니다.</p><p><Link className="dispatch-secondary-button" href="/simulation">시뮬레이션으로</Link></p>
+    <SimulationPeriodReport revision={reportRevision} />
     {error ? <p className="dispatch-route-note-warn" role="alert">{error}</p> : null}
     {!listing && !error ? <p>분석 기록을 불러오는 중입니다.</p> : null}
     {listing?.nextCursor ? <p className="dispatch-route-note-warn">이전 기록이 더 있습니다. 전체 기록을 불러올 때까지 총합은 표시하지 않습니다.</p> : null}

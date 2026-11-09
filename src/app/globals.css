@@ -2363,6 +2363,25 @@ body {
 }
 .simulation-chart-bar { height: 100%; border-radius: inherit; background: #8e999c; }
 .simulation-chart-bar-ai { background: #ed6b3d; }
+
+.period-report { margin: 20px 0 28px; padding: 18px; border: 1px solid #dfd3c2; border-radius: 10px; background: #fcf8f1; }
+.period-report-heading, .period-day-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.period-report-heading h2, .period-day-heading h3 { margin: 0; }
+.period-summary { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px; margin-top: 12px; border-radius: 8px; background: #f1ede6; }
+.period-days { display: grid; gap: 12px; }
+.period-day { padding: 16px; border: 1px solid #e5d9c7; border-radius: 8px; background: white; break-inside: avoid; }
+.period-day select { max-width: 100%; }
+.period-detail { padding: 8px 0; font-size: 13px; }
+.period-detail ul { margin: 4px 0 10px 20px; }
+.period-print-only { display: none; }
+@media print {
+  body:has(.period-report) * { visibility: hidden; }
+  body:has(.period-report) .period-report, body:has(.period-report) .period-report * { visibility: visible; }
+  body:has(.period-report) .period-report { position: absolute; top: 0; left: 0; width: 100%; margin: 0; padding: 0; border: 0; background: white; }
+  body:has(.period-report) .period-no-print { display: none !important; }
+  body:has(.period-report) .period-print-only { display: block; }
+  body:has(.period-report) .simulation-chart-bar, body:has(.period-report) .simulation-chart-track { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
 .regional-vehicle-charts { margin: 20px 0; padding-top: 16px; border-top: 1px solid #e5d9c7; }
 .regional-vehicle-charts > h4 { margin: 0; font-size: 16px; }
 .regional-vehicle-bar { height: 100%; border-radius: inherit; background: #286895; }
