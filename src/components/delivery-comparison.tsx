@@ -168,10 +168,11 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const [addressOverrides, setAddressOverrides] = useState<Record<string, string>>({});
   const [addressDraft, setAddressDraft] = useState<Record<string, string>>({});
   const [addressAck, setAddressAck] = useState(false);
+  const [addressRetry, setAddressRetry] = useState(0);
   const [addressCheck, setAddressCheck] = useState<{ key: string; items: AddressCheckItem[]; error?: string } | null>(null);
   const [preview, setPreview] = useState<{ key: string; items: { rowNumber: number; customer: string; product: string; location: string; transport: string }[]; error?: string } | null>(null);
   const previewKey = file && date ? storageKey("simulation-preview", file, date) : "";
-  const addressCheckKey = file && date ? `${storageKey("simulation-addresses", file, date)}:${excludedRows.join(",")}:${JSON.stringify(addressOverrides)}` : "";
+  const addressCheckKey = file && date ? `${storageKey("simulation-addresses", file, date)}:${excludedRows.join(",")}:${JSON.stringify(addressOverrides)}:${addressRetry}` : "";
   useEffect(() => {
     if (!file || !date) return;
     const controller = new AbortController();
@@ -324,6 +325,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   async function run(mode: "load" | "regenerate" | "refresh" = "load") {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
     if (!date) { setError("납품일을 선택해 주세요."); return; }
+    if (mode !== "refresh" && (addressCheck?.key !== addressCheckKey || addressCheck.error)) { setError("납품 주소 확인을 완료한 뒤 다시 진행하세요."); return; }
     if (mode !== "refresh" && unresolvedOwnAddresses.length && !addressAck) {
       setError("자사 납품 주소 미확인 건을 먼저 확인하거나, 아래 안내에서 확인 후 분석을 진행하세요.");
       return;
@@ -409,12 +411,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { const selected = e.target.files?.[0] ?? null; setFile(selected); setResult(null); restorePreferences(selected, date); setPackingDirty(false); }} /></label>
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { const value = e.target.value; setPrice(value); setPriceSource("직접 입력한 경유 가격 · 수정 가능"); setResult(null); savePreferences(file, date, { packing, price: value }); }} placeholder="직접 입력" /></label>
-      <button type="button" className="dispatch-secondary-button" disabled={loading || (!!file && (!!date && (preview?.key !== previewKey || !!preview.error || addressCheck?.key !== addressCheckKey)))} onClick={() => void run("load")}>{loading ? "처리 중…" : "배차안 불러오기 / 만들기"}</button>
+      <button type="button" className="dispatch-secondary-button" disabled={loading || (!!file && (!!date && (preview?.key !== previewKey || !!preview.error || addressCheck?.key !== addressCheckKey || !!addressCheck?.error)))} onClick={() => void run("load")}>{loading ? "처리 중…" : "배차안 불러오기 / 만들기"}</button>
       {result ? <><button type="button" className="dispatch-secondary-button" disabled={loading || packingDirty} onClick={() => void run("refresh")}>현재 안의 경로 새로고침</button><button type="button" className="dispatch-secondary-button" disabled={loading || (unresolvedOwnAddresses.length > 0 && !addressAck)} onClick={() => void run("regenerate")}>AI 배차안 다시 만들기</button></> : null}</div>
     <p className="comparison-note">{priceSource} · 사람 계획은 엑셀 행 순서 · 자사 차량 왕복 · 1·2호차 연비 7.1km/L, 스타리아 11.6km/L(디젤 사양 참고, 실제 연료·사양 확인 필요)</p>
     <p className="comparison-note">같은 조건은 저장된 안을 불러옵니다. 교통 정보만 갱신하려면 경로 새로고침을 누르세요.</p>
     {file && date ? preview?.key !== previewKey ? <p className="comparison-note">선택한 날짜의 품목을 불러오는 중입니다.</p> : preview.error ? <p className="dispatch-route-note-warn">{preview.error}</p> : <details className="simulation-details"><summary>분석 제외 품목 선택 · {excludedRows.length}건 제외</summary><p className="comparison-note">샘플 등 제외할 품목에 체크하세요. 기존 계획과 AI안에서 모두 제외하며 원본 엑셀은 바뀌지 않습니다.</p>{preview.items.map((item) => <label key={item.rowNumber} className="simulation-packing-row"><input type="checkbox" disabled={loading} checked={excludedRows.includes(item.rowNumber)} onChange={(event) => { const next = event.target.checked ? [...excludedRows, item.rowNumber] : excludedRows.filter((row) => row !== item.rowNumber); setExcludedRows(next); setAddressAck(false); setResult(null); setError(""); try { localStorage.setItem(storageKey("simulation-excluded:v1", file, date), JSON.stringify(next)); } catch { /* Storage may be unavailable. */ } }} /> <span>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.location || "지역 미확인"} · {item.product} · {item.transport || "운송 미확인"}</span></label>)}</details> : null}
-    {file && date && preview?.key === previewKey && !preview.error ? addressCheck?.key !== addressCheckKey ? <p className="comparison-note">납품 주소를 확인하는 중입니다.</p> : addressCheck.error ? <p className="dispatch-route-note-warn">{addressCheck.error}</p> : <details className="simulation-details" open={unresolvedOwnAddresses.length > 0 || unresolvedExternalAddresses.length > 0 || differingAddresses.length > 0 || portReferences.length > 0}>
+    {file && date && preview?.key === previewKey && !preview.error ? addressCheck?.key !== addressCheckKey ? <p className="comparison-note">납품 주소를 확인하는 중입니다.</p> : addressCheck.error ? <div><p className="dispatch-route-note-warn">{addressCheck.error}</p><button type="button" className="dispatch-secondary-button" disabled={loading} onClick={() => setAddressRetry((current) => current + 1)}>주소 확인 다시 시도</button></div> : <details className="simulation-details" open={unresolvedOwnAddresses.length > 0 || unresolvedExternalAddresses.length > 0 || differingAddresses.length > 0 || portReferences.length > 0}>
       <summary>분석 전 주소 확인 · 자사 미확인 {unresolvedOwnAddresses.length}건 · 외부 운송 미확인 {unresolvedExternalAddresses.length}건{differingAddresses.length ? ` · 입력 주소 지역 확인 ${differingAddresses.length}건` : ""}{portReferences.length ? ` · 항만 대표 지점 ${portReferences.length}건` : ""}</summary>
       <p className="comparison-note">주소가 확인되지 않은 자사 납품은 경로에서 빠지므로 공정한 비용 비교가 어렵습니다. 확인된 주소를 입력한 뒤 다시 분석하세요. 입력값은 이 브라우저에만 저장됩니다.</p>
       {unresolvedOwnAddresses.length ? <p className="dispatch-route-note-warn">미확인 주소가 있으면 기본으로 분석을 막습니다. 주소를 보완하거나, 아래 확인 후 진행을 선택하세요.</p> : <p className="comparison-note">현재 자사 납품 주소는 경로 계산에 사용할 수 있습니다. 실제 납품지와 일치하는지는 확인하세요.</p>}
