@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
+import { simulationChanges } from "@/lib/simulation-changes";
 import { isPackingMode } from "@/lib/simulation-packing";
 import { simulationTime, simulationTimeTotals } from "@/lib/simulation-time";
 import { comparableCourierCosts, courierCost, courierTotal, type CourierChoice } from "@/lib/simulation-courier";
@@ -379,6 +380,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     return { original, proposed, saving: original - proposed };
   };
   const comparison = result ? compare(cost(result.proposed), proposedCharterCost) : null;
+  const changes = result ? simulationChanges(result) : null;
   const originalTime = result ? simulationTimeTotals(result.original) : null;
   const proposedTime = result ? simulationTimeTotals(result.proposed) : null;
   const baseTrips = activeOriginalTrips;
@@ -446,6 +448,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       {packingDirty ? <p className="dispatch-route-note-warn">적재 방식을 변경했습니다. 아래는 이전 결과입니다. 배차안을 불러오거나 다시 만드세요.</p> : null}
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>배차 결과 비교</h3>
+        {changes ? <section className="simulation-run-info" aria-label="기존 계획 대비 변경점"><h4>기존 계획 대비 변경점</h4>
+          <p className="comparison-note">AI 원안의 품목 배정과 방문 순서 기준입니다. 용차 운임·묶음의 수동 조정은 반영하지 않습니다.</p>
+          {changes.groups.length ? <ul>{changes.groups.map((group) => <li key={JSON.stringify([group.from, group.to])}><strong>{group.from} → {group.to} · {group.items.length}품목</strong><ul>{group.items.map((item) => <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.product}</li>)}</ul></li>)}</ul> : <p>확인된 품목의 차량·운송 배정 변경 없음</p>}
+          <p>기존 차량에 남은 품목 간 방문 순서: {changes.orderChanges.length ? `${changes.orderChanges.join(", ")} 변경` : "변경 없음"}</p>
+          {changes.unknown.length ? <p className="dispatch-route-note-warn">경로에서 누락된 자사 납품 {changes.unknown.length}품목은 배정 변경 비교에서 제외했습니다: {changes.unknown.map((item) => `${item.rowNumber}행 ${item.customer || "거래처 미확인"}`).join(" · ")}</p> : null}
+        </section> : null}
         {!result.candidateCountVerified && result.candidateCount != null ? <p className="dispatch-route-note-warn">저장된 결과의 후보 수 확인이 필요합니다. 분석 리포트를 확인하세요.</p> : null}
         {/실패|오류|한도 초과|시간 초과/.test(`${result.note} ${result.comparisonNote ?? ""}`) ? <p className="dispatch-route-note-warn">AI 분석 과정에 확인 사항이 있습니다. 분석 리포트를 확인하세요.</p> : null}
         {planHasOverLimit(result.proposed) ? <p className="dispatch-route-note-warn"><strong>AI 안은 알려진 적재 한도 초과로 운행 가능으로 보지 않습니다. 아래 금액은 참고용입니다.</strong></p> : null}
