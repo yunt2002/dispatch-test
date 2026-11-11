@@ -386,6 +386,23 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const baseTrips = activeOriginalTrips;
   const baseVehicleCost = result && complete && !packingDirty ? cost(result.original) : null;
   const costIssues = result ? simulationCostIssues([{ label: "기존 계획", routes: result.original }, { label: "AI 제안", routes: result.proposed }], activeOriginalTrips, (originalHasCharter && (activeOriginalTrips > 0 || excludedOriginalTrips.length === 0)) || originalExtras.length > 0) : [];
+  const comparisonBlocks = result ? [
+    ...(!complete ? ["자사 납품 또는 경로 시간이 누락되어 있습니다."] : []),
+    ...(packingDirty ? ["변경한 적재 설정이 아직 분석에 반영되지 않았습니다."] : []),
+    ...(comparison == null && complete && !packingDirty ? ["비교 비용을 계산할 수 없습니다. 경로와 운임을 확인하세요."] : []),
+    ...(excludedOriginalTrips.length ? ["기존 용차 비용이 일부 제외되어 동일 조건 비교가 아닙니다."] : []),
+    ...(excludedProposedTrips.length ? ["AI 용차 비용이 일부 제외되어 동일 조건 비교가 어렵습니다."] : []),
+  ] : [];
+  const assumedTrips = [...originalCharterTrips, ...originalExtras, ...proposedCharterTrips, ...proposedExtras].filter((trip) => !trip.excluded && !trip.fare.trim()).length;
+  const comparisonChecks = result ? [
+    ...(planHasOverLimit(result.proposed) || planHasOverLimit(result.original) ? ["알려진 차량 적재 한도를 초과한 안이 있습니다."] : []),
+    ...(planHasUnknownLoad(result.original) || planHasUnknownLoad(result.proposed) ? ["적재량이 미확인인 품목이 있습니다."] : []),
+    ...(assumedTrips ? [`용차 ${assumedTrips}회는 운임 미입력으로 1회 20만 원을 가정합니다.`] : []),
+    ...(!courierCostsComplete ? ["택배비가 양쪽 비교에서 제외되었습니다."] : []),
+    ...(unpricedTransport.length ? [`운송 방식 또는 비용 미확인 ${unpricedTransport.length}품목이 있습니다.`] : []),
+    ...(result.warnings.length ? [`주소·경로 등 확인 사항 ${result.warnings.length}건이 있습니다. 분석 리포트를 확인하세요.`] : []),
+    ...(proposedGroupingEdited || originalExtras.length || proposedExtras.length ? ["담당자가 조정한 용차 운행의 실제 운임과 중복 여부를 확인하세요."] : []),
+  ] : [];
   async function saveHistory() {
     if (!result || !file || packingDirty || loading) return;
     const excludedItems = excludedRows.map((rowNumber) => {
@@ -448,6 +465,10 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       {packingDirty ? <p className="dispatch-route-note-warn">적재 방식을 변경했습니다. 아래는 이전 결과입니다. 배차안을 불러오거나 다시 만드세요.</p> : null}
       <div className="comparison-result" aria-label="예상 비용 비교">
         <h3>배차 결과 비교</h3>
+        <section className="simulation-run-info" aria-label="비교 상태"><h4>비교 상태: {comparisonBlocks.length ? "비교 어려움" : comparisonChecks.length ? "확인 후 비교" : "계산 조건 확인됨"}</h4>
+          {comparisonBlocks.length || comparisonChecks.length ? <ul>{[...comparisonBlocks, ...comparisonChecks].map((reason) => <li key={reason}>{reason}</li>)}</ul> : <p>현재 입력된 경로와 비용으로 비교할 수 있습니다.</p>}
+          <p className="comparison-note">예상 비교 기준입니다. 납품 기한, 용차 적재·경유 가능 여부와 실제 운행 가능성은 별도로 확인하세요.</p>
+        </section>
         {changes ? <section className="simulation-run-info" aria-label="기존 계획 대비 변경점"><h4>기존 계획 대비 변경점</h4>
           <p className="comparison-note">AI 원안의 품목 배정과 방문 순서 기준입니다. 용차 운임·묶음의 수동 조정은 반영하지 않습니다.</p>
           {changes.groups.length ? <ul>{changes.groups.map((group) => <li key={JSON.stringify([group.from, group.to])}><strong>{group.from} → {group.to} · {group.items.length}품목</strong><ul>{group.items.map((item) => <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer || "거래처 미확인"} · {item.product}</li>)}</ul></li>)}</ul> : <p>확인된 품목의 차량·운송 배정 변경 없음</p>}
@@ -566,3 +587,4 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <p className="comparison-note">경로 시간·통행료는 조회 시점 기준이며 과거 운행 실적이 아닙니다. 하차·점심은 고정 가정이며 기타 대기는 제외합니다. AI 제안은 최적해를 보장하지 않습니다.</p></details></> : null}
   </section>;
 }
+

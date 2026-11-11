@@ -87,15 +87,20 @@ export function SimulationPeriodReport({ revision }: { revision: number }) {
         const detail = details[record.id];
         const m = record.metrics;
         const reference = record.review !== "검토 완료" || !m.comparable || m.aiAdjusted;
+        const change = (before: number | null, after: number | null, unit: string) => before == null || after == null ? "확인 필요" : after === before ? "동일" : `${Math.abs(after - before).toLocaleString("ko-KR")}${unit} ${after < before ? "감소" : "증가"}`;
         return <article className="period-day" key={record.date}>
           <div className="period-day-heading"><h3>{record.date}</h3><strong className={reference ? "dispatch-route-note-warn" : ""}>{reference ? "참고 · 조건 확인 필요" : "비교 조건 확인됨"}</strong></div>
-          <label className="period-no-print">비교할 기록 <select value={record.id} onChange={(event) => setChoices((current) => ({ ...current, [record.date]: event.target.value }))}>{alternatives.map((item, index) => <option key={item.id} value={item.id}>{index === 0 ? "최신 · " : ""}{stamp(item.savedAt)} · {item.fileName}</option>)}</select></label>
-          <p className="comparison-note">저장 {stamp(record.savedAt)} · {record.planSource} · {m.aiAdjusted ? "담당자 조정안" : "AI 원안"}{!m.courierIncluded ? " · 택배비 양쪽 제외" : ""}</p>
-          <p><strong>담당자 현장 판단: {(record.fieldReview ?? defaultFieldReview).status}</strong> · 사유: {(record.fieldReview ?? defaultFieldReview).reason || "미입력"}</p>
-          {detail ? <ComparisonConditions record={detail} /> : null}
+          <p><strong>비용 {change(m.originalCost, m.proposedCost, "원")} · 자사 시간 {change(m.originalMinutes, m.proposedMinutes, "분")} · 용차 {change(m.originalCharters, m.proposedCharters, "회")}</strong></p>
           {([["기존 계획", m.originalCost], ["AI 제안", m.proposedCost]] as const).map(([label, value]) => <div className="simulation-chart-row" key={label}><span>{label}</span><div className="simulation-chart-track" aria-hidden="true"><div className={`simulation-chart-bar ${label === "AI 제안" ? "simulation-chart-bar-ai" : ""}`} style={{ width: `${value == null ? 0 : value / maximum * 100}%` }} /></div><strong>{money(value)}</strong></div>)}
           <p>자사 소요 시간: 기존 {minutes(m.originalMinutes)} · AI {minutes(m.proposedMinutes)} / 용차: 기존 {m.originalCharters}회 · AI {m.proposedCharters}회</p>
-          {m.warnings.length ? <p className="dispatch-route-note-warn">{m.warnings.join(" / ")}</p> : null}
+          {m.warnings.length ? <details><summary className="dispatch-route-note-warn">확인 사항 {m.warnings.length}건</summary><ul>{m.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details> : null}
+          <details><summary>비교 조건·기록 정보</summary>
+            {alternatives.length > 1 ? <label className="period-no-print">비교할 기록 <select value={record.id} onChange={(event) => setChoices((current) => ({ ...current, [record.date]: event.target.value }))}>{alternatives.map((item, index) => <option key={item.id} value={item.id}>{index === 0 ? "최신 · " : ""}{stamp(item.savedAt)} · {item.fileName}</option>)}</select></label> : null}
+            <p className="comparison-note">파일 {record.fileName} · 저장 {stamp(record.savedAt)} · {record.planSource} · {m.aiAdjusted ? "담당자 조정안" : "AI 원안"}</p>
+            <p>담당자 현장 판단: {(record.fieldReview ?? defaultFieldReview).status} · 사유: {(record.fieldReview ?? defaultFieldReview).reason || "미입력"}</p>
+            {detail ? <ComparisonConditions record={detail} /> : null}
+          </details>
+          {detail ? <div className="period-print-only"><ComparisonConditions record={detail} />{m.warnings.length ? <p>확인 사항: {m.warnings.join(" / ")}</p> : null}</div> : null}
           {detail ? <><details className="period-no-print"><summary>차량별 경로·적재 품목 보기</summary><PeriodDetail record={detail} /></details><div className="period-print-only"><PeriodDetail record={detail} /></div></> : null}
         </article>;
       })}</div>
@@ -122,3 +127,4 @@ function PeriodDetail({ record }: { record: SimulationHistoryRecord }) {
   const lookup = new Map(record.snapshot.result.items.map((item) => [item.rowNumber, item]));
   return <div className="period-detail"><p>제외 품목: {record.snapshot.excludedItems.length ? record.snapshot.excludedItems.map((item) => `${item.rowNumber}행 ${item.customer} · ${item.product}`).join(" / ") : "없음"}</p>{record.snapshot.result.warnings.map((warning, index) => <p key={index} className="dispatch-route-note-warn">{warning}</p>)}{([["기존 계획", record.snapshot.result.original, [...record.snapshot.originalTrips, ...record.snapshot.originalExtras]], ["AI 제안", record.snapshot.result.proposed, [...record.snapshot.proposedTrips, ...record.snapshot.proposedExtras]]] as const).map(([title, routes, trips]) => <div key={title}><strong>{title}</strong>{routes.map((route) => <div key={route.vehicle}><p>{route.vehicle}: {route.items.length ? [...new Set(route.items.map((item) => item.customer || "거래처 미확인"))].join(" → ") : "운행 없음"} · 확인된 적재 {route.pallets} / {route.maxPallet ?? "미확인"} PLT{route.unknownPallets ? ` · 미확인 ${route.unknownPallets}품목` : ""}</p>{route.items.length ? <ul>{route.items.map((item) => <li key={item.rowNumber}>{item.rowNumber}행 · {item.customer} · {item.product} · {item.pallets == null ? "PLT 미확인" : `${item.pallets} PLT`}</li>)}</ul> : null}</div>)}<p>용차: {trips.length ? trips.map((trip) => `${tripLabel(trip, lookup)}${trip.excluded ? " (비용 제외)" : ""}`).join(" / ") : "없음"}</p></div>)}</div>;
 }
+
