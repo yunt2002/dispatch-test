@@ -590,7 +590,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
         </div></details>
       </div>
       <section className="simulation-run-info" aria-label="AI안 배차 신청 등록"><h3>AI안을 배차 신청에 등록</h3>
-        <p className="comparison-note">선택한 납품일의 홈 일정(배차 신청)에 AI 차량·용차·택배 배정을 반영합니다. 일정은 먼저 <Link href="/plan">처음 가져오기</Link>로 같은 납품예상 일정표를 등록해 두어야 합니다. 상태는 신청(PLANNED)으로 두며 확정은 홈에서 합니다.</p>
+        <p className="comparison-note">주 경로는 홈 <strong>새 납품 등록 · 엑셀 자동 등록</strong>(물류 열 그대로, 당일 덮어쓰기)입니다. 이 버튼은 AI 배정안을 이미 올라온 일정에 반영하는 보조 경로입니다. 일정이 없으면 먼저 홈 엑셀 등록 또는 <Link href="/plan">처음 가져오기</Link>를 하세요. 등록 후 상태는 신청으로 두고 확정은 홈에서 합니다.</p>
         <div className="comparison-controls">
           <button
             type="button"
