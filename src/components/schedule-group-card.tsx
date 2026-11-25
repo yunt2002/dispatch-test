@@ -54,10 +54,13 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
           <form action={changeScheduleVehicle}>
             <input type="hidden" name="returnTo" value={returnTo} />
             <input type="hidden" name="id" value={first.id} /><input type="hidden" name="date" value={date} />
-            <AutoSubmitSelect aria-label="묶음 차량 변경" className="dispatch-vehicle-select" defaultValue={selectedVehicleId ?? ""} key={`${groupId}-${selectedVehicleId ?? "none"}`} name="vehicleTypeId">
-              {!selectedVehicleId ? <option value="">차량 선택</option> : null}
-              {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicleName}</option>)}
-            </AutoSubmitSelect>
+            <label className="dispatch-vehicle-field">
+              <span className="dispatch-vehicle-label">호차 / 운송</span>
+              <AutoSubmitSelect aria-label="묶음 차량 변경" className="dispatch-vehicle-select" defaultValue={selectedVehicleId ?? ""} key={`${groupId}-${selectedVehicleId ?? "none"}`} name="vehicleTypeId">
+                {!selectedVehicleId ? <option value="">차량 선택</option> : null}
+                {vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicleName}</option>)}
+              </AutoSubmitSelect>
+            </label>
           </form>
         )}{vehicleCount > 1 ? <span>{vehicleCount}대 필요 · 배차 확인</span> : null}</div>
       </div>

@@ -6,7 +6,7 @@ import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
 import { parseJson } from "@/lib/format";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { prisma } from "@/lib/prisma";
-import { groupRouteStops } from "@/lib/route-stop-groups";
+import { groupCharterStops, groupRouteStops } from "@/lib/route-stop-groups";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
 import { externalTransport } from "@/lib/external-transport";
 import { capacityUnits } from "@/lib/schedule-box-loading";
@@ -160,8 +160,8 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
 
   const grouped = new Map<string, Stop[]>();
   const charterStops = stops.filter((stop) => stop.vehicleId === "external:charter");
-  // 실제 용차 운행 묶음은 알 수 없으므로 같은 등록 묶음·납품지만 합친다.
-  for (const visit of groupRouteStops(charterStops)) {
+  // 용차는 같은 등록 묶음 또는 같은 업체·지역·좌표를 하나로 묶어 중복 경로선을 막는다.
+  for (const visit of groupCharterStops(charterStops)) {
     grouped.set(`charter:${visit.stop.id}`, charterStops.filter((stop) => visit.memberIds.includes(stop.id)));
   }
   for (const stop of stops.filter((item) => item.vehicleId !== "external:charter")) {
@@ -201,7 +201,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       const vehicle = vehicleById.get(vehicleId);
       const capacity = vehicle?.maxPallet && vehicle.maxPallet > 0 ? vehicle.maxPallet : 8;
       const load = groupStops.reduce((sum, s) => sum + s.demand, 0);
-      const visits = groupRouteStops(groupStops);
+      const visits = isCharter ? groupCharterStops(groupStops) : groupRouteStops(groupStops);
       const stopIds = visits.map((visit) => visit.stop.id);
       const stopMemberIds = visits.map((visit) => visit.memberIds);
       const titles = visits.map((visit) => visit.memberIds.length > 1 ? `${visit.stop.title} (${visit.memberIds.length}품목)` : visit.stop.title);

@@ -15,4 +15,10 @@ export type DispatchMapRoute = {
   color: string;
   /** 방문 순서 좌표 (차고 포함 가능) */
   path: { lat: number; lng: number; label?: string }[];
+  /** 지도에 번호 배지로 찍을 출발·경유지 목록 */
+  stops?: { lat: number; lng: number; label: string; title?: string }[];
+  strokeStyle?: "solid" | "dashed" | "shortdash" | "longdash";
+  strokeWeight?: number;
+  strokeOpacity?: number;
+  kind?: "own" | "charter" | "other";
 };

@@ -43,6 +43,7 @@ declare namespace kakao.maps {
     strokeColor?: string;
     strokeOpacity?: number;
     strokeStyle?: string;
+    zIndex?: number;
     map?: Map | null;
   }
 
@@ -76,7 +77,7 @@ declare namespace kakao.maps {
   }
 
   namespace event {
-    function addListener(target: Marker, type: string, handler: () => void): void;
+    function addListener(target: Marker | Map, type: string, handler: () => void): void;
   }
 }
 

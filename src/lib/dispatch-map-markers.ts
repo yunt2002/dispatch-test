@@ -1,6 +1,7 @@
 import "server-only";
 
 import type { DispatchMapMarker } from "@/components/kakao-map/types";
+import { extractNoteAddress } from "@/lib/excel-day-register";
 import {
   matchDeliveryCustomer,
   resolveCustomerAddress,
@@ -12,11 +13,12 @@ type EntryLike = {
   id: string;
   locationName: string;
   customerName: string | null;
+  notes?: string | null;
 };
 
 /**
  * 일정 행 → 지도 마커.
- * 주소는 납품 root 고객 주소 → DB 거래처 → 지역명 순으로 Geocoding.
+ * 주소는 엑셀 비고/메모 주소 → 납품 root 고객 주소 → DB 거래처 → 지역명 순으로 Geocoding.
  */
 export async function buildDispatchMapMarkers(
   entries: EntryLike[],
@@ -36,13 +38,16 @@ export async function buildDispatchMapMarkers(
   const plans = entries.map((entry) => {
     const customerName = entry.customerName?.trim() || "";
     const locationName = entry.locationName?.trim() || "";
+    const noteAddress = extractNoteAddress(entry.notes);
     const rootCustomer = matchDeliveryCustomer(customerName);
     const rootAddress = resolveCustomerAddress(customerName);
     const dbAddress = customerName ? addressByName.get(customerName) : undefined;
-    const customerAddress = rootAddress || dbAddress;
+    const customerAddress = noteAddress || rootAddress || dbAddress;
     const locationHint = rootCustomer?.locationHint || locationName;
     const queries = [
-      customerAddress,
+      noteAddress,
+      rootAddress,
+      dbAddress,
       customerName && locationHint ? `${locationHint} ${customerName}` : "",
       locationHint,
       locationName,

@@ -3,6 +3,7 @@ import { test } from "node:test";
 import ExcelJS from "exceljs";
 import {
   EXCEL_DAY_PRESERVED_STATUSES,
+  extractNoteAddress,
   logisticsVehicleHint,
   missingLocationNames,
   missingProductNames,
@@ -63,4 +64,7 @@ test("비고 도로명을 notes 주소 형식으로 붙인다", () => {
   assert.equal(notesWithWorkbookAddress("김해시 상동로 504"), "주소: 김해시 상동로 504");
   assert.equal(notesWithWorkbookAddress("김해시 상동로 504", "긴급"), "긴급\n주소: 김해시 상동로 504");
   assert.equal(notesWithWorkbookAddress(null, "메모"), "메모");
+  assert.equal(extractNoteAddress("주소: 경상남도 창원시 진해구 신항10로 12"), "경상남도 창원시 진해구 신항10로 12");
+  assert.equal(extractNoteAddress("긴급\n주소: 세종특별자치시 연서면 공단로 117"), "세종특별자치시 연서면 공단로 117");
+  assert.equal(extractNoteAddress("일반 메모"), null);
 });

@@ -208,18 +208,21 @@ export function ScheduleEntryCard({
               <input type="hidden" name="returnTo" value={returnTo} />
               <input type="hidden" name="id" value={id} />
               <input type="hidden" name="date" value={date} />
-              <AutoSubmitSelect
-                aria-label="차량 변경"
-                className="dispatch-vehicle-select"
-                defaultValue={selectedVehicleTypeId ?? ""}
-                key={`${id}-${selectedVehicleTypeId ?? "none"}`}
-                name="vehicleTypeId"
-              >
-                {!selectedVehicleTypeId ? <option value="">차량 선택</option> : null}
-                {vehicles.map((vehicle) => (
-                  <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicleName}</option>
-                ))}
-              </AutoSubmitSelect>
+              <label className="dispatch-vehicle-field">
+                <span className="dispatch-vehicle-label">호차 / 운송</span>
+                <AutoSubmitSelect
+                  aria-label="차량 변경"
+                  className="dispatch-vehicle-select"
+                  defaultValue={selectedVehicleTypeId ?? ""}
+                  key={`${id}-${selectedVehicleTypeId ?? "none"}`}
+                  name="vehicleTypeId"
+                >
+                  {!selectedVehicleTypeId ? <option value="">차량 선택</option> : null}
+                  {vehicles.map((vehicle) => (
+                    <option key={vehicle.id} value={vehicle.id}>{vehicle.vehicleName}</option>
+                  ))}
+                </AutoSubmitSelect>
+              </label>
             </form>
           )}
           {changed && recommendedName ? <span>원래 추천 {recommendedName}</span> : null}

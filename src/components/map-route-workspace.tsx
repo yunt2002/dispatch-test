@@ -25,38 +25,43 @@ export function MapRouteWorkspace({ date, markers, boardHref, initialResult, bat
 
     return result.routes.map((route, index) => {
       const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
+      const stops: NonNullable<DispatchMapRoute["stops"]> = [
+        { lat: result.depot.lat, lng: result.depot.lng, label: "출", title: result.depot.title },
+      ];
+      route.stopIds.forEach((stopId, stopIndex) => {
+        const marker = byId.get(stopId);
+        if (!marker) return;
+        const label = route.isCharter && route.stopIds.length === 1 ? "용" : String(stopIndex + 1);
+        stops.push({
+          lat: marker.lat,
+          lng: marker.lng,
+          label,
+          title: marker.title,
+        });
+      });
 
-      // 카카오 도로 폴리라인 (방문 순서는 사이드 패널·마커 참고)
+      // 카카오 도로 폴리라인 (방문 순서는 사이드 패널·배지 참고)
       if (route.path && route.path.length >= 2) {
         return {
           vehicleId: route.vehicleId,
           vehicleName: route.vehicleName,
           color,
-          path: route.path.map((p, i) =>
-            i === 0 ? { ...p, label: "출" } : { lat: p.lat, lng: p.lng },
-          ),
+          path: route.path.map((p) => ({ lat: p.lat, lng: p.lng })),
+          stops,
         };
       }
 
-      const path: DispatchMapRoute["path"] = [
-        { lat: result.depot.lat, lng: result.depot.lng, label: "출" },
-      ];
-      route.stopIds.forEach((stopId, stopIndex) => {
-        const marker = byId.get(stopId);
-        if (!marker) return;
-        path.push({
-          lat: marker.lat,
-          lng: marker.lng,
-          label: String(stopIndex + 1),
-        });
-      });
-      if (result.tripMode !== "oneway") path.push({ lat: result.depot.lat, lng: result.depot.lng });
+      const path: DispatchMapRoute["path"] = stops.map(({ lat, lng, label }) => ({ lat, lng, label }));
+      if (!route.isCharter && result.tripMode !== "oneway") {
+        path.push({ lat: result.depot.lat, lng: result.depot.lng });
+      }
 
       return {
         vehicleId: route.vehicleId,
         vehicleName: route.vehicleName,
         color,
         path,
+        stops,
       };
     });
   }, [markers, result]);

@@ -52,3 +52,12 @@ test("병합된 날짜와 업체·운송 방식은 각 품목에 반영한다", 
   assert.equal(rows[1].customer, "업체");
   assert.equal(rows[1].transport, "2호 차량(3.5t)");
 });
+
+test("물류 대신 분류 열 이름을 쓰는 일정표도 읽는다", () => {
+  const sheet = new ExcelJS.Workbook().addWorksheet("26년 11월");
+  sheet.addRow(["일자", "업체명", "업체위치", "품명", "분류"]);
+  sheet.addRow(["11/20", "DY AUTO", "창원", "품목 A", "용차"]);
+  const rows = extractComparisonShipments(sheet, "2026-11-20");
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].transport, "용차");
+});

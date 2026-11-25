@@ -80,11 +80,41 @@ export default async function MapRoutePage({
   const scopeChanged = !!snapshot && !snapshotMatchesScope(snapshot.result, activeEntries.map((entry) => entry.id));
   const initialResult = snapshot && !scopeChanged ? { ...snapshot.result, routes: snapshot.result.routes.map((route) => ({ ...route, load: routePalletLoad(route, activeEntries) })), savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
   const nonemptyOptions = allConfirmed ? batchOptions.map((option) => ({ option, related: option.id === "legacy" ? activeEntries.filter((entry) => !batchedIds.has(entry.id)) : activeEntries.filter((entry) => batches.find((batch) => batch.id === option.id)?.entryIds.includes(entry.id)) })).filter(({ related }) => related.length > 0) : [];
+  const rawMarkerById = new Map(rawMarkers.map((marker) => [marker.id, marker]));
   const allBatchViews: ConfirmedBatchView[] = allConfirmed ? await Promise.all(nonemptyOptions.map(async ({ option, related }, batchIndex) => {
     const [saved, currentSignature] = await Promise.all([readRouteSnapshot(date, option.id), routeInputSignature(date, option.id)]);
     const status = confirmedRouteState(saved, currentSignature, related.map((entry) => entry.id));
     const colors = ["#e85d04", "#1d4ed8", "#15803d", "#7c3aed", "#b45309", "#0f766e"];
-    return { id: option.id, label: option.label, count: related.length, status, routes: status === "ready" ? saved!.result.routes.map((route, routeIndex) => ({ vehicleId: `${option.id}:${route.vehicleId}:${routeIndex}`, vehicleName: `${option.label.split(" · ")[0]} · ${route.vehicleName}`, color: colors[(batchIndex + routeIndex) % colors.length], path: route.path! })) : [] };
+    return {
+      id: option.id,
+      label: option.label,
+      count: related.length,
+      status,
+      routes: status === "ready"
+        ? saved!.result.routes.map((route, routeIndex) => {
+            const stops: { lat: number; lng: number; label: string; title?: string }[] = [
+              { lat: saved!.result.depot.lat, lng: saved!.result.depot.lng, label: "출", title: saved!.result.depot.title },
+            ];
+            route.stopIds.forEach((stopId, stopIndex) => {
+              const marker = rawMarkerById.get(stopId);
+              if (!marker) return;
+              stops.push({
+                lat: marker.lat,
+                lng: marker.lng,
+                label: route.isCharter && route.stopIds.length === 1 ? "용" : String(stopIndex + 1),
+                title: marker.title,
+              });
+            });
+            return {
+              vehicleId: `${option.id}:${route.vehicleId}:${routeIndex}`,
+              vehicleName: `${option.label.split(" · ")[0]} · ${route.vehicleName}`,
+              color: colors[(batchIndex + routeIndex) % colors.length],
+              path: route.path!,
+              stops,
+            };
+          })
+        : [],
+    };
   })) : [];
   const visibleBatches = allBatchViews;
   const emptySelectedBatch = !!batchId && !allConfirmed && scope.valid && activeEntries.length === 0;

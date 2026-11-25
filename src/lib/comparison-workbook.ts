@@ -46,12 +46,13 @@ export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: strin
     if (labels.has("일자") && labels.has("업체명") && labels.has("품명")) {
       headerRow = n;
       for (const name of ["일자", "업체명", "업체위치", "품번", "품명", "수량합계", "박스수량", "물류"]) columns[name] = labels.get(name) ?? 0;
+      if (!columns.물류) columns.물류 = labels.get("분류") ?? 0;
       columns.주소 = ["납품주소", "납품지주소", "도착지주소", "주소"].map((name) => labels.get(name) ?? 0).find(Boolean) ?? 0;
       columns.비고 = [...labels].find(([name]) => name.includes("비고") && name.includes("도착지"))?.[1] ?? labels.get("비고") ?? 0;
       break;
     }
   }
-  if (!headerRow || !columns.물류) throw new Error("일자·업체명·품명·물류 열이 있는 일정표를 찾지 못했습니다.");
+  if (!headerRow || !columns.물류) throw new Error("일자·업체명·품명·물류(또는 분류) 열이 있는 일정표를 찾지 못했습니다.");
   const value = (row: ExcelJS.Row, column: number) => column ? row.getCell(column).value : null;
   const shipments: ComparisonShipment[] = [];
   for (let n = headerRow + 1; n <= sheet.rowCount; n++) {

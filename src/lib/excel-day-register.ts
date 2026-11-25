@@ -117,6 +117,16 @@ export function notesWithWorkbookAddress(address: string | null, existingNotes?:
   return base ? `${base}\n주소: ${address.trim()}` : `주소: ${address.trim()}`;
 }
 
+/** 메모(비고)에 `주소: ...` 또는 도로명 주소가 있으면 추출한다. */
+export function extractNoteAddress(notes: string | null | undefined): string | null {
+  if (!notes?.trim()) return null;
+  const road = extractWorkbookAddress(notes);
+  if (road) return road;
+  const tagged = notes.match(/주소\s*:\s*([^\n\r]+)/);
+  const value = tagged?.[1]?.trim();
+  return value && value.length >= 5 ? value : null;
+}
+
 export function normalizeProductKey(name: string) {
   return name.replace(/\s+/g, " ").trim().normalize("NFKC").toLocaleLowerCase("ko-KR");
 }
