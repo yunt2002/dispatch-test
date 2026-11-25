@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useFormStatus } from "react-dom";
 import { registerSchedule } from "@/app/schedule/actions";
 import {
   previewExcelDay,
@@ -20,6 +21,29 @@ import {
   listErpProductNames,
   resolveDefaultsFromProduct,
 } from "@/lib/product-loading";
+
+function ExcelSubmitButton({ disabled }: { disabled: boolean }) {
+  const { pending } = useFormStatus();
+  return (
+    <button
+      className="dispatch-primary-button"
+      disabled={disabled || pending}
+      type="submit"
+    >
+      {pending ? "등록 중…" : "이 날짜로 등록"}
+    </button>
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isExcelFile(file: File) {
+  return /\.(xlsx|xls)$/i.test(file.name);
+}
 
 export function ScheduleRegisterDialog({
   date,
@@ -48,6 +72,8 @@ export function ScheduleRegisterDialog({
   const [locationManual, setLocationManual] = useState(false);
   const [excelDate, setExcelDate] = useState(date);
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [excelDragActive, setExcelDragActive] = useState(false);
+  const excelInputRef = useRef<HTMLInputElement>(null);
   const [excelPreview, setExcelPreview] = useState<{
     summary: ExcelDayRegisterSummary;
     newProducts: string[];
@@ -135,9 +161,39 @@ export function ScheduleRegisterDialog({
     setLocationManual(false);
     setMode("manual");
     setExcelFile(null);
+    setExcelDragActive(false);
+    if (excelInputRef.current) excelInputRef.current.value = "";
     setExcelPreview(null);
     setExcelError("");
     setExcelDate(date);
+  }
+
+  function applyExcelFile(file: File | null, syncInput = false) {
+    if (!file) {
+      setExcelFile(null);
+      setExcelPreview(null);
+      setExcelError("");
+      if (excelInputRef.current) excelInputRef.current.value = "";
+      return;
+    }
+    if (!isExcelFile(file)) {
+      setExcelFile(null);
+      setExcelPreview(null);
+      setExcelError("엑셀 파일(.xlsx, .xls)만 올릴 수 있습니다.");
+      if (excelInputRef.current) excelInputRef.current.value = "";
+      return;
+    }
+    if (syncInput && excelInputRef.current) {
+      try {
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        excelInputRef.current.files = dt.files;
+      } catch {
+        // DataTransfer 미지원 환경에서는 상태만 갱신
+      }
+    }
+    setExcelError("");
+    setExcelFile(file);
   }
 
   function openDialog() {
@@ -374,7 +430,23 @@ export function ScheduleRegisterDialog({
               </div>
             </form>
             ) : (
-            <form action={registerExcelDay} className="dispatch-modal-body" encType="multipart/form-data">
+            <form
+              action={registerExcelDay}
+              className="dispatch-modal-body"
+              encType="multipart/form-data"
+              onSubmit={(event) => {
+                if (excelFile && excelInputRef.current && !excelInputRef.current.files?.length) {
+                  try {
+                    const dt = new DataTransfer();
+                    dt.items.add(excelFile);
+                    excelInputRef.current.files = dt.files;
+                  } catch {
+                    event.preventDefault();
+                    setExcelError("브라우저에서 드롭 파일을 전송하지 못했습니다. 클릭해 파일을 선택해 주세요.");
+                  }
+                }
+              }}
+            >
               <div className="dispatch-form-grid">
                 <div className="dispatch-field">
                   <label htmlFor="excelDeliveryDate">납품일 *</label>
@@ -388,17 +460,95 @@ export function ScheduleRegisterDialog({
                     value={excelDate}
                   />
                 </div>
-                <div className="dispatch-field">
+                <div className="dispatch-field dispatch-field-full">
                   <label htmlFor="excelFile">납품예상 일정표 (.xlsx) *</label>
                   <input
+                    ref={excelInputRef}
                     accept=".xlsx,.xls"
-                    className="dispatch-input"
+                    className="dispatch-file-hidden"
                     id="excelFile"
                     name="file"
-                    onChange={(event) => setExcelFile(event.target.files?.[0] ?? null)}
-                    required
+                    onChange={(event) => applyExcelFile(event.target.files?.[0] ?? null, false)}
+                    tabIndex={-1}
                     type="file"
                   />
+                  <div
+                    aria-label="납품예상 일정표 엑셀 드래그 앤 드롭 영역"
+                    className={`dispatch-dropzone${excelDragActive ? " is-dragover" : ""}${excelFile ? " has-file" : ""}`}
+                    onClick={() => excelInputRef.current?.click()}
+                    onDragEnter={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setExcelDragActive(true);
+                    }}
+                    onDragLeave={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                        setExcelDragActive(false);
+                      }
+                    }}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (!excelDragActive) setExcelDragActive(true);
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setExcelDragActive(false);
+                      const dropped = event.dataTransfer.files?.[0] ?? null;
+                      applyExcelFile(dropped, true);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        excelInputRef.current?.click();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
+                    {excelFile ? (
+                      <div className="dispatch-dropzone-file">
+                        <div className="dispatch-dropzone-meta">
+                          <strong>{excelFile.name}</strong>
+                          <span>{formatFileSize(excelFile.size)} · 다른 파일을 끌어다 놓아 교체할 수 있습니다</span>
+                        </div>
+                        <div className="dispatch-dropzone-actions">
+                          <button
+                            className="dispatch-secondary-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              excelInputRef.current?.click();
+                            }}
+                            type="button"
+                          >
+                            파일 변경
+                          </button>
+                          <button
+                            className="dispatch-secondary-button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              applyExcelFile(null, false);
+                            }}
+                            type="button"
+                          >
+                            지우기
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="dispatch-dropzone-empty">
+                        <strong>
+                          {excelDragActive
+                            ? "여기에 파일을 놓으세요"
+                            : "엑셀 파일을 여기에 끌어다 놓거나 클릭해 선택하세요"}
+                        </strong>
+                        <span>납품예상 일정표 (.xlsx, .xls)</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <p className="dispatch-form-note dispatch-route-note-warn">
@@ -438,13 +588,9 @@ export function ScheduleRegisterDialog({
                 >
                   취소
                 </button>
-                <button
-                  className="dispatch-primary-button"
+                <ExcelSubmitButton
                   disabled={!excelFile || !!excelError || !excelPreview?.summary.count}
-                  type="submit"
-                >
-                  이 날짜로 등록
-                </button>
+                />
               </div>
             </form>
             )}

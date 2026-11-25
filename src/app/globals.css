@@ -2148,6 +2148,97 @@ body {
   border-bottom-color: #c45c26;
 }
 
+.dispatch-field-full {
+  grid-column: 1 / -1;
+}
+
+.dispatch-file-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  border: 0;
+}
+
+.dispatch-dropzone {
+  padding: 22px 16px;
+  border: 2px dashed #cfc7ba;
+  border-radius: 8px;
+  background: #faf8f4;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.dispatch-dropzone:hover,
+.dispatch-dropzone:focus-visible {
+  border-color: #b45309;
+  background: #fffaf5;
+  outline: none;
+}
+
+.dispatch-dropzone.is-dragover {
+  border-color: #c45c26;
+  background: #fff3eb;
+}
+
+.dispatch-dropzone.has-file {
+  padding: 14px 16px;
+  border-style: solid;
+  border-color: #d6cbbd;
+  background: #fff;
+  text-align: left;
+}
+
+.dispatch-dropzone-empty {
+  display: grid;
+  gap: 4px;
+}
+
+.dispatch-dropzone-empty strong {
+  color: #2f2a26;
+  font-size: 14px;
+}
+
+.dispatch-dropzone-empty span {
+  color: #7c766d;
+  font-size: 13px;
+}
+
+.dispatch-dropzone-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dispatch-dropzone-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dispatch-dropzone-meta strong {
+  color: #2f2a26;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.dispatch-dropzone-meta span {
+  color: #7c766d;
+  font-size: 12.5px;
+}
+
+.dispatch-dropzone-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .dispatch-excel-preview {
   margin-top: 12px;
   padding: 10px 12px;
