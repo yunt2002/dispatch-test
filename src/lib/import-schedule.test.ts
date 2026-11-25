@@ -15,6 +15,11 @@ test("당일 엑셀 재등록은 완료·취소와 일치하는 행을 종류별
   assert.deepEqual(excludePreservedImportRows(sameDay, [item, { ...item, deliveryDate: "2026-10-17" }], (row) => row), [
     item, { ...item, quantity: 200 },
   ]);
+  const twoPallets = { ...item, palletCount: 2 };
+  const threePallets = { ...item, palletCount: 3 };
+  assert.deepEqual(excludePreservedImportRows([item, twoPallets, threePallets], [threePallets], (row) => row), [
+    item, twoPallets,
+  ]);
 });
 
 test("시트에 있는 날짜의 엑셀 신청만 교체하고 보존한 납품은 중복 등록하지 않는다", async (t) => {
@@ -41,7 +46,10 @@ test("시트에 있는 날짜의 엑셀 신청만 교체하고 보존한 납품�
         ];
       }),
       deleteMany: t.mock.fn(async () => ({ count: 1 })),
-      createMany: t.mock.fn(async () => ({ count: 1 })),
+      createMany: t.mock.fn(async ({ data }: { data: { palletCount: number | null }[] }) => {
+        assert.deepEqual(data.map((row) => row.palletCount), [3]);
+        return { count: 1 };
+      }),
     },
     appSetting: {
       deleteMany: t.mock.fn(async () => ({ count: 2 })),
@@ -61,7 +69,7 @@ test("시트에 있는 날짜의 엑셀 신청만 교체하고 보존한 납품�
   assert.equal(transaction.mock.callCount(), 0);
   const imported = await replaceExcelSchedule([
     shipment, { ...shipment, rowNumber: 2 }, { ...shipment, rowNumber: 3 },
-    { ...shipment, rowNumber: 4, quantity: 200 },
+    { ...shipment, rowNumber: 4, quantity: 200, palletCount: 3 },
   ]);
   assert.equal(imported, 1);
   assert.equal(tx.scheduleEntry.findMany.mock.callCount(), 1);

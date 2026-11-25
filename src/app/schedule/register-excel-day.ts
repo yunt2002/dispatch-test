@@ -13,6 +13,7 @@ import { loadCustomProducts } from "@/lib/custom-product-server";
 import { findCustomProduct } from "@/lib/custom-product";
 import {
   EXCEL_DAY_PRESERVED_STATUSES,
+  extractNoteAddress,
   missingLocationNames,
   missingProductNames,
   notesWithWorkbookAddress,
@@ -37,7 +38,7 @@ import { getDispatchSettings } from "@/lib/settings";
 import { externalTransport } from "@/lib/external-transport";
 import { confirmedSimulationAddress } from "@/lib/simulation-address";
 
-function go(formData: FormData, params: Record<string, string | undefined>): never {
+function go(params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) q.set(key, value);
@@ -150,6 +151,67 @@ async function upsertCustomerAddress(customerName: string, address: string) {
   await prisma.customer.updateMany({ where: { id: existing.id, address: existing.address }, data: { address } });
 }
 
+type CustomerAddress = { customerName: string | null; address: string | null };
+
+async function finishExcelDay(
+  deliveryDate: string,
+  loadAddresses: (() => CustomerAddress[] | Promise<CustomerAddress[]>) | null,
+  rebalance: boolean,
+) {
+  let addressesFailed = false;
+  if (loadAddresses) {
+    try {
+      for (const { customerName, address } of await loadAddresses()) {
+        if (!customerName || !address) continue;
+        try {
+          await upsertCustomerAddress(customerName, address);
+        } catch (error) {
+          addressesFailed = true;
+          console.error("엑셀 등록 후 거래처 주소 보강 실패", deliveryDate, error);
+        }
+      }
+    } catch (error) {
+      addressesFailed = true;
+      console.error("엑셀 등록 후 주소 대상 조회 실패", deliveryDate, error);
+    }
+  }
+
+  let fleetFailed = false;
+  if (rebalance) {
+    try {
+      await rebalanceDayFleet(deliveryDate);
+    } catch (error) {
+      fleetFailed = true;
+      console.error("엑셀 등록 후 차량 재배정 실패", deliveryDate, error);
+    }
+  }
+
+  const excelRetry = addressesFailed ? fleetFailed ? "both" : "addresses" : fleetFailed ? "fleet" : undefined;
+  const failedSteps = [addressesFailed ? "거래처 주소 보강" : null, fleetFailed ? "차량 재배정" : null].filter(Boolean);
+  return {
+    excelRetry,
+    notice: excelRetry ? `일정은 저장됐습니다. ${failedSteps.join("·")}에 실패했습니다. 실패한 작업만 다시 실행할 수 있습니다.` : undefined,
+  };
+}
+
+export async function retryExcelDayFollowUp(formData: FormData) {
+  const date = text(formData, "date");
+  const retry = text(formData, "retry");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || (retry !== "addresses" && retry !== "fleet" && retry !== "both")) {
+    go({ error: "다시 실행할 납품일과 작업을 확인하세요." });
+  }
+  const loadAddresses = retry === "fleet" ? null : async () => {
+    const entries = await prisma.scheduleEntry.findMany({
+      where: { deliveryDate: date, source: "EXCEL", status: { not: "CANCELLED" }, notes: { not: null } },
+      select: { customerName: true, notes: true },
+      orderBy: [{ visitOrder: "asc" }, { id: "asc" }],
+    });
+    return entries.map(({ customerName, notes }) => ({ customerName, address: extractNoteAddress(notes) }));
+  };
+  const response = await finishExcelDay(date, loadAddresses, retry !== "addresses");
+  go({ date, ok: response.excelRetry ? undefined : "엑셀 등록 후처리를 완료했습니다.", ...response });
+}
+
 async function readExcelDayRows(file: File, deliveryDate: string) {
   const fileError = excelUploadError(file);
   if (fileError) throw new Error(fileError);
@@ -162,10 +224,10 @@ export async function registerExcelDay(formData: FormData) {
   const file = formData.get("file");
 
   if (!deliveryDate || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
-    go(formData, { error: "납품일을 확인하세요." });
+    go({ error: "납품일을 확인하세요." });
   }
   if (!(file instanceof File)) {
-    go(formData, { date: deliveryDate, error: "납품예상 일정표 엑셀 파일을 선택하세요." });
+    go({ date: deliveryDate, error: "납품예상 일정표 엑셀 파일을 선택하세요." });
   }
 
   let rows: ExcelDayRegisterRow[];
@@ -173,11 +235,11 @@ export async function registerExcelDay(formData: FormData) {
     rows = await readExcelDayRows(file, deliveryDate);
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 160) : "엑셀을 읽지 못했습니다.";
-    go(formData, { date: deliveryDate, error: message });
+    go({ date: deliveryDate, error: message });
   }
 
   if (!rows.length) {
-    go(formData, {
+    go({
       date: deliveryDate,
       error: `${deliveryDate} 일정이 엑셀에 없습니다. 월 시트와 일자를 확인하세요.`,
     });
@@ -273,7 +335,9 @@ export async function registerExcelDay(formData: FormData) {
     });
     const preserved = existing.filter((row) => EXCEL_DAY_PRESERVED_STATUSES.some((status) => status === row.status));
     const preservedIds = new Set(preserved.map((row) => row.id));
-    const toCreate = excludePreservedImportRows(entryData, preserved, ({ schedule }) => schedule);
+    const toCreate = excludePreservedImportRows(entryData, preserved, ({ schedule }, index) => ({
+      ...schedule, palletCount: rows[index].palletCount,
+    }));
     const { count } = await tx.scheduleEntry.deleteMany({
       where: { deliveryDate, status: { notIn: [...EXCEL_DAY_PRESERVED_STATUSES] } },
     });
@@ -302,18 +366,14 @@ export async function registerExcelDay(formData: FormData) {
     replacement = await replaceDay();
   } catch (error) {
     if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034") throw error;
-    go(formData, { date: deliveryDate, error: "다른 작업과 동시에 일정이 변경되었습니다. 현재 일정을 확인한 뒤 다시 등록해 주세요." });
+    go({ date: deliveryDate, error: "다른 작업과 동시에 일정이 변경되었습니다. 현재 일정을 확인한 뒤 다시 등록해 주세요." });
   }
 
   const { removedCount, createdRows } = replacement;
   const matchedPreservedCount = entryData.length - createdRows.length;
-  for (const { address, schedule } of createdRows) {
-    if (schedule.customerName && address) {
-      await upsertCustomerAddress(schedule.customerName, address);
-    }
-  }
-
-  await rebalanceDayFleet(deliveryDate);
+  const followUp = await finishExcelDay(deliveryDate, () => createdRows.map(({ address, schedule }) => ({
+    address, customerName: schedule.customerName,
+  })), true);
 
   const warnCount = createdRows.filter(({ logisticsFallback }) => logisticsFallback).length;
 
@@ -326,9 +386,10 @@ export async function registerExcelDay(formData: FormData) {
     warnCount ? `물류 미인식 ${warnCount}건(추천 대체)` : null,
   ].filter(Boolean);
 
-  go(formData, {
+  go({
     date: deliveryDate,
     ok: parts.join(" · "),
+    ...followUp,
   });
 }
 

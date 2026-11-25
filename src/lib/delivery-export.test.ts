@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import ExcelJS from "exceljs";
+import { extractShipments, loadWorkbook } from "./delivery-excel";
+import { parseExcelDayRegisterRows, recommendExcelDayRow } from "./excel-day-register";
 import {
   DELIVERY_HEADERS,
   buildAllSheetsWorkbook,
@@ -69,6 +71,29 @@ describe("delivery excel export", () => {
       }),
       "용차",
     );
+  });
+
+  it("내보낸 엑셀을 바로 읽어 EA·박스·PLT의 숫자와 빈 값을 보존한다", async () => {
+    const date = "2026-09-15";
+    const base = { deliveryDate: date, customerName: "가상 거래처", locationName: "인천", logistics: "1호차" };
+    const input = [
+      { ...base, productCode: "PLT", productName: "PLT 품목", quantity: null, boxCount: null, palletCount: 3.5 },
+      { ...base, productCode: "BOX", productName: "박스 품목", quantity: 120, boxCount: 12, piecesPerBox: 10, palletCount: 0 },
+      { ...base, productCode: "EA", productName: "낱개 품목", quantity: 58000, boxCount: null, palletCount: null },
+      { ...base, productCode: "MIX", productName: "실측 박스 품목", quantity: 100, boxCount: 13, piecesPerBox: 10, palletCount: null },
+    ];
+    const workbook = await loadWorkbook(await buildDeliveryWorkbook(date, input));
+    const options = { vehicles: [], regions: new Map() };
+    const home = parseExcelDayRegisterRows(workbook, date).map((row) => {
+      const { quantity, boxCount, palletCount } = recommendExcelDayRow(row, options);
+      return [quantity, boxCount, palletCount];
+    });
+    const plan = extractShipments(workbook.getWorksheet("26년 09월")!).rows.map((row) => [
+      row.quantity, row.boxCount, row.palletCount,
+    ]);
+    const expected = input.map((row) => [row.quantity, row.boxCount, row.palletCount]);
+    assert.deepEqual(home, expected);
+    assert.deepEqual(plan, expected);
   });
 
   it("writes one original-style sheet per month", async () => {

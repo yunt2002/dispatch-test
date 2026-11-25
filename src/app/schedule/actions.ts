@@ -23,6 +23,7 @@ import { resolveDefaultsFromProduct } from "@/lib/product-loading";
 import { rebalanceDayFleet } from "@/lib/rebalance-day-fleet";
 import { getDispatchSettings } from "@/lib/settings";
 import { confirmDispatchBatch } from "@/lib/dispatch-batches";
+import { preserveConfirmedRouteSnapshots } from "@/lib/route-snapshot";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
 import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 import { transitionScheduleStatus } from "@/lib/schedule-status-transition";
@@ -583,11 +584,18 @@ export async function updateSchedule(formData: FormData) {
   go(formData, { date, ok: `수정 · 추천 ${vehicleLabel}` });
 }
 
+async function transitionSingleScheduleStatus(id: string, date: string | undefined, operation: "done" | "reopen") {
+  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
+  if (!entry || (date && entry.deliveryDate !== date)) return null;
+  await preserveConfirmedRouteSnapshots(entry.deliveryDate);
+  return await transitionScheduleStatus(prisma.scheduleEntry, id, entry.deliveryDate, operation) ? entry : null;
+}
+
 export async function markScheduleDone(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
-  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  if (!entry || (date && entry.deliveryDate !== date) || !await transitionScheduleStatus(prisma.scheduleEntry, id, entry.deliveryDate, "done")) {
+  const entry = await transitionSingleScheduleStatus(id, date, "done");
+  if (!entry) {
     revalidatePath("/");
     go(formData, { date, error: "이미 처리되었거나 납품 상태가 변경되었습니다. 화면을 다시 확인하세요." });
   }
@@ -611,6 +619,7 @@ export async function changeScheduleGroupStatus(formData: FormData) {
   if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date || !transition || entry.status !== transition.from) {
     go(formData, { date, error: "묶음의 현재 상태를 확인해 주세요." });
   }
+  if (operation !== "confirm") await preserveConfirmedRouteSnapshots(date);
   const count = operation === "confirm"
     ? await confirmDispatchBatch(date, { consolidateGroupId: entry.consolidateGroupId })
     : (await prisma.scheduleEntry.updateMany({
@@ -678,8 +687,8 @@ export async function confirmSchedules(formData: FormData) {
 export async function reopenSchedule(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
-  const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  if (!entry || (date && entry.deliveryDate !== date) || !await transitionScheduleStatus(prisma.scheduleEntry, id, entry.deliveryDate, "reopen")) {
+  const entry = await transitionSingleScheduleStatus(id, date, "reopen");
+  if (!entry) {
     revalidatePath("/");
     go(formData, { date, error: "이미 처리되었거나 납품 상태가 변경되었습니다. 화면을 다시 확인하세요." });
   }

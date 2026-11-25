@@ -19,6 +19,7 @@ export type ExcelDayRegisterRow = {
   productCode: string;
   quantity: number | null;
   boxCount: number | null;
+  palletCount?: number | null;
   logistics: string;
   address: string | null;
   vehicleHint: LogisticsVehicleHint;
@@ -59,6 +60,7 @@ function fromComparison(row: ComparisonShipment): ExcelDayRegisterRow {
     productCode: row.productCode.trim(),
     quantity: row.quantity,
     boxCount: row.boxes,
+    palletCount: row.palletCount,
     logistics: row.transport.trim(),
     address: row.workbookAddress?.trim() || null,
     vehicleHint: logisticsVehicleHint(row.transport),
@@ -115,7 +117,7 @@ export function recommendExcelDayRow(
   row: ExcelDayRegisterRow,
   options: Pick<Parameters<typeof recommendForQuantity>[0], "customProduct" | "vehicles" | "regions" | "kgPerPallet">,
 ) {
-  const boxCount = row.boxCount != null && row.boxCount > 0 ? row.boxCount : null;
+  const boxCount = row.boxCount != null && row.boxCount >= 0 ? row.boxCount : null;
   const result = recommendForQuantity({
     ...options,
     locationName: row.locationName || "미확인",
@@ -123,8 +125,9 @@ export function recommendExcelDayRow(
     productCode: row.productCode || null,
     productName: row.productName || null,
     boxCount,
+    palletCount: row.palletCount,
   });
-  return { quantity: row.quantity, boxCount, palletCount: result.palletCount, result };
+  return { quantity: row.quantity, boxCount, palletCount: row.palletCount === null ? null : result.palletCount, result };
 }
 
 export function notesWithWorkbookAddress(address: string | null, existingNotes?: string | null) {

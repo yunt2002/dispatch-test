@@ -34,6 +34,7 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     const rec = recommendForQuantity({
       locationName: row.location,
       boxCount: row.boxCount,
+      palletCount: row.palletCount,
       productCode: row.productCode,
       productName: row.productName,
       vehicles,
@@ -51,7 +52,7 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
       quantity: row.quantity,
       boxCount: row.boxCount,
       piecesPerBox: row.piecesPerBoxRaw,
-      palletCount: rec.palletCount,
+      palletCount: row.palletCount === null ? null : rec.palletCount,
       recommendedVehicleJson: rec.recommended ? JSON.stringify(rec.recommended) : null,
       selectedVehicleJson: rec.recommended ? JSON.stringify(rec.recommended) : null,
       recommendationReason: rec.reasonLines.join("\n"),
@@ -72,7 +73,9 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     });
     const replaceIds = existing.filter((row) => row.status === "PLANNED").map((row) => row.id);
     const preserved = existing.filter((row) => row.status !== "PLANNED");
-    const toCreate = excludePreservedImportRows(data, preserved, (row) => row);
+    const toCreate = excludePreservedImportRows(data, preserved, (row, index) => ({
+      ...row, palletCount: usable[index].palletCount,
+    }));
 
     if (replaceIds.length) {
       await tx.scheduleEntry.deleteMany({ where: { ...scope, status: "PLANNED" } });
@@ -112,6 +115,7 @@ export async function importLatestExcelIfNeeded(): Promise<number> {
     productName: shipment.product.productName,
     quantity: shipment.quantity,
     boxCount: shipment.boxCount,
+    palletCount: shipment.palletCount ?? undefined,
     piecesPerBoxRaw: shipment.piecesPerBox,
     totalWeight: shipment.totalWeight,
     logistics: shipment.actualLogistics ?? "",

@@ -4,7 +4,7 @@ import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
 import { formatNumber, formatSheetDate, todayISO } from "@/lib/format";
 import { geocodingStatus } from "@/lib/geocoding";
 import { prisma } from "@/lib/prisma";
-import { readRouteSnapshot, routeInputSignature } from "@/lib/route-snapshot";
+import { readRouteSnapshot, routeInputSignatures } from "@/lib/route-snapshot";
 import { groupRouteStops } from "@/lib/route-stop-groups";
 import { parseJson } from "@/lib/format";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
@@ -12,7 +12,7 @@ import { listDispatchBatches, resolveRouteScope } from "@/lib/dispatch-batches";
 import { RouteBatchSelect } from "@/components/route-batch-select";
 import { snapshotMatchesScope } from "@/lib/route-snapshot-scope";
 import { AllConfirmedMap, type ConfirmedBatchView } from "@/components/all-confirmed-map";
-import { confirmedRouteState, hasStaleCharterGrouping } from "@/lib/confirmed-route-state";
+import { confirmedRouteState, hasStaleCharterGrouping, matchesRouteInputSignature } from "@/lib/confirmed-route-state";
 import { routePalletLoad } from "@/lib/route-load";
 import { visibleDispatchBatches } from "@/lib/dispatch-batch-scope";
 
@@ -76,15 +76,15 @@ export default async function MapRoutePage({
   }));
   const geo = geocodingStatus();
   const boardHref = `/?date=${encodeURIComponent(date)}`;
-  const [snapshot, signature] = allConfirmed ? [null, "all-confirmed"] as const : await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
+  const [snapshot, signatures] = allConfirmed ? [null, null] as const : await Promise.all([readRouteSnapshot(date, batchId), routeInputSignatures(date, batchId)]);
   const scopeChanged = !!snapshot && !snapshotMatchesScope(snapshot.result, activeEntries.map((entry) => entry.id));
   const charterGroupingChanged = !!snapshot && hasStaleCharterGrouping(snapshot);
-  const initialResult = snapshot && !scopeChanged && !charterGroupingChanged ? { ...snapshot.result, routes: snapshot.result.routes.map((route) => ({ ...route, load: routePalletLoad(route, activeEntries) })), savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
+  const initialResult = snapshot && signatures && !scopeChanged && !charterGroupingChanged ? { ...snapshot.result, routes: snapshot.result.routes.map((route) => ({ ...route, load: routePalletLoad(route, activeEntries) })), savedAt: snapshot.savedAt, stale: !matchesRouteInputSignature(snapshot.signature, signatures) || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
   const nonemptyOptions = allConfirmed ? batchOptions.map((option) => ({ option, related: option.id === "legacy" ? activeEntries.filter((entry) => !batchedIds.has(entry.id)) : activeEntries.filter((entry) => batches.find((batch) => batch.id === option.id)?.entryIds.includes(entry.id)) })).filter(({ related }) => related.length > 0) : [];
   const rawMarkerById = new Map(rawMarkers.map((marker) => [marker.id, marker]));
   const allBatchViews: ConfirmedBatchView[] = allConfirmed ? await Promise.all(nonemptyOptions.map(async ({ option, related }, batchIndex) => {
-    const [saved, currentSignature] = await Promise.all([readRouteSnapshot(date, option.id), routeInputSignature(date, option.id)]);
-    const status = confirmedRouteState(saved, currentSignature, related.map((entry) => entry.id));
+    const [saved, batchSignatures] = await Promise.all([readRouteSnapshot(date, option.id), routeInputSignatures(date, option.id)]);
+    const status = confirmedRouteState(saved, batchSignatures, related.map((entry) => entry.id));
     const colors = ["#e85d04", "#1d4ed8", "#15803d", "#7c3aed", "#b45309", "#0f766e"];
     return {
       id: option.id,
@@ -157,7 +157,7 @@ export default async function MapRoutePage({
       {emptySelectedBatch ? <p className="dispatch-route-note-warn">선택한 확정 배차에 남은 납품이 없습니다. 표시할 배차를 다시 선택하세요.</p> : null}
       {!scope.valid ? <p className="dispatch-route-note-warn">선택한 확정 배차를 찾을 수 없습니다. 목록에서 다시 선택하세요.</p> : null}
 
-      {allConfirmed ? <AllConfirmedMap key={`${date}:all-confirmed`} date={date} embedded={embedded} markers={mapMarkers} batches={visibleBatches} /> : <MapRouteWorkspace key={`${date}:${batchId ?? "pending"}:${signature}:${snapshot?.savedAt ?? ""}`} boardHref={boardHref} date={date} batchId={batchId} markers={mapMarkers} initialResult={initialResult} />}
+      {allConfirmed ? <AllConfirmedMap key={`${date}:all-confirmed`} date={date} embedded={embedded} markers={mapMarkers} batches={visibleBatches} /> : <MapRouteWorkspace key={`${date}:${batchId ?? "pending"}:${signatures?.current ?? ""}:${snapshot?.savedAt ?? ""}`} boardHref={boardHref} date={date} batchId={batchId} markers={mapMarkers} initialResult={initialResult} />}
     </div>
   );
 }

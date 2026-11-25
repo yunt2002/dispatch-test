@@ -4,7 +4,8 @@ import { ScheduleEntryCard } from "@/components/schedule-entry-card";
 import { ScheduleGroupCard } from "@/components/schedule-group-card";
 import { ScheduleRegisterDialog } from "@/components/schedule-register-dialog";
 import { ScheduleSelectionRoot } from "@/components/schedule-selection";
-import { ErrorText, SuccessText } from "@/components/ui";
+import { Alert, ErrorText, SuccessText } from "@/components/ui";
+import { retryExcelDayFollowUp } from "@/app/schedule/register-excel-day";
 import { consolidateLabel } from "@/lib/consolidate-label";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { formatNumber, formatSheetDate, parseJson, todayISO } from "@/lib/format";
@@ -27,6 +28,15 @@ import { boxLoadingKey, boxLoadingTargetKey, currentLoadingWarning, isBoxLoading
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
 
+export type DispatchBoardSearchParams = {
+  date?: string;
+  error?: string;
+  ok?: string;
+  batch?: string;
+  notice?: string;
+  excelRetry?: string;
+};
+
 async function loadEntries(date: string) {
   return prisma.scheduleEntry.findMany({
     where: { deliveryDate: date, status: { not: "CANCELLED" } },
@@ -45,7 +55,7 @@ export default async function HomePage({
   searchParams,
   view,
 }: {
-  searchParams: Promise<{ date?: string; error?: string; ok?: string; batch?: string }>;
+  searchParams: Promise<DispatchBoardSearchParams>;
   view: "request" | "confirm";
 }) {
   const params = await searchParams;
@@ -269,6 +279,16 @@ export default async function HomePage({
 
       <ErrorText message={params.error} />
       <SuccessText message={params.ok} />
+      {params.notice && params.excelRetry ? (
+        <Alert variant="warn" title="후처리 확인 필요">
+          <p>{params.notice}</p>
+          <form action={retryExcelDayFollowUp} className="mt-2">
+            <input type="hidden" name="date" value={date} />
+            <input type="hidden" name="retry" value={params.excelRetry} />
+            <button type="submit" className="dispatch-secondary-button">실패한 후처리 다시 실행</button>
+          </form>
+        </Alert>
+      ) : null}
 
       <div className="dispatch-control-row">
         <DateSwitcher basePath={view === "confirm" ? "/confirm" : "/"} dates={knownDates} value={date} />

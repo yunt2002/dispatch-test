@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { solveRoutesForDate } from "@/lib/route-solve";
 import { todayISO } from "@/lib/format";
-import { routeInputSignature, writeRouteSnapshot } from "@/lib/route-snapshot";
+import { routeInputSignatures, writeRouteSnapshot } from "@/lib/route-snapshot";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
 import { CHARTER_GROUPING_VERSION } from "@/lib/confirmed-route-state";
 
@@ -12,9 +12,9 @@ export async function POST(request: Request) {
   const date = body.date?.trim() || todayISO();
   const batchId = typeof body.batchId === "string" ? body.batchId : null;
   if (!(await resolveRouteScope(date, batchId)).valid) return NextResponse.json({ error: "확정 배차를 찾을 수 없습니다." }, { status: 404 });
-  const before = await routeInputSignature(date, batchId);
+  const before = (await routeInputSignatures(date, batchId)).current;
   const result = await solveRoutesForDate(date, body.tripMode === "oneway" ? "oneway" : "roundtrip", batchId);
-  const after = await routeInputSignature(date, batchId);
+  const after = (await routeInputSignatures(date, batchId)).current;
   if (before !== after) {
     return NextResponse.json({ ...result, ok: false, routes: [], unassigned: [], stale: true, note: "경로를 계산하는 동안 납품 목록이 바뀌었습니다. 다시 계산해 주세요." });
   }

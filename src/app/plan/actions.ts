@@ -100,7 +100,7 @@ export async function uploadPlanExcel(formData: FormData) {
 
     for (const row of parsed.rows) {
       if (!row.deliveryDate || !row.customerName || !row.productCode) continue;
-      if (row.quantity == null && row.boxCount == null) continue;
+      if (row.quantity == null && row.boxCount == null && row.palletCount == null) continue;
 
       const customerCode = customerCodeFromName(row.customerName);
       let customer = customerCache.get(customerCode);
@@ -158,6 +158,7 @@ export async function uploadPlanExcel(formData: FormData) {
           productId: product.id,
           quantity: row.quantity ?? 0,
           boxCount: row.boxCount,
+          palletCount: row.palletCount,
           piecesPerBox: row.piecesPerBoxRaw,
           actualLogistics: row.logistics || null,
           staff: row.staff || null,
@@ -232,6 +233,7 @@ export async function ensureDispatchGroups(sessionId: string, date: string): Pro
     productName: shipment.product.productName,
     quantity: shipment.quantity,
     boxCount: shipment.boxCount,
+    palletCount: shipment.palletCount ?? undefined,
     piecesPerBoxRaw: shipment.piecesPerBox,
     totalWeight: shipment.totalWeight,
     logistics: shipment.actualLogistics ?? "",

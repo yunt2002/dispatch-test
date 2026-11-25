@@ -1,15 +1,14 @@
 import "server-only";
 
-import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { DEFAULT_DEPOT } from "@/lib/depot";
 import { buildDispatchMapMarkers } from "@/lib/dispatch-map-markers";
-import { parseJson } from "@/lib/format";
 import { fetchKakaoDrivingRoute } from "@/lib/kakao-route-matrix";
 import { prisma } from "@/lib/prisma";
 import { groupCharterStops, groupRouteStops } from "@/lib/route-stop-groups";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
 import { externalTransport } from "@/lib/external-transport";
 import { capacityUnits } from "@/lib/schedule-box-loading";
+import { routeAssignedVehicleId } from "@/lib/route-input-signature";
 
 export type RouteSolveResult = {
   ok: boolean;
@@ -42,16 +41,6 @@ export type RouteSolveResult = {
 };
 
 export { DEFAULT_DEPOT };
-
-function assignedVehicle(entry: {
-  selectedVehicleJson: string | null;
-  recommendedVehicleJson: string | null;
-}) {
-  return (
-    parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null) ??
-    parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null)
-  );
-}
 
 function haversineKm(
   a: { lat: number; lng: number },
@@ -112,9 +101,9 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       entry.locationName?.trim() ||
       entry.customerName?.trim() ||
       "납품지";
-    const assigned = assignedVehicle(entry);
-    const external = externalTransport(assigned?.vehicleTypeId);
-    if (external && assigned?.vehicleTypeId !== "external:charter") {
+    const vehicleId = routeAssignedVehicleId(entry);
+    const external = externalTransport(vehicleId);
+    if (external && vehicleId !== "external:charter") {
       unassignedDetails.push({ id: entry.id, title, reason: `${external.vehicleName} · 자사 차량 경로 제외` });
       continue;
     }
@@ -134,7 +123,7 @@ export async function solveRoutesForDate(date: string, tripMode: "oneway" | "rou
       lng: marker.lng,
       demand,
       title: marker.title,
-      vehicleId: assigned?.vehicleTypeId ?? null,
+      vehicleId,
       visitOrder: entry.visitOrder ?? null,
       createdAt: entry.createdAt,
       consolidateGroupId: entry.consolidateGroupId,

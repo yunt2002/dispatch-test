@@ -142,6 +142,7 @@ export const USER_GUIDE_SECTIONS = [
           <li>미리보기에서 건수·물류별 요약·신규 품명·지역 수를 확인합니다.</li>
           <li><strong>이 날짜로 등록</strong>을 누르면 해당 날짜의 신청·확정 일정을 지우고 엑셀 행으로 다시 넣습니다. <strong>완료·취소</strong> 건만 남습니다.</li>
           <li>차량은 엑셀 <strong>물류</strong>(또는 <strong>분류</strong>) 열을 그대로 씁니다(AI 재배정 없음). 없는 품명·지역은 일정표 행 기준으로 목록에 보강하고, 비고 도로명은 주소로 저장해 지도 좌표에 반영합니다.</li>
+          <li>일정 저장 후 주소 보강이나 차량 재배정이 실패하면 <strong>실패한 후처리 다시 실행</strong>을 눌러 이어서 처리할 수 있습니다.</li>
         </ol>
         <p>하루 단위 엑셀 등록은 홈이 주 경로입니다. <strong>처음 가져오기</strong>는 당분간 병행할 수 있습니다.</p>
       </>
@@ -221,8 +222,7 @@ export const USER_GUIDE_SECTIONS = [
           </li>
         </ul>
         <p>
-          <strong>이 달 내보내기 / 전체 내보내기</strong>는 일정 데이터를 파일로 받을 때
-          씁니다.
+          <strong>이 달 내보내기 / 전체 내보내기</strong>로 받은 엑셀의 <strong>파렛트수량(PLT)</strong> 열은 다시 등록할 때도 유지됩니다.
         </p>
       </>
     ),

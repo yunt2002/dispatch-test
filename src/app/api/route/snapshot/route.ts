@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { readRouteSnapshot, routeInputSignature, writeRouteSnapshot } from "@/lib/route-snapshot";
+import { readRouteSnapshot, routeInputSignatures, writeRouteSnapshot } from "@/lib/route-snapshot";
 import { isRoutePriorityId } from "@/lib/route-priority";
-import { hasStaleCharterGrouping } from "@/lib/confirmed-route-state";
+import { hasStaleCharterGrouping, matchesRouteInputSignature } from "@/lib/confirmed-route-state";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
@@ -23,11 +23,11 @@ export async function POST(request: Request) {
       !option.path.every((p) => Number.isFinite(p.lat) && Math.abs(p.lat) <= 90 && Number.isFinite(p.lng) && Math.abs(p.lng) <= 180)) {
     return NextResponse.json({ error: "경로 정보가 올바르지 않습니다." }, { status: 400 });
   }
-  const [snapshot, signature] = await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
+  const [snapshot, signatures] = await Promise.all([readRouteSnapshot(date, batchId), routeInputSignatures(date, batchId)]);
   if (snapshot && hasStaleCharterGrouping(snapshot)) {
     return NextResponse.json({ error: "용차 경로를 다시 계산한 뒤 저장해 주세요." }, { status: 409 });
   }
-  if (!snapshot || snapshot.signature !== signature || !snapshot.result.routes.some((route) => route.vehicleId === vehicleId)) {
+  if (!snapshot || !matchesRouteInputSignature(snapshot.signature, signatures) || !snapshot.result.routes.some((route) => route.vehicleId === vehicleId)) {
     return NextResponse.json({ error: "일정이 변경되었습니다. 경로를 다시 계산하세요." }, { status: 409 });
   }
   snapshot.result.routes = snapshot.result.routes.map((route) => route.vehicleId === vehicleId ? {
@@ -36,6 +36,6 @@ export async function POST(request: Request) {
     path: option.path!.map((point, index) => index === 0 ? { ...point, label: "출" } : point),
     priority: option.priority, priorityLabel: option.label,
   } : route);
-  await writeRouteSnapshot(date, snapshot, batchId);
+  await writeRouteSnapshot(date, { ...snapshot, signature: signatures.current }, batchId);
   return NextResponse.json({ ok: true });
 }

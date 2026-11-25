@@ -11,6 +11,7 @@ export type NormalizedShipment = {
   productName: string;
   quantity: number | null;
   boxCount: number | null;
+  palletCount?: number | null;
   /** 엑셀 박스ㅊ 원값. 의미 TODO: 실무자 확인 필요 */
   piecesPerBoxRaw: number | null;
   /** 있으면 중량 기반 PLT 추정에 사용 (1PLT≈kgPerPallet) */
@@ -36,6 +37,12 @@ export type SheetParseResult = {
 export type RegionLookup = Map<string, { regionType: string; preferredVehicleTypeId: string | null }>;
 
 const MONTH_SHEET_RE = /^\d{2}년\s*\d{1,2}월$/;
+export const DELIVERY_PALLET_HEADER = "파렛트수량(PLT)";
+
+export function isDeliveryPalletHeader(label: string): boolean {
+  return [DELIVERY_PALLET_HEADER, "PLT", "PLT수량", "파렛트수량", "팔레트수량", "팔레트수량(PLT)"]
+    .includes(label.replace(/\s/g, "").toUpperCase());
+}
 
 export function isMonthSheetName(name: string): boolean {
   return MONTH_SHEET_RE.test(name.trim());
@@ -97,6 +104,11 @@ export function cellNumber(value: ExcelJS.CellValue): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
+export function readDeliveryPalletCount(value: ExcelJS.CellValue): number | null {
+  const count = cellNumber(value);
+  return count != null && count >= 0 ? count : null;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
@@ -128,6 +140,7 @@ type HeaderMap = {
   productName: number;
   quantity: number;
   boxes: number;
+  pallets: number;
   piecesPerBox: number;
   logistics: number;
   staff: number;
@@ -156,6 +169,7 @@ function findHeaderRow(sheet: ExcelJS.Worksheet): { rowNumber: number; map: Head
         productName: find((t) => t.includes("품명")) ?? customer + 3,
         quantity: find((t) => t.includes("수량") && t.includes("합계")) ?? 9,
         boxes: find((t) => t === "박스수량" || t.includes("박스수량")) ?? 10,
+        pallets: find(isDeliveryPalletHeader) ?? 0,
         piecesPerBox: find((t) => t.includes("박스ㅊ") || t.includes("박스입")) ?? 11,
         logistics: find((t) => t === "물류") ?? 12,
         staff: find((t) => t.includes("납품직원")) ?? 13,
@@ -201,6 +215,7 @@ export function extractShipments(
     const productName = cellText(row.getCell(header.map.productName).value);
     const quantity = cellNumber(row.getCell(header.map.quantity).value);
     const boxCount = cellNumber(row.getCell(header.map.boxes).value);
+    const palletCount = header.map.pallets ? readDeliveryPalletCount(row.getCell(header.map.pallets).value) : undefined;
     const piecesPerBoxRaw = cellNumber(row.getCell(header.map.piecesPerBox).value);
     const logistics = cellText(row.getCell(header.map.logistics).value);
     const staff = cellText(row.getCell(header.map.staff).value);
@@ -217,6 +232,7 @@ export function extractShipments(
       !productCode &&
       quantity == null &&
       boxCount == null &&
+      palletCount == null &&
       !logistics;
     if (emptyRow) continue;
 
@@ -224,7 +240,7 @@ export function extractShipments(
     if (!fillDate) issues.push("일자 없음");
     if (!fillCustomer) issues.push("업체명 없음 (forward-fill 불가)");
     if (!productCode) issues.push("품번 없음");
-    if ((quantity == null || quantity <= 0) && (boxCount == null || boxCount <= 0)) {
+    if ((quantity ?? 0) <= 0 && (boxCount ?? 0) <= 0 && (palletCount ?? 0) <= 0) {
       issues.push("수량 합계·박스수량 없음");
     }
     if (!fillLocation) issues.push("업체위치 없음");
@@ -252,6 +268,7 @@ export function extractShipments(
       productName: productName || productCode,
       quantity,
       boxCount,
+      ...(header.map.pallets ? { palletCount } : {}),
       piecesPerBoxRaw,
       totalWeight: null,
       logistics,

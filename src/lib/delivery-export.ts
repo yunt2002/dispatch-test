@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { formatSheetDate } from "@/lib/format";
+import { DELIVERY_PALLET_HEADER } from "@/lib/delivery-excel";
 
 export { formatSheetDate };
 
@@ -21,13 +22,14 @@ export const DELIVERY_HEADERS = [
   "ERP 현재고",
   "비고 / 개별화물 도착지",
   "성적서",
+  DELIVERY_PALLET_HEADER,
 ] as const;
 
 const FONT = { name: "Malgun Gothic", family: 3, charset: 129, size: 12 } as const;
 const THIN = { style: "thin" as const, color: { argb: "FF000000" } };
 const BORDER = { top: THIN, left: THIN, bottom: THIN, right: THIN };
 const CENTER = { horizontal: "center" as const, vertical: "middle" as const };
-const COL_WIDTHS = [13.1, 24.4, 12, 32.2, 58.6, 12.1, 12.4, 0.1, 13.5, 15.7, 14.1, 15.6, 15.6, 18.1, 51.5, 10.7];
+const COL_WIDTHS = [13.1, 24.4, 12, 32.2, 58.6, 12.1, 12.4, 0.1, 13.5, 15.7, 14.1, 15.6, 15.6, 18.1, 51.5, 10.7, 18];
 
 export type DeliveryExportRow = {
   deliveryDate: string;
@@ -176,7 +178,7 @@ function addMonthSheet(workbook: ExcelJS.Workbook, dateInMonth: string, rows: De
   sheet.mergeCells(1, 1, 1, 15);
   const titleRow = sheet.getRow(1);
   titleRow.height = 51.75;
-  for (let c = 1; c <= 16; c++) {
+  for (let c = 1; c <= DELIVERY_HEADERS.length; c++) {
     applyCell(titleRow.getCell(c), { font: { bold: true, size: c === 1 ? 26 : 11 } });
   }
   titleRow.getCell(1).value = monthTitle(dateInMonth);
@@ -217,29 +219,31 @@ function addMonthSheet(workbook: ExcelJS.Workbook, dateInMonth: string, rows: De
       null,
       null,
       qty,
-      perBox && perBox > 0 && qty != null ? null : (row.boxCount ?? null),
+      row.boxCount ?? null,
       perBox,
       logisticsFromEntry(row) || null,
       row.staff || null,
       null,
       row.notes || null,
       null,
+      row.palletCount ?? null,
     ];
 
     values.forEach((value, colIndex) => {
       const cell = excelRow.getCell(colIndex + 1);
       const isDate = colIndex === 0;
       const isQty = colIndex === 8 || colIndex === 9 || colIndex === 10;
+      const isPallet = colIndex === 16;
       applyCell(cell, {
-        font: { bold: colIndex <= 2 || isQty },
+        font: { bold: colIndex <= 2 || isQty || isPallet },
         fill: isDate ? "FFEEECE1" : colIndex === 15 ? "FF00B050" : undefined,
-        numFmt: isDate ? "@" : isQty ? "#,##0_ ;[Red]-#,##0 " : undefined,
+        numFmt: isDate ? "@" : isPallet ? "#,##0.###" : isQty ? "#,##0_ ;[Red]-#,##0 " : undefined,
       });
       cell.value = value as ExcelJS.CellValue;
     });
 
-    if (perBox && perBox > 0 && qty != null) {
-      excelRow.getCell(10).value = { formula: `I${r}/K${r}` };
+    if (perBox && perBox > 0 && qty != null && row.boxCount === qty / perBox) {
+      excelRow.getCell(10).value = { formula: `I${r}/K${r}`, result: row.boxCount };
     }
   });
 

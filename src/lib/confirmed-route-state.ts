@@ -1,4 +1,5 @@
 import { snapshotMatchesScope } from "./route-snapshot-scope";
+import type { RouteInputSignatures } from "./route-input-signature";
 
 export const CHARTER_GROUPING_VERSION = 1;
 
@@ -16,9 +17,13 @@ export function hasStaleCharterGrouping(saved: SavedConfirmedRoute): boolean {
     saved.result.routes.some((route) => route.isCharter);
 }
 
+export function matchesRouteInputSignature(savedSignature: string, signatures: RouteInputSignatures): boolean {
+  return savedSignature === signatures.current || savedSignature === signatures.legacy;
+}
+
 /** 전체 지도에서는 개별 묶음의 최신 저장 경로만 선으로 표시한다. */
-export function confirmedRouteState(saved: SavedConfirmedRoute | null, signature: string, currentIds: string[]): "ready" | "stale" | "missing" {
+export function confirmedRouteState(saved: SavedConfirmedRoute | null, signatures: RouteInputSignatures, currentIds: string[]): "ready" | "stale" | "missing" {
   if (!saved) return "missing";
-  if (hasStaleCharterGrouping(saved) || saved.signature !== signature || !snapshotMatchesScope(saved.result, currentIds) || saved.result.routes.some((route) => !route.stopMemberIds)) return "stale";
+  if (hasStaleCharterGrouping(saved) || !matchesRouteInputSignature(saved.signature, signatures) || !snapshotMatchesScope(saved.result, currentIds) || saved.result.routes.some((route) => !route.stopMemberIds)) return "stale";
   return saved.result.routes.length > 0 && saved.result.routes.every((route) => route.path && route.path.length >= 2) ? "ready" : "missing";
 }

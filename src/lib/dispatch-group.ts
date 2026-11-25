@@ -139,13 +139,10 @@ export function buildDispatchGroups(input: {
         );
       }
       const hasBoxes = row.boxCount != null && row.boxCount > 0;
-      if (hasBoxes) warnings.push(`${row.productName || "박스 품목"}: 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정`);
-      const { pallets, source, warning } = hasBoxes ? { pallets: 0, source: null, warning: undefined } : computePallets({
-        boxCount: row.boxCount,
-        boxesPerPallet,
-        totalWeight: row.totalWeight,
-        kgPerPallet,
-      });
+      if (hasBoxes && row.palletCount == null) warnings.push(`${row.productName || "박스 품목"}: 적재 방식과 실제 공간 확인 필요 · 추가 PLT 미확정`);
+      const { pallets, source, warning } = row.palletCount != null || hasBoxes
+        ? { pallets: row.palletCount ?? 0, source: null, warning: undefined }
+        : computePallets({ boxCount: row.boxCount, boxesPerPallet, totalWeight: row.totalWeight, kgPerPallet });
       if (!rowHasWeight) {
         const derived = computeShipmentWeightKg({
           boxCount: row.boxCount,

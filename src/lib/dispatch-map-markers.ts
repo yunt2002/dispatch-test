@@ -16,6 +16,18 @@ type EntryLike = {
   notes?: string | null;
 };
 
+export async function loadDispatchCustomerAddresses(): Promise<Map<string, string>> {
+  const customers = await prisma.customer.findMany({
+    where: { isActive: true },
+    select: { customerName: true, address: true },
+  });
+  return new Map(
+    customers
+      .filter((customer) => customer.address?.trim())
+      .map((customer) => [customer.customerName.trim(), customer.address!.trim()] as const),
+  );
+}
+
 /**
  * 일정 행 → 지도 마커.
  * 주소는 엑셀 비고/메모 주소 → 납품 root 고객 주소 → DB 거래처 → 지역명 순으로 Geocoding.
@@ -25,15 +37,7 @@ export async function buildDispatchMapMarkers(
 ): Promise<DispatchMapMarker[]> {
   if (!entries.length) return [];
 
-  const customers = await prisma.customer.findMany({
-    where: { isActive: true },
-    select: { customerName: true, address: true },
-  });
-  const addressByName = new Map(
-    customers
-      .filter((c) => c.address?.trim())
-      .map((c) => [c.customerName.trim(), c.address!.trim()] as const),
-  );
+  const addressByName = await loadDispatchCustomerAddresses();
 
   const plans = entries.map((entry) => {
     const customerName = entry.customerName?.trim() || "";
