@@ -1,5 +1,7 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { applySimulationToSchedule } from "@/app/schedule/apply-simulation";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { simulationChanges } from "@/lib/simulation-changes";
 import { isPackingMode } from "@/lib/simulation-packing";
@@ -151,6 +153,8 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const [date, setDate] = useState(initialDate); const [file, setFile] = useState<File | null>(null);
   const [price, setPrice] = useState(""); const [priceSource, setPriceSource] = useState("경유 가격을 입력해 주세요.");
   const [result, setResult] = useState<SimulationResult | null>(null); const [error, setError] = useState(""); const [loading, setLoading] = useState(false);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyMessage, setApplyMessage] = useState("");
   const [lastAction, setLastAction] = useState("");
   const [historyReview, setHistoryReview] = useState<HistoryReview>("확인 필요");
   const [historyMemo, setHistoryMemo] = useState("");
@@ -323,6 +327,34 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   const differingAddresses = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => item.addressWarning) : [];
   const portReferences = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => item.addressSource.includes("대표 지점")) : [];
   const unresolvedExternalAddresses = addressCheck?.key === addressCheckKey ? addressCheck.items.filter((item) => !(item.vehicle ?? simulationVehicleName(item.transport)) && (item.addressIssue != null || item.lat == null)) : [];
+  async function applyToSchedule() {
+    if (!result) return;
+    const over = planHasOverLimit(result.proposed);
+    if (
+      !window.confirm(
+        over
+          ? `${date} AI안이 적재 한도를 초과합니다. 그래도 배차 신청에 등록할까요? 홈에서 다시 확인할 수 있습니다.`
+          : `${date} AI 배차안을 배차 신청 일정에 등록할까요? 같은 날 기존 차량 선택은 덮어씁니다.`,
+      )
+    ) {
+      return;
+    }
+    setApplyBusy(true);
+    setApplyMessage("");
+    try {
+      const outcome = await applySimulationToSchedule({
+        date,
+        result,
+        allowOverLimit: over,
+      });
+      setApplyMessage("error" in outcome ? outcome.error : outcome.ok);
+    } catch (err) {
+      setApplyMessage(err instanceof Error ? err.message : "배차 신청 등록에 실패했습니다.");
+    } finally {
+      setApplyBusy(false);
+    }
+  }
+
   async function run(mode: "load" | "regenerate" | "refresh" = "load") {
     if (!file) { setError("납품 일정표 엑셀을 선택해 주세요."); return; }
     if (!date) { setError("납품일을 선택해 주세요."); return; }
@@ -342,6 +374,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       setPackingDirty(false);
       setResult(next);
       setHistoryReview("확인 필요"); setHistoryMemo(""); setHistoryMessage("");
+      setApplyMessage("");
       setLastAction(mode === "refresh" ? "저장된 배차 유지 · 경로만 새로 조회" : next.restored ? "저장된 결과 불러옴" : "새 배차안 생성");
     } catch (err) { setError(err instanceof Error ? err.message : "시뮬레이션에 실패했습니다."); } finally { setLoading(false); }
   }
@@ -556,6 +589,23 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
           </section>
         </div></details>
       </div>
+      <section className="simulation-run-info" aria-label="AI안 배차 신청 등록"><h3>AI안을 배차 신청에 등록</h3>
+        <p className="comparison-note">선택한 납품일의 홈 일정(배차 신청)에 AI 차량·용차·택배 배정을 반영합니다. 일정은 먼저 <Link href="/plan">처음 가져오기</Link>로 같은 납품예상 일정표를 등록해 두어야 합니다. 상태는 신청(PLANNED)으로 두며 확정은 홈에서 합니다.</p>
+        <div className="comparison-controls">
+          <button
+            type="button"
+            className="dispatch-secondary-button"
+            disabled={applyBusy || loading || packingDirty || !result}
+            onClick={() => void applyToSchedule()}
+          >
+            {applyBusy ? "등록 중…" : "AI안을 배차 신청에 등록"}
+          </button>
+          <Link href="/" className="dispatch-secondary-button">배차 신청 홈으로</Link>
+        </div>
+        {packingDirty ? <p className="dispatch-route-note-warn">적재 설정을 다시 반영한 뒤 등록하세요.</p> : null}
+        {planHasOverLimit(result.proposed) ? <p className="dispatch-route-note-warn">적재 한도 초과안입니다. 등록 시 한 번 더 확인합니다.</p> : null}
+        {applyMessage ? <p role="status">{applyMessage}</p> : null}
+      </section>
       <section className="simulation-run-info" aria-label="분석 기록 저장"><h3>분석 결과 저장</h3><p className="comparison-note">현재 분석과 용차·택배 조정값을 별도 기록으로 저장합니다. 같은 날짜도 여러 번 저장할 수 있습니다.</p><div className="comparison-controls"><label>검토 상태 <select value={historyReview} onChange={(event) => setHistoryReview(event.target.value as HistoryReview)}><option>확인 필요</option><option>검토 완료</option><option>실행 곤란</option></select></label><label>검토 메모 <input type="text" maxLength={2000} value={historyMemo} onChange={(event) => setHistoryMemo(event.target.value)} placeholder="확인한 사항이나 미확인 사항" /></label><button type="button" className="dispatch-secondary-button" disabled={historySaving || loading || packingDirty} onClick={() => void saveHistory()}>{historySaving ? "저장 중…" : "분석 결과 저장"}</button><a href="/simulation/history" className="dispatch-secondary-button">분석 기록 보기</a></div>{packingDirty ? <p className="dispatch-route-note-warn">변경한 적재 설정을 적용한 뒤 저장하세요.</p> : null}{historyMessage ? <p role="status">{historyMessage}</p> : null}</section>
       <details className="simulation-details"><summary><span className="simulation-closed-label">분석 리포트 보기</span><span className="simulation-open-label">분석 리포트 접기</span></summary>
       <div className="simulation-run-info" aria-label="결과 기준">
@@ -587,4 +637,3 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       <p className="comparison-note">경로 시간·통행료는 조회 시점 기준이며 과거 운행 실적이 아닙니다. 하차·점심은 고정 가정이며 기타 대기는 제외합니다. AI 제안은 최적해를 보장하지 않습니다.</p></details></> : null}
   </section>;
 }
-
