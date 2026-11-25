@@ -102,7 +102,7 @@ async function ensureMissingProducts(
     const sample = rows.find((row) => normalizeProductKey(row.productName) === normalizeProductKey(productName));
     const key = normalizeProductKey(productName);
     const productCode = `USER-${createHash("sha256").update(key).digest("hex")}`;
-    const defaultUnit = sample?.boxCount != null && sample.boxCount > 0 ? "box" : "plt";
+    const defaultUnit = "box";
     const specialLoadingCondition = JSON.stringify({
       customerName: sample?.customerName || null,
       locationName: sample?.locationName || null,
@@ -210,21 +210,19 @@ export async function registerExcelDay(formData: FormData) {
   const entryData = rows.map((row, index) => {
     const locationName = row.locationName || "미확인";
     const boxCount = row.boxCount != null && row.boxCount > 0 ? row.boxCount : null;
-    const palletCount =
-      boxCount != null ? 0 : row.quantity != null && row.quantity > 0 ? row.quantity : 0;
     const customProduct = findCustomProduct(refreshedCustoms, row.productName);
     const result = recommendForQuantity({
       customProduct,
       locationName,
       customerName: row.customerName || null,
       boxCount,
-      palletCount,
       productCode: row.productCode || null,
       productName: row.productName || null,
       vehicles,
       regions,
       kgPerPallet: settings.kgPerPallet,
     });
+    const palletCount = result.palletCount;
 
     const fromLogistics = vehicleFromHint(row.vehicleHint, row.logistics, vehicles, palletCount);
     const selected = fromLogistics ?? result.recommended;
