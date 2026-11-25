@@ -185,8 +185,8 @@ export const USER_GUIDE_SECTIONS = [
             완료·취소된 건은 합차할 수 없습니다.
           </li>
           <li>
-            선택만 지울 때는 <strong>선택 삭제</strong>, 그날 전체를 지울 때는{" "}
-            <strong>이 날짜 전부 삭제</strong>를 씁니다.
+            선택한 일정은 <strong>선택 삭제</strong>로 지울 수 있습니다. 한 날짜의 대상 일정을 지울 때는{" "}
+            <strong>이 날짜 신청·확정 삭제</strong>를 씁니다. 완료·취소 이력은 보존됩니다.
           </li>
         </ul>
       </>

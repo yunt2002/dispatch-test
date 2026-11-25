@@ -28,6 +28,7 @@ export function ScheduleSelectionRoot({
   date,
   entryIds,
   confirmableEntryIds,
+  dayDeletableCount,
   children,
   returnTo = "request",
   allowConfirm = true,
@@ -35,6 +36,7 @@ export function ScheduleSelectionRoot({
   date: string;
   entryIds: string[];
   confirmableEntryIds: string[];
+  dayDeletableCount: number;
   children: ReactNode;
   returnTo?: "request" | "confirm";
   allowConfirm?: boolean;
@@ -149,7 +151,7 @@ export function ScheduleSelectionRoot({
                   event.preventDefault();
                   return;
                 }
-                if (!confirm(`선택한 ${selectedCount}건을 삭제할까요?`)) {
+                if (!confirm(`선택한 신청·확정 일정 ${selectedCount}건을 삭제할까요? 완료·취소 이력은 유지됩니다.`)) {
                   event.preventDefault();
                 }
               }}
@@ -171,13 +173,13 @@ export function ScheduleSelectionRoot({
             <form
               action={deleteSchedules}
               onSubmit={(event) => {
-                if (!entryIds.length) {
+                if (!dayDeletableCount) {
                   event.preventDefault();
                   return;
                 }
                 if (
                   !confirm(
-                    `${date} 납품 ${entryIds.length}건을 모두 삭제할까요? 되돌릴 수 없습니다.`,
+                    `${date} 신청·확정 일정 ${dayDeletableCount}건을 삭제할까요? 완료·취소 이력은 유지되며 삭제한 일정은 되돌릴 수 없습니다.`,
                   )
                 ) {
                   event.preventDefault();
@@ -189,10 +191,10 @@ export function ScheduleSelectionRoot({
               <input type="hidden" name="scope" value="day" />
               <button
                 className="dispatch-delete-button"
-                disabled={!entryIds.length}
+                disabled={!dayDeletableCount}
                 type="submit"
               >
-                이 날짜 전부 삭제
+                이 날짜 신청·확정 삭제
               </button>
             </form>
           </div>

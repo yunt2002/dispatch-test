@@ -36,7 +36,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
     <article className={`dispatch-job${done ? " dispatch-job-done" : ""}`}>
       <div className="dispatch-job-top">
         <div className="dispatch-job-top-main">
-          <ScheduleSelectCheckbox id={first.id} ids={items.map((item) => item.id)} />
+          {!done ? <ScheduleSelectCheckbox id={first.id} ids={items.map((item) => item.id)} /> : null}
           <div><strong>{locations.join(" · ")}</strong><em className="dispatch-consolidate-badge">{label}</em></div>
         </div>
         <b>{totalLabel}</b>
@@ -89,7 +89,7 @@ export function ScheduleGroupCard({ date, groupId, label, status, items, totalLa
           <input type="hidden" name="returnTo" value={returnTo} />
           <button className="dispatch-secondary-button dispatch-card-action" type="submit">묶음 해제</button>
         </form> : null}
-        <ConfirmSubmit action={deleteScheduleGroup} buttonClassName="dispatch-delete-button dispatch-card-action" extraFields={{ date, returnTo }} id={first.id} message={`이 묶음의 ${items.length}건을 모두 삭제할까요?`} />
+        {!done ? <ConfirmSubmit action={deleteScheduleGroup} buttonClassName="dispatch-delete-button dispatch-card-action" extraFields={{ date, returnTo }} id={first.id} message={`이 묶음의 신청·확정 일정 ${items.length}건을 삭제할까요?`} /> : null}
       </div>
     </article>
   );

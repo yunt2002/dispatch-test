@@ -185,7 +185,7 @@ export function ScheduleEntryCard({
     <article className={`dispatch-job${done ? " dispatch-job-done" : ""}`}>
       <div className="dispatch-job-top">
         <div className="dispatch-job-top-main">
-          <ScheduleSelectCheckbox id={id} />
+          {!done ? <ScheduleSelectCheckbox id={id} /> : null}
           <div>
             <strong>{locationName}</strong>
             <span>{regionTypeLabel}</span>
@@ -293,13 +293,13 @@ export function ScheduleEntryCard({
             </button>
           </form>
         ) : null}
-        <ConfirmSubmit
+        {!done ? <ConfirmSubmit
           action={deleteSchedule}
           buttonClassName="dispatch-delete-button dispatch-card-action"
           extraFields={{ date, returnTo }}
           id={id}
           message="이 일정을 삭제할까요?"
-        />
+        /> : null}
       </div>
     </article>
   );

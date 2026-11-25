@@ -19,6 +19,7 @@ export type RouteSolveResult = {
   routes: {
     vehicleId: string;
     vehicleName: string;
+    revision?: string;
     isCharter?: boolean;
     stopIds: string[];
     stopMemberIds: string[][];

@@ -26,7 +26,7 @@ import { confirmDispatchBatch } from "@/lib/dispatch-batches";
 import { preserveConfirmedRouteSnapshots } from "@/lib/route-snapshot";
 import { externalTransport, parseTransportFee, transportFeeKey } from "@/lib/external-transport";
 import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode } from "@/lib/schedule-box-loading";
-import { transitionScheduleStatus } from "@/lib/schedule-status-transition";
+import { deleteActiveScheduleEntries, transitionScheduleStatus } from "@/lib/schedule-status-transition";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
 import { explicitScheduleVehicleReason } from "@/lib/schedule-vehicle-source";
@@ -640,12 +640,10 @@ export async function deleteScheduleGroup(formData: FormData) {
   const date = text(formData, "date");
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
   if (!entry || !entry.consolidateGroupId || entry.deliveryDate !== date) go(formData, { date, error: "삭제할 묶음을 확인해 주세요." });
-  const result = await prisma.scheduleEntry.deleteMany({
-    where: { consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: entry.status },
+  const count = await deleteActiveScheduleEntries(prisma.scheduleEntry, {
+    consolidateGroupId: entry.consolidateGroupId, deliveryDate: date, status: entry.status,
   });
-  await rebalanceDayFleet(date);
-  revalidatePath("/");
-  go(formData, { date, ok: `${result.count}건을 삭제했습니다.` });
+  return finishScheduleDeletion(formData, date, count);
 }
 
 export async function confirmSchedule(formData: FormData) {
@@ -701,63 +699,47 @@ export async function deleteSchedule(formData: FormData) {
   const id = text(formData, "id");
   const date = optionalText(formData, "date") ?? undefined;
   const entry = await prisma.scheduleEntry.findUnique({ where: { id } });
-  await prisma.scheduleEntry.delete({ where: { id } });
-  if (entry?.deliveryDate) await rebalanceDayFleet(entry.deliveryDate);
+  if (!entry || (date && entry.deliveryDate !== date)) {
+    go(formData, { date, error: "삭제할 일정을 찾지 못했습니다." });
+  }
+  const count = await deleteActiveScheduleEntries(prisma.scheduleEntry, { id, deliveryDate: entry.deliveryDate });
+  return finishScheduleDeletion(formData, entry.deliveryDate, count);
+}
+
+async function finishScheduleDeletion(formData: FormData, date: string, count: number): Promise<never> {
+  let rebalanceFailed = false;
+  if (count) {
+    try {
+      await rebalanceDayFleet(date);
+    } catch (error) {
+      rebalanceFailed = true;
+      console.error("납품 일정 삭제 후 자동 재배정 실패", date, error);
+    }
+  }
   revalidatePath("/");
-  go(formData, { date, ok: "삭제했습니다." });
+  go(formData, {
+    date,
+    ok: count ? `${count}건을 삭제했습니다. 완료·취소 이력은 유지됩니다.${rebalanceFailed ? " 자동 재배정에 실패해 남은 일정의 차량을 확인해 주세요." : ""}` : undefined,
+    error: count ? undefined : "삭제할 신청·확정 일정이 없습니다. 현재 상태를 확인해 주세요.",
+  });
 }
 
 /** 선택 삭제 또는 해당 납품일 전체 삭제 */
 export async function deleteSchedules(formData: FormData) {
   const date = optionalText(formData, "date") ?? undefined;
   const scope = text(formData, "scope") === "day" ? "day" : "selected";
-
-  if (scope === "day") {
-    if (!date) {
-      go(formData, { error: "납품일이 없어 전체 삭제할 수 없습니다." });
-    }
-    const result = await prisma.scheduleEntry.deleteMany({
-      where: { deliveryDate: date, status: { not: "CANCELLED" } },
-    });
-    await rebalanceDayFleet(date);
-    revalidatePath("/");
-    go(formData, {
-      date,
-      ok: result.count
-        ? `${result.count}건을 모두 삭제했습니다.`
-        : "삭제할 일정이 없습니다.",
-    });
-  }
-
-  const ids = formData
+  if (!date) go(formData, { error: "삭제할 납품일을 확인하세요." });
+  const ids = [...new Set(formData
     .getAll("ids")
     .map((value) => String(value).trim())
-    .filter(Boolean);
-  if (!ids.length) {
+    .filter(Boolean))];
+  if (scope === "selected" && !ids.length) {
     go(formData, { date, error: "삭제할 항목을 선택하세요." });
   }
-  if (!date) {
-    go(formData, { error: "납품일이 없어 선택 삭제할 수 없습니다." });
-  }
-
-  const entries = await prisma.scheduleEntry.findMany({
-    where: { id: { in: ids }, deliveryDate: date },
-    select: { id: true, deliveryDate: true },
+  const count = await deleteActiveScheduleEntries(prisma.scheduleEntry, {
+    deliveryDate: date, ...(scope === "selected" ? { id: { in: ids } } : {}),
   });
-  if (!entries.length) {
-    go(formData, { date, error: "삭제할 일정을 찾지 못했습니다." });
-  }
-
-  await prisma.scheduleEntry.deleteMany({
-    where: { id: { in: entries.map((entry) => entry.id) }, deliveryDate: date },
-  });
-
-  await rebalanceDayFleet(date);
-  revalidatePath("/");
-  go(formData, {
-    date,
-    ok: `${entries.length}건을 삭제했습니다.`,
-  });
+  return finishScheduleDeletion(formData, date, count);
 }
 
 /** 선택한 납품을 한 대·한 운행으로 묶기 */

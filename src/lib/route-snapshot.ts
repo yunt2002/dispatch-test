@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import type { RouteSolveResult } from "@/lib/route-solve";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
@@ -45,8 +46,14 @@ function parseRouteSnapshot(value: string): RouteSnapshot | null {
 }
 
 export async function readRouteSnapshot(date: string, batchId?: string | null): Promise<RouteSnapshot | null> {
-  const setting = await prisma.appSetting.findUnique({ where: { key: snapshotKey(date, batchId) } });
-  return setting ? parseRouteSnapshot(setting.value) : null;
+  return (await readStoredRouteSnapshot(date, batchId))?.snapshot ?? null;
+}
+
+export async function readStoredRouteSnapshot(date: string, batchId?: string | null) {
+  const setting = await prisma.appSetting.findUnique({
+    where: { key: snapshotKey(date, batchId) }, select: { value: true },
+  });
+  return setting ? { value: setting.value, snapshot: parseRouteSnapshot(setting.value) } : null;
 }
 
 /** 완료 상태로 updatedAt이 바뀌기 전에 유효한 기존 경로를 새 기준으로 옮긴다. */
@@ -75,8 +82,23 @@ export async function preserveConfirmedRouteSnapshots(date: string) {
   }
 }
 
-export async function writeRouteSnapshot(date: string, snapshot: RouteSnapshot, batchId?: string | null) {
+export async function writeRouteSnapshot(
+  date: string,
+  snapshot: RouteSnapshot,
+  batchId: string | null,
+  expectedValue: string | null,
+): Promise<boolean> {
   const key = snapshotKey(date, batchId);
   const value = JSON.stringify(snapshot);
-  await prisma.appSetting.upsert({ where: { key }, create: { key, value }, update: { value } });
+  if (expectedValue !== null) {
+    const updated = await prisma.appSetting.updateMany({ where: { key, value: expectedValue }, data: { value } });
+    return updated.count === 1;
+  }
+  try {
+    await prisma.appSetting.create({ data: { key, value } });
+    return true;
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return false;
+    throw error;
+  }
 }

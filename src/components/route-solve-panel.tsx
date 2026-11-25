@@ -22,11 +22,13 @@ export type RouteSolveResult = {
   savedAt?: string;
   stale?: boolean;
   snapshotError?: boolean;
+  snapshotConflict?: boolean;
   matrixNote?: string;
   depot: { lat: number; lng: number; title: string };
   routes: {
     vehicleId: string;
     vehicleName: string;
+    revision?: string;
     isCharter?: boolean;
     stopIds: string[];
     stopMemberIds?: string[][];
@@ -114,6 +116,7 @@ export function RouteSolvePanel({
   const [altVehicleId, setAltVehicleId] = useState<string | null>(null);
   const [altLoadingId, setAltLoadingId] = useState<string | null>(null);
   const [altError, setAltError] = useState<string | null>(null);
+  const [altConflict, setAltConflict] = useState(false);
   const [altOptionsByVehicle, setAltOptionsByVehicle] = useState<
     Record<string, RouteAlternativeOption[]>
   >({});
@@ -175,6 +178,7 @@ export function RouteSolvePanel({
     setAltVehicleId(null);
     setAltOptionsByVehicle({});
     setAltError(null);
+    setAltConflict(false);
     try {
       publish(await fetchSolve(mode));
     } catch (error) {
@@ -426,37 +430,38 @@ export function RouteSolvePanel({
 
   async function onApplyAlternative(vehicleId: string, option: RouteAlternativeOption) {
     if (!result) return;
+    const selected = result.routes.find((route) => route.vehicleId === vehicleId);
+    const expectedRevision = selected?.revision ?? result.savedAt;
+    if (!selected || !expectedRevision) return;
+    setAltError(null);
     setAltLoadingId(vehicleId);
-    const next: RouteSolveResult = {
-      ...result,
-      routes: result.routes.map((route) =>
-        route.vehicleId === vehicleId
-          ? {
-              ...route,
-              totalDistanceKm: option.distanceKm,
-              totalTimeMin: option.durationMin,
-              stopDurationsSec: option.legDurationsSec?.slice(0, route.stopIds.length) ?? null,
-              tollWon: option.tollWon,
-              path: option.path.map((point, index) =>
-                index === 0 ? { ...point, label: "출" } : point,
-              ),
-              priority: option.priority,
-              priorityLabel: option.label,
-            }
-          : route,
-      ),
-      note: `${result.note.split(" · ")[0]} · ${option.label} 경로 적용`,
-    };
     try {
       const response = await fetch("/api/route/snapshot", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, vehicleId, option, batchId }),
+        body: JSON.stringify({ date, vehicleId, option, batchId, expectedRevision }),
       });
-      if (!response.ok) {
-        setAltError("선택한 경로를 저장하지 못했습니다. 일정을 확인하고 경로를 다시 계산하세요.");
+      const data = await response.json() as { revision?: string; error?: string };
+      if (!response.ok || !data.revision) {
+        setAltError(data.error ?? "선택한 경로를 저장하지 못했습니다. 다시 시도하세요.");
+        setAltConflict(response.status === 409);
         return;
       }
-      publish(next);
+      publish({
+        ...result,
+        routes: result.routes.map((route) => route.vehicleId === vehicleId ? {
+          ...route,
+          revision: data.revision,
+          totalDistanceKm: option.distanceKm,
+          totalTimeMin: option.durationMin,
+          stopDurationsSec: option.legDurationsSec?.length && option.legDurationsSec.length >= route.stopIds.length
+            ? option.legDurationsSec.slice(0, route.stopIds.length) : null,
+          tollWon: option.tollWon,
+          path: option.path.map((point, index) => index === 0 ? { ...point, label: "출" } : point),
+          priority: option.priority,
+          priorityLabel: option.label,
+        } : route),
+        note: `${result.note.split(" · ")[0]} · ${option.label} 경로 적용`,
+      });
     } catch {
       setAltError("선택한 경로를 저장하지 못했습니다. 다시 시도하세요.");
       return;
@@ -530,7 +535,7 @@ export function RouteSolvePanel({
     }
   }
 
-  const busy = loading || Boolean(savingVehicleId) || parsingConstraints;
+  const busy = loading || Boolean(savingVehicleId) || parsingConstraints || Boolean(altLoadingId);
 
   return (
     <section className="dispatch-route-panel" aria-label="경로 제안">
@@ -577,7 +582,13 @@ export function RouteSolvePanel({
           ) : null}
           {result.savedAt ? <p className="dispatch-route-meta">마지막 경로 조회: {new Date(result.savedAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}</p> : null}
           {result.snapshotError ? <p className="dispatch-route-note-warn">경로 저장에 실패했습니다. 화면을 떠나면 결과가 사라질 수 있습니다.</p> : null}
-          {result.stale || result.tripMode !== tripMode ? <p className="dispatch-route-note-warn">일정 또는 선택한 조건이 바뀌었습니다. 표시된 경로는 이전 결과입니다. 경로 새로고침을 눌러 갱신하세요.</p> : null}
+          {result.snapshotConflict ? (
+            <div>
+              <p className="dispatch-route-note-warn" role="alert">계산 중 다른 사람이 경로를 저장해 이번 결과는 저장되지 않았습니다. 최신 저장 경로를 확인하세요.</p>
+              <button type="button" className="dispatch-secondary-button" onClick={() => window.location.reload()}>최신 저장 경로 불러오기</button>
+            </div>
+          ) : null}
+          {!result.snapshotConflict && (result.stale || result.tripMode !== tripMode) ? <p className="dispatch-route-note-warn">일정 또는 선택한 조건이 바뀌었습니다. 표시된 경로는 이전 결과입니다. 경로 새로고침을 눌러 갱신하세요.</p> : null}
           {result.error && !result.solverReachable ? (
             <p className="dispatch-route-note-warn">{result.error}</p>
           ) : null}
@@ -628,7 +639,8 @@ export function RouteSolvePanel({
           </div>
 
           {orderError ? <p className="dispatch-route-note-warn">{orderError}</p> : null}
-          {altError ? <p className="dispatch-route-note-warn">{altError}</p> : null}
+          {altError ? <p className="dispatch-route-note-warn" role="alert">{altError}</p> : null}
+          {altConflict ? <button type="button" className="dispatch-secondary-button" onClick={() => window.location.reload()}>최신 저장 경로 불러오기</button> : null}
           {savingVehicleId ? (
             <p className="dispatch-route-meta">방문 순서 저장 중…</p>
           ) : null}
@@ -669,7 +681,7 @@ export function RouteSolvePanel({
                   ) : null}
                   {!route.isCharter ? <button
                     className="dispatch-route-suggest-btn"
-                    disabled={busy || Boolean(result.stale) || result.tripMode !== tripMode || altLoadingId === route.vehicleId}
+                    disabled={busy || altConflict || !result.savedAt || Boolean(result.stale) || result.tripMode !== tripMode}
                     onClick={() => void onOpenAlternatives(route.vehicleId)}
                     type="button"
                   >
@@ -707,7 +719,7 @@ export function RouteSolvePanel({
                     return (
                       <button
                         className={`dispatch-route-alt-btn${selected ? " is-selected" : ""}`}
-                        disabled={busy}
+                        disabled={busy || altConflict}
                         key={option.priority}
                         onClick={() => void onApplyAlternative(route.vehicleId, option)}
                         type="button"

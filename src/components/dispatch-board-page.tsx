@@ -9,7 +9,6 @@ import { retryExcelDayFollowUp } from "@/app/schedule/register-excel-day";
 import { consolidateLabel } from "@/lib/consolidate-label";
 import type { VehicleRecommendation } from "@/lib/dispatch-group";
 import { formatNumber, formatSheetDate, parseJson, todayISO } from "@/lib/format";
-import { importLatestExcelIfNeeded } from "@/lib/import-schedule";
 import { geocodingStatus } from "@/lib/geocoding";
 import { reasonOneLine, regionTypeLabel } from "@/lib/labels";
 import { prisma } from "@/lib/prisma";
@@ -60,8 +59,7 @@ export default async function HomePage({
 }) {
   const params = await searchParams;
 
-  // 마이그레이션성 작업은 병렬. 잔여 재배정(rebalance)은 일정 변경 액션에서만 돌린다.
-  await Promise.all([importLatestExcelIfNeeded(), applyProductLoadingIfNeeded()]);
+  await applyProductLoadingIfNeeded();
 
   const [regions, scheduleDates, vehicles, settings, customProducts, hiddenProducts] = await Promise.all([
     prisma.regionMaster.findMany({ orderBy: { locationName: "asc" } }),
@@ -312,7 +310,7 @@ export default async function HomePage({
       </datalist>
 
       <div className={`dispatch-workspace${view === "confirm" ? " dispatch-workspace-confirm" : ""}`}>
-        <ScheduleSelectionRoot date={date} returnTo={view} allowConfirm={view === "confirm"} entryIds={(view === "request" ? reviewEntries : entries).map((entry) => entry.id)} confirmableEntryIds={reviewEntries.map((entry) => entry.id)}>
+        <ScheduleSelectionRoot date={date} returnTo={view} allowConfirm={view === "confirm"} entryIds={(view === "request" ? reviewEntries : activeEntries).map((entry) => entry.id)} confirmableEntryIds={reviewEntries.map((entry) => entry.id)} dayDeletableCount={reviewEntries.length + confirmedEntries.length}>
         <section className={`dispatch-board ${view === "confirm" ? "dispatch-board-confirm" : "dispatch-board-request"}`} aria-label={`${formatSheetDate(date)} 배차 보드`}>
           <section className={`dispatch-column dispatch-column-review${view === "request" && !reviewEntries.length ? " dispatch-column-compact" : ""}`}>
             <div className="dispatch-column-head"><div><i /><strong>{view === "confirm" ? "확정 대기" : "배차 신청 내역"}</strong><span>차량과 납품 확인</span></div><b>{reviewEntries.length}</b></div>
