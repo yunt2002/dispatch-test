@@ -1,9 +1,11 @@
+import { Prisma } from "@prisma/client";
 import type { NormalizedShipment, RegionLookup } from "@/lib/delivery-excel";
 import { recommendForQuantity } from "@/lib/dispatch-group";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
 import { randomUUID } from "node:crypto";
-import { boxLoadingKey } from "@/lib/schedule-box-loading";
+import { boxLoadingKey, boxLoadingTargetKey } from "@/lib/schedule-box-loading";
+import { excludePreservedImportRows, scheduleImportMatchSelect } from "@/lib/schedule-import-rows";
 
 async function loadRegions(): Promise<RegionLookup> {
   const regions = await prisma.regionMaster.findMany();
@@ -18,9 +20,10 @@ async function loadRegions(): Promise<RegionLookup> {
   );
 }
 
-/** Excel 행을 일정으로 넣는다. 기존 Excel 출처 일정은 교체한다. */
+/** 엑셀에 포함된 날짜의 엑셀 신청만 교체하고 확정·완료·취소 이력을 보존한다. */
 export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<number> {
   const usable = rows.filter((row) => row.deliveryDate && row.customerName);
+  if (!usable.length) return 0;
   const [vehicles, regions, settings] = await Promise.all([
     prisma.vehicleType.findMany({ where: { isActive: true } }),
     loadRegions(),
@@ -61,16 +64,28 @@ export async function replaceExcelSchedule(rows: NormalizedShipment[]): Promise<
     };
   });
 
-  // 삭제→생성은 한 트랜잭션. 중간에 실패하면 기존 EXCEL 일정이 유지된다.
-  await prisma.$transaction(async (tx) => {
-    await tx.scheduleEntry.deleteMany({ where: { source: "EXCEL" } });
-    if (data.length) {
-      await tx.scheduleEntry.createMany({ data });
-      const boxSettings = data.filter((item) => item.boxCount != null && item.boxCount > 0).map((item) => ({ key: boxLoadingKey(item.id), value: "unknown" }));
+  return prisma.$transaction(async (tx) => {
+    const scope = { source: "EXCEL", deliveryDate: { in: [...new Set(data.map((row) => row.deliveryDate))] } };
+    const existing = await tx.scheduleEntry.findMany({
+      where: scope,
+      select: { id: true, status: true, ...scheduleImportMatchSelect },
+    });
+    const replaceIds = existing.filter((row) => row.status === "PLANNED").map((row) => row.id);
+    const preserved = existing.filter((row) => row.status !== "PLANNED");
+    const toCreate = excludePreservedImportRows(data, preserved, (row) => row);
+
+    if (replaceIds.length) {
+      await tx.scheduleEntry.deleteMany({ where: { ...scope, status: "PLANNED" } });
+      const keys = replaceIds.flatMap((id) => [boxLoadingKey(id), boxLoadingTargetKey(id)]);
+      await tx.appSetting.deleteMany({ where: { key: { in: keys } } });
+    }
+    if (toCreate.length) {
+      await tx.scheduleEntry.createMany({ data: toCreate });
+      const boxSettings = toCreate.filter((item) => item.boxCount != null && item.boxCount > 0).map((item) => ({ key: boxLoadingKey(item.id), value: "unknown" }));
       if (boxSettings.length) await tx.appSetting.createMany({ data: boxSettings });
     }
-  });
-  return data.length;
+    return toCreate.length;
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 }
 
 /** 이미 업로드된 최신 Excel 세션이 있으면 일정으로 한 번 옮긴다. */
@@ -105,5 +120,10 @@ export async function importLatestExcelIfNeeded(): Promise<number> {
     issues: [],
   }));
 
-  return replaceExcelSchedule(rows);
+  try {
+    return await replaceExcelSchedule(rows);
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") return 0;
+    throw error;
+  }
 }

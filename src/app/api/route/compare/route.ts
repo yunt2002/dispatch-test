@@ -19,6 +19,7 @@ import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
 import { simulationStageError, type SimulationStage } from "@/lib/simulation-errors";
 import { simulationFleet, simulationVehicleName, simulationVehicleOver, type SimulationVehicle } from "@/lib/simulation-vehicles";
+import { excelUploadError } from "@/lib/excel-upload";
 
 export const maxDuration = 60;
 type Order = { vehicle: string; ids: string[] };
@@ -96,7 +97,9 @@ export async function POST(request: Request) {
       addressOverrides = Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, (value as string).trim()]));
     } catch { return NextResponse.json({ error: "확인 주소가 올바르지 않습니다." }, { status: 400 }); }
     const priceText = String(form.get("price") ?? "").trim(); const price = priceText ? Number(priceText) : null;
-    if (!(file instanceof File) || file.size > 15_000_000 || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
+    if (!(file instanceof File) || !/^\d{4}-\d{2}-\d{2}$/.test(date) || (price !== null && (!Number.isFinite(price) || price <= 0))) return NextResponse.json({ error: "엑셀 파일, 날짜와 경유 가격을 확인하세요." }, { status: 400 });
+    const fileError = excelUploadError(file);
+    if (fileError) return NextResponse.json({ error: fileError }, { status: 400 });
     const mode = String(form.get("mode") || "load");
     if (!["load", "regenerate", "refresh", "preview", "addresses"].includes(mode)) return NextResponse.json({ error: "시뮬레이션 요청을 확인하세요." }, { status: 400 });
     stage = "workbook";

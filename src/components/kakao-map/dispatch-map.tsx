@@ -69,18 +69,12 @@ export function DispatchMap({
       })),
     [routes],
   );
-  const hiddenSet = useMemo(() => new Set(hiddenRouteIds), [hiddenRouteIds]);
+  const hiddenSet = useMemo(() => {
+    const routeIds = new Set(routes.map((route) => route.vehicleId));
+    return new Set(hiddenRouteIds.filter((id) => routeIds.has(id)));
+  }, [hiddenRouteIds, routes]);
   const hasOwn = styledLegend.some((item) => item.style.kind === "own");
   const hasCharter = styledLegend.some((item) => item.style.kind === "charter");
-
-  // 경로 목록이 바뀌면 숨김 상태 초기화
-  useEffect(() => {
-    setHiddenRouteIds((prev) => {
-      const valid = new Set(routes.map((r) => r.vehicleId));
-      const next = prev.filter((id) => valid.has(id));
-      return next.length === prev.length ? prev : next;
-    });
-  }, [routesKey, routes]);
 
   function toggleRoute(vehicleId: string) {
     setHiddenRouteIds((prev) =>
@@ -331,7 +325,7 @@ export function DispatchMap({
     );
   }
 
-  const allVisible = hiddenRouteIds.length === 0;
+  const allVisible = hiddenSet.size === 0;
   const ownOnly =
     hasOwn &&
     hasCharter &&
@@ -360,7 +354,7 @@ export function DispatchMap({
           <span>
             {markers.length > 0 ? `좌표 ${markers.length}곳` : "표시할 좌표 없음"}
             {routes.length
-              ? ` · 경로 ${routes.length - hiddenRouteIds.length}/${routes.length}대`
+              ? ` · 경로 ${routes.length - hiddenSet.size}/${routes.length}대`
               : ""}
           </span>
         </div>

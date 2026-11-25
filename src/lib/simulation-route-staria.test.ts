@@ -4,6 +4,15 @@ import ExcelJS from "exceljs";
 import { prisma } from "./prisma";
 import { POST } from "../app/api/route/compare/route";
 
+test("4 MB를 넘는 일정표는 시뮬레이션을 실행하기 전에 거절한다", async () => {
+  const form = new FormData();
+  form.set("date", "2026-10-15");
+  form.set("file", new File([new Uint8Array(4_000_001)], "큰 일정표.xlsx"));
+  const response = await POST(new Request("http://localhost/api/route/compare", { method: "POST", body: form }));
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /최대 4 MB/);
+});
+
 test("가상 일정으로 스타리아 배차·경로·비용을 계산하고 차량 설정 누락을 차단한다", async () => {
   const customers = { findMany: async () => [] };
   const products = { findMany: async () => [] };

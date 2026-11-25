@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readRouteSnapshot, routeInputSignature, writeRouteSnapshot } from "@/lib/route-snapshot";
 import { isRoutePriorityId } from "@/lib/route-priority";
+import { hasStaleCharterGrouping } from "@/lib/confirmed-route-state";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as {
@@ -23,6 +24,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "경로 정보가 올바르지 않습니다." }, { status: 400 });
   }
   const [snapshot, signature] = await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
+  if (snapshot && hasStaleCharterGrouping(snapshot)) {
+    return NextResponse.json({ error: "용차 경로를 다시 계산한 뒤 저장해 주세요." }, { status: 409 });
+  }
   if (!snapshot || snapshot.signature !== signature || !snapshot.result.routes.some((route) => route.vehicleId === vehicleId)) {
     return NextResponse.json({ error: "일정이 변경되었습니다. 경로를 다시 계산하세요." }, { status: 409 });
   }

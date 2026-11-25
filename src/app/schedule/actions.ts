@@ -28,6 +28,7 @@ import { boxLoadingKey, boxLoadingTargetKey, boxLoadingPallets, isBoxLoadingMode
 import { transitionScheduleStatus } from "@/lib/schedule-status-transition";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
+import { explicitScheduleVehicleReason } from "@/lib/schedule-vehicle-source";
 
 function go(formData: FormData, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -478,10 +479,11 @@ export async function updateSchedule(formData: FormData) {
   const nextPallet = palletCount;
   const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
   const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
-  // 담당자가 추천과 다른 차를 고른 경우: 추천만 갱신하고 선택 차량은 유지
+  const explicitReason = explicitScheduleVehicleReason(entry);
   const manual = Boolean(
-    oldSel && (!oldRec || oldSel.vehicleTypeId !== oldRec.vehicleTypeId),
+    oldSel && (explicitReason || !oldRec || oldSel.vehicleTypeId !== oldRec.vehicleTypeId),
   );
+  const recommendationReason = [explicitReason, ...result.reasonLines].filter(Boolean).join("\n");
 
   let selectedJson = result.recommended ? JSON.stringify(result.recommended) : null;
   let logistics = result.recommended?.vehicleName ?? null;
@@ -527,7 +529,7 @@ export async function updateSchedule(formData: FormData) {
         locationName: locationName.trim(), regionType: result.regionType, customerName, productName,
         ...(productChanged ? { productCode: null } : {}), boxCount, palletCount: nextPallet,
         recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
-        recommendationReason: result.reasonLines.join("\n"), warningsJson: JSON.stringify(result.warnings),
+        recommendationReason, warningsJson: JSON.stringify(result.warnings),
       } }),
       prisma.scheduleEntry.updateMany({ where: { id: { in: members.map((member) => member.id) } }, data: {
         selectedVehicleJson: shared ? JSON.stringify(shared) : null, logistics: shared?.vehicleName ?? null,
@@ -550,7 +552,7 @@ export async function updateSchedule(formData: FormData) {
       palletCount: nextPallet,
       recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
       selectedVehicleJson: selectedJson,
-      recommendationReason: result.reasonLines.join("\n"),
+      recommendationReason,
       warningsJson: JSON.stringify(result.warnings),
       logistics,
     },

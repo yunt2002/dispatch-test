@@ -9,8 +9,11 @@ import {
   missingProductNames,
   notesWithWorkbookAddress,
   parseExcelDayRegisterRows,
+  recommendExcelDayRow,
   summarizeExcelDayRegisterRows,
 } from "./excel-day-register";
+import { excelUploadError } from "./excel-upload";
+import { explicitScheduleVehicleReason } from "./schedule-vehicle-source";
 
 test("물류 열을 자사 차량·용차·택배로 매핑한다", () => {
   assert.equal(logisticsVehicleHint("1호 차량(5t)"), "1호차");
@@ -39,6 +42,11 @@ test("선택한 납품일 행만 추출한다", () => {
   assert.equal(rows[0].vehicleHint, "1호차");
   assert.equal(rows[0].address, "경기도 안양시 만안구 덕천로152번길 25");
   assert.equal(rows[1].vehicleHint, "용차");
+  const options = { vehicles: [], regions: new Map() };
+  const noBox = recommendExcelDayRow(rows[1], options);
+  assert.deepEqual([noBox.quantity, noBox.boxCount, noBox.palletCount], [5, null, null]);
+  const withBox = recommendExcelDayRow(rows[0], options);
+  assert.deepEqual([withBox.quantity, withBox.boxCount, withBox.palletCount], [10, 2, 0]);
 });
 
 test("요약·신규 품명·지역·주소 건수를 집계한다", () => {
@@ -58,6 +66,23 @@ test("요약·신규 품명·지역·주소 건수를 집계한다", () => {
 
 test("완료·취소 상태는 당일 덮어쓰기에서 보존한다", () => {
   assert.deepEqual([...EXCEL_DAY_PRESERVED_STATUSES], ["DONE", "CANCELLED"]);
+});
+
+test("엑셀 지정과 AI 반영을 배차 재추천에서 고정한다", () => {
+  const reason = "엑셀 물류 그대로 · 2호차";
+  const simulation = "AI 시뮬 배정 (AI)";
+  assert.equal(explicitScheduleVehicleReason({ source: "EXCEL", recommendationReason: `${reason}\n권역 추천` }), reason);
+  assert.equal(explicitScheduleVehicleReason({ source: "EXCEL", recommendationReason: "권역 추천" }), null);
+  assert.equal(explicitScheduleVehicleReason({ source: "MANUAL", recommendationReason: reason }), null);
+  assert.equal(explicitScheduleVehicleReason({ source: "EXCEL", recommendationReason: `${simulation}\n${reason}` }), simulation);
+  assert.equal(explicitScheduleVehicleReason({ source: "MANUAL", recommendationReason: `기존 추천\n${simulation}` }), simulation);
+});
+
+test("엑셀 업로드는 내용이 있는 4 MB 이하 .xlsx 파일을 허용한다", () => {
+  assert.equal(excelUploadError({ name: "일정.XLSX", size: 4_000_000 }), null);
+  assert.match(excelUploadError({ name: "일정.xlsx", size: 4_000_001 }) ?? "", /4 MB/);
+  assert.match(excelUploadError({ name: "일정.xlsx", size: 0 }) ?? "", /내용/);
+  assert.match(excelUploadError({ name: "일정.xls", size: 100 }) ?? "", /\.xlsx/);
 });
 
 test("비고 도로명을 notes 주소 형식으로 붙인다", () => {

@@ -1,4 +1,8 @@
-import type { SimulationItem, SimulationResult } from "@/lib/simulation";
+import type { SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
+
+export type SimulationPlanForSchedule = Pick<SimulationResult, "remaining" | "charterGroups" | "planSource"> & {
+  proposed: Pick<SimulationRoute, "vehicle" | "items" | "over">[];
+};
 
 export type SimulationBoardAssignment = {
   rowNumber: number;
@@ -52,7 +56,7 @@ export function simulationMatchKey(input: {
   ].join("|");
 }
 
-export function scheduleEntryMatchKey(entry: ScheduleMatchRow) {
+export function scheduleEntryMatchKey(entry: Pick<ScheduleMatchRow, "customerName" | "productName" | "productCode" | "locationName" | "quantity" | "boxCount">) {
   return simulationMatchKey({
     customer: entry.customerName,
     product: entry.productName || entry.productCode,
@@ -74,7 +78,7 @@ function itemMeta(item: SimulationItem): Omit<SimulationBoardAssignment, "vehicl
 }
 
 /** AI 시뮬 결과에서 일정에 쓸 차량·용차·택배 배정을 뽑는다. */
-export function assignmentsFromSimulation(result: SimulationResult): SimulationBoardAssignment[] {
+export function assignmentsFromSimulation(result: SimulationPlanForSchedule): SimulationBoardAssignment[] {
   const map = new Map<number, SimulationBoardAssignment>();
 
   for (const route of result.proposed) {
@@ -119,27 +123,32 @@ export function assignmentsFromSimulation(result: SimulationResult): SimulationB
   return [...map.values()].sort((a, b) => a.rowNumber - b.rowNumber);
 }
 
-export type MatchSimulationResult = {
-  matched: Array<{ entry: ScheduleMatchRow; assignment: SimulationBoardAssignment }>;
+export type MatchSimulationResult<T extends ScheduleMatchRow> = {
+  matched: Array<{ entry: T; assignment: SimulationBoardAssignment }>;
   unmatchedAssignments: SimulationBoardAssignment[];
-  unmatchedEntries: ScheduleMatchRow[];
-  skippedStatus: ScheduleMatchRow[];
+  unmatchedEntries: T[];
+  skippedStatus: T[];
 };
 
 /** 같은 날 일정과 AI 배정을 1:1로 맞춘다. 중복 키는 남은 일정 순으로 소모. */
-export function matchSimulationToSchedule(
-  entries: ScheduleMatchRow[],
+export function matchSimulationToSchedule<T extends ScheduleMatchRow>(
+  entries: T[],
   assignments: SimulationBoardAssignment[],
-): MatchSimulationResult {
-  const skippedStatus = entries.filter((entry) => entry.status === "DONE" || entry.status === "CANCELLED");
-  const usable = entries.filter((entry) => entry.status !== "DONE" && entry.status !== "CANCELLED");
-  const buckets = new Map<string, ScheduleMatchRow[]>();
-  for (const entry of usable) {
+): MatchSimulationResult<T> {
+  const skippedStatus: T[] = [];
+  const buckets = new Map<string, T[]>();
+  for (const entry of entries) {
+    if (entry.status !== "PLANNED") {
+      skippedStatus.push(entry);
+      continue;
+    }
     const key = scheduleEntryMatchKey(entry);
-    buckets.set(key, [...(buckets.get(key) ?? []), entry]);
+    const bucket = buckets.get(key);
+    if (bucket) bucket.push(entry);
+    else buckets.set(key, [entry]);
   }
 
-  const matched: MatchSimulationResult["matched"] = [];
+  const matched: MatchSimulationResult<T>["matched"] = [];
   const unmatchedAssignments: SimulationBoardAssignment[] = [];
 
   for (const assignment of assignments) {

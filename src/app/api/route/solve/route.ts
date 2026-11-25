@@ -3,6 +3,7 @@ import { solveRoutesForDate } from "@/lib/route-solve";
 import { todayISO } from "@/lib/format";
 import { routeInputSignature, writeRouteSnapshot } from "@/lib/route-snapshot";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
+import { CHARTER_GROUPING_VERSION } from "@/lib/confirmed-route-state";
 
 export const maxDuration = 60;
 
@@ -20,7 +21,7 @@ export async function POST(request: Request) {
   if (result.ok && before === after) {
     const savedAt = new Date().toISOString();
     try {
-      await writeRouteSnapshot(date, { result, signature: after, savedAt }, batchId);
+      await writeRouteSnapshot(date, { result, signature: after, savedAt, charterGroupingVersion: CHARTER_GROUPING_VERSION }, batchId);
       return NextResponse.json({ ...result, savedAt, stale: false });
     } catch {
       return NextResponse.json({ ...result, stale: false, snapshotError: true });

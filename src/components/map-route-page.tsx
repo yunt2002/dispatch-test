@@ -12,7 +12,7 @@ import { listDispatchBatches, resolveRouteScope } from "@/lib/dispatch-batches";
 import { RouteBatchSelect } from "@/components/route-batch-select";
 import { snapshotMatchesScope } from "@/lib/route-snapshot-scope";
 import { AllConfirmedMap, type ConfirmedBatchView } from "@/components/all-confirmed-map";
-import { confirmedRouteState } from "@/lib/confirmed-route-state";
+import { confirmedRouteState, hasStaleCharterGrouping } from "@/lib/confirmed-route-state";
 import { routePalletLoad } from "@/lib/route-load";
 import { visibleDispatchBatches } from "@/lib/dispatch-batch-scope";
 
@@ -78,7 +78,8 @@ export default async function MapRoutePage({
   const boardHref = `/?date=${encodeURIComponent(date)}`;
   const [snapshot, signature] = allConfirmed ? [null, "all-confirmed"] as const : await Promise.all([readRouteSnapshot(date, batchId), routeInputSignature(date, batchId)]);
   const scopeChanged = !!snapshot && !snapshotMatchesScope(snapshot.result, activeEntries.map((entry) => entry.id));
-  const initialResult = snapshot && !scopeChanged ? { ...snapshot.result, routes: snapshot.result.routes.map((route) => ({ ...route, load: routePalletLoad(route, activeEntries) })), savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
+  const charterGroupingChanged = !!snapshot && hasStaleCharterGrouping(snapshot);
+  const initialResult = snapshot && !scopeChanged && !charterGroupingChanged ? { ...snapshot.result, routes: snapshot.result.routes.map((route) => ({ ...route, load: routePalletLoad(route, activeEntries) })), savedAt: snapshot.savedAt, stale: snapshot.signature !== signature || snapshot.result.routes.some((route) => !route.stopMemberIds) } : null;
   const nonemptyOptions = allConfirmed ? batchOptions.map((option) => ({ option, related: option.id === "legacy" ? activeEntries.filter((entry) => !batchedIds.has(entry.id)) : activeEntries.filter((entry) => batches.find((batch) => batch.id === option.id)?.entryIds.includes(entry.id)) })).filter(({ related }) => related.length > 0) : [];
   const rawMarkerById = new Map(rawMarkers.map((marker) => [marker.id, marker]));
   const allBatchViews: ConfirmedBatchView[] = allConfirmed ? await Promise.all(nonemptyOptions.map(async ({ option, related }, batchIndex) => {
@@ -152,7 +153,7 @@ export default async function MapRoutePage({
       <p className="route-current-scope" aria-live="polite"><strong>현재 표시: {scopeLabel}</strong>{allConfirmed ? " · 완료된 납품 포함" : ""}</p>
       <p className="map-page-geo">{allConfirmed ? "확정·완료 납품과 각 묶음에 저장된 경로를 함께 표시합니다. 경로가 없는 묶음은 아래에서 개별적으로 계산하세요." : "확정 배차를 선택하면 해당 묶음의 호차별 경로를 볼 수 있습니다. 처음 선택한 배차는 경로 계산을 눌러 주세요."}</p>
       {batchId === "legacy" ? <p className="map-page-geo">이전 확정 건은 확정 당시의 묶음 정보가 없어 함께 표시됩니다.</p> : null}
-      {scopeChanged && !emptySelectedBatch ? <p className="dispatch-route-note-warn">표시할 납품 목록이 바뀌어 이전 경로를 숨겼습니다. 경로 계산을 눌러 다시 확인하세요.</p> : null}
+      {(scopeChanged || charterGroupingChanged) && !emptySelectedBatch ? <p className="dispatch-route-note-warn">{scopeChanged ? "표시할 납품 목록이 바뀌었습니다." : "용차 방문지 묶기 방식이 갱신되었습니다."} 경로 계산을 눌러 현재 경로를 확인하세요.</p> : null}
       {emptySelectedBatch ? <p className="dispatch-route-note-warn">선택한 확정 배차에 남은 납품이 없습니다. 표시할 배차를 다시 선택하세요.</p> : null}
       {!scope.valid ? <p className="dispatch-route-note-warn">선택한 확정 배차를 찾을 수 없습니다. 목록에서 다시 선택하세요.</p> : null}
 

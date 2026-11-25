@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { PRODUCT_FAMILIES } from "@/lib/product-loading";
 import { getDispatchSettings } from "@/lib/settings";
 import { externalTransport } from "@/lib/external-transport";
+import { explicitScheduleVehicleReason } from "@/lib/schedule-vehicle-source";
 
 export const PRODUCT_LOADING_VERSION = "2026-10-28-v1";
 
@@ -111,8 +112,9 @@ export async function applyProductLoadingIfNeeded() {
     });
     const oldRec = parseJson<VehicleRecommendation | null>(entry.recommendedVehicleJson, null);
     const oldSel = parseJson<VehicleRecommendation | null>(entry.selectedVehicleJson, null);
+    const explicitReason = explicitScheduleVehicleReason(entry);
     const manual = Boolean(
-      oldSel && (externalTransport(oldSel.vehicleTypeId) || (oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId)),
+      oldSel && (explicitReason || externalTransport(oldSel.vehicleTypeId) || (oldRec && oldSel.vehicleTypeId !== oldRec.vehicleTypeId)),
     );
     await prisma.scheduleEntry.update({
       where: { id: entry.id },
@@ -124,7 +126,7 @@ export async function applyProductLoadingIfNeeded() {
           : rec.recommended
             ? JSON.stringify(rec.recommended)
             : entry.selectedVehicleJson,
-        recommendationReason: rec.reasonLines.join("\n"),
+        recommendationReason: [explicitReason, ...rec.reasonLines].filter(Boolean).join("\n"),
         warningsJson: JSON.stringify(rec.warnings),
         logistics: manual ? entry.logistics : (rec.recommended?.vehicleName ?? entry.logistics),
       },

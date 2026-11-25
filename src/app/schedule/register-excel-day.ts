@@ -3,11 +3,9 @@
 import { createHash, randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import ExcelJS from "exceljs";
-import type { VehicleType } from "@prisma/client";
+import { Prisma, type VehicleType } from "@prisma/client";
 import {
   loadingRateForPallets,
-  recommendForQuantity,
   vehicleCountForPallets,
   type VehicleRecommendation,
 } from "@/lib/dispatch-group";
@@ -20,12 +18,16 @@ import {
   notesWithWorkbookAddress,
   normalizeProductKey,
   parseExcelDayRegisterRows,
+  recommendExcelDayRow,
   summarizeExcelDayRegisterRows,
   type ExcelDayRegisterRow,
   type ExcelDayRegisterSummary,
   type LogisticsVehicleHint,
 } from "@/lib/excel-day-register";
-import type { RegionLookup } from "@/lib/delivery-excel";
+import { loadWorkbook, type RegionLookup } from "@/lib/delivery-excel";
+import { excelUploadError } from "@/lib/excel-upload";
+import { EXCEL_LOGISTICS_REASON_PREFIX } from "@/lib/schedule-vehicle-source";
+import { excludePreservedImportRows, scheduleImportMatchSelect } from "@/lib/schedule-import-rows";
 import { optionalText, text } from "@/lib/form";
 import { listErpProductNames } from "@/lib/product-loading";
 import { prisma } from "@/lib/prisma";
@@ -145,7 +147,13 @@ async function upsertCustomerAddress(customerName: string, address: string) {
   });
   if (!existing) return;
   if (existing.address?.trim()) return;
-  await prisma.customer.update({ where: { id: existing.id }, data: { address } });
+  await prisma.customer.updateMany({ where: { id: existing.id, address: existing.address }, data: { address } });
+}
+
+async function readExcelDayRows(file: File, deliveryDate: string) {
+  const fileError = excelUploadError(file);
+  if (fileError) throw new Error(fileError);
+  return parseExcelDayRegisterRows(await loadWorkbook(await file.arrayBuffer()), deliveryDate);
 }
 
 /** 선택한 납품일을 엑셀 물류 그대로 덮어쓴다. DONE/CANCELLED만 유지. */
@@ -156,15 +164,13 @@ export async function registerExcelDay(formData: FormData) {
   if (!deliveryDate || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
     go(formData, { error: "납품일을 확인하세요." });
   }
-  if (!(file instanceof File) || file.size === 0) {
+  if (!(file instanceof File)) {
     go(formData, { date: deliveryDate, error: "납품예상 일정표 엑셀 파일을 선택하세요." });
   }
 
   let rows: ExcelDayRegisterRow[];
   try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()) as unknown as ExcelJS.Buffer);
-    rows = parseExcelDayRegisterRows(workbook, deliveryDate);
+    rows = await readExcelDayRows(file, deliveryDate);
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 160) : "엑셀을 읽지 못했습니다.";
     go(formData, { date: deliveryDate, error: message });
@@ -200,34 +206,20 @@ export async function registerExcelDay(formData: FormData) {
   const regions = await loadRegions();
   const refreshedCustoms = await loadCustomProducts();
 
-  const preserved = [...EXCEL_DAY_PRESERVED_STATUSES];
-  const toRemove = await prisma.scheduleEntry.findMany({
-    where: { deliveryDate, status: { notIn: [...preserved] } },
-    select: { id: true },
-  });
-  const removeIds = toRemove.map((row) => row.id);
-
   const entryData = rows.map((row, index) => {
     const locationName = row.locationName || "미확인";
-    const boxCount = row.boxCount != null && row.boxCount > 0 ? row.boxCount : null;
     const customProduct = findCustomProduct(refreshedCustoms, row.productName);
-    const result = recommendForQuantity({
+    const { quantity, boxCount, palletCount, result } = recommendExcelDayRow(row, {
       customProduct,
-      locationName,
-      customerName: row.customerName || null,
-      boxCount,
-      productCode: row.productCode || null,
-      productName: row.productName || null,
       vehicles,
       regions,
       kgPerPallet: settings.kgPerPallet,
     });
-    const palletCount = result.palletCount;
-
     const fromLogistics = vehicleFromHint(row.vehicleHint, row.logistics, vehicles, palletCount);
     const selected = fromLogistics ?? result.recommended;
+    const logisticsFallback = Boolean(row.logistics && !fromLogistics);
     const warnings = [...result.warnings];
-    if (row.logistics && !fromLogistics) {
+    if (logisticsFallback) {
       warnings.push(
         row.vehicleHint
           ? `물류 「${row.logistics}」 차량을 찾지 못해 추천으로 대체`
@@ -242,77 +234,93 @@ export async function registerExcelDay(formData: FormData) {
       null;
     const id = randomUUID();
     return {
-      id,
-      deliveryDate,
-      locationName,
-      regionType: result.regionType,
-      customerName: row.customerName || null,
-      productCode: row.productCode || null,
-      productName: row.productName || null,
-      quantity: row.quantity,
-      boxCount,
-      palletCount,
-      recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
-      selectedVehicleJson: selected ? JSON.stringify(selected) : null,
-      recommendationReason: [
-        fromLogistics ? `엑셀 물류 그대로 · ${row.logistics || selected?.vehicleName}` : null,
-        ...result.reasonLines,
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      warningsJson: JSON.stringify(warnings),
-      logistics: selected?.vehicleName || row.logistics || null,
-      staff: null,
-      notes: notesWithWorkbookAddress(address),
-      status: "PLANNED" as const,
-      source: "EXCEL" as const,
-      visitOrder: index,
       address,
+      logisticsFallback,
+      schedule: {
+        id,
+        deliveryDate,
+        locationName,
+        regionType: result.regionType,
+        customerName: row.customerName || null,
+        productCode: row.productCode || null,
+        productName: row.productName || null,
+        quantity,
+        boxCount,
+        palletCount,
+        recommendedVehicleJson: result.recommended ? JSON.stringify(result.recommended) : null,
+        selectedVehicleJson: selected ? JSON.stringify(selected) : null,
+        recommendationReason: [
+          fromLogistics ? `${EXCEL_LOGISTICS_REASON_PREFIX}${row.logistics || fromLogistics.vehicleName}` : null,
+          ...result.reasonLines,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        warningsJson: JSON.stringify(warnings),
+        logistics: selected?.vehicleName || row.logistics || null,
+        staff: null,
+        notes: notesWithWorkbookAddress(address),
+        status: "PLANNED" as const,
+        source: "EXCEL" as const,
+        visitOrder: index,
+      },
     };
   });
 
-  await prisma.$transaction(async (tx) => {
-    if (removeIds.length) {
-      const settingKeys = removeIds.flatMap((id) => [boxLoadingKey(id), boxLoadingTargetKey(id)]);
-      await tx.appSetting.deleteMany({ where: { key: { in: settingKeys } } });
-      await tx.scheduleEntry.deleteMany({ where: { id: { in: removeIds } } });
-    }
-    await tx.scheduleEntry.createMany({
-      data: entryData.map(({ address: _address, ...row }) => row),
+  const replaceDay = () => prisma.$transaction(async (tx) => {
+    const existing = await tx.scheduleEntry.findMany({
+      where: { deliveryDate },
+      select: { id: true, status: true, ...scheduleImportMatchSelect },
     });
-    const boxSettings = entryData
-      .filter((row) => row.boxCount != null)
-      .map((row) => ({ key: boxLoadingKey(row.id), value: "unknown" }));
+    const preserved = existing.filter((row) => EXCEL_DAY_PRESERVED_STATUSES.some((status) => status === row.status));
+    const preservedIds = new Set(preserved.map((row) => row.id));
+    const toCreate = excludePreservedImportRows(entryData, preserved, ({ schedule }) => schedule);
+    const { count } = await tx.scheduleEntry.deleteMany({
+      where: { deliveryDate, status: { notIn: [...EXCEL_DAY_PRESERVED_STATUSES] } },
+    });
+    const settingKeys = existing
+      .filter(({ id }) => !preservedIds.has(id))
+      .flatMap(({ id }) => [boxLoadingKey(id), boxLoadingTargetKey(id)]);
+    if (settingKeys.length) await tx.appSetting.deleteMany({ where: { key: { in: settingKeys } } });
+    if (toCreate.length) await tx.scheduleEntry.createMany({ data: toCreate.map(({ schedule }) => schedule) });
+    const boxSettings = toCreate
+      .filter(({ schedule }) => schedule.boxCount != null)
+      .map(({ schedule }) => ({ key: boxLoadingKey(schedule.id), value: "unknown" }));
     if (boxSettings.length) await tx.appSetting.createMany({ data: boxSettings });
     await tx.appLog.create({
       data: {
         userAction: "schedule_register_excel_day",
         routeCode: deliveryDate,
-        recommendation: `${entryData.length}건 · 물류 그대로`,
-        selectedResult: `삭제 ${removeIds.length} · 품명+${addedProducts} · 지역+${addedRegions}`,
+        recommendation: `${toCreate.length}건 · 물류 그대로`,
+        selectedResult: `삭제 ${count} · 품명+${addedProducts} · 지역+${addedRegions}`,
       },
     });
-  });
+    return { removedCount: count, createdRows: toCreate };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
 
-  for (const row of entryData) {
-    if (row.customerName && row.address) {
-      await upsertCustomerAddress(row.customerName, row.address);
+  let replacement: Awaited<ReturnType<typeof replaceDay>>;
+  try {
+    replacement = await replaceDay();
+  } catch (error) {
+    if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034") throw error;
+    go(formData, { date: deliveryDate, error: "다른 작업과 동시에 일정이 변경되었습니다. 현재 일정을 확인한 뒤 다시 등록해 주세요." });
+  }
+
+  const { removedCount, createdRows } = replacement;
+  const matchedPreservedCount = entryData.length - createdRows.length;
+  for (const { address, schedule } of createdRows) {
+    if (schedule.customerName && address) {
+      await upsertCustomerAddress(schedule.customerName, address);
     }
   }
 
   await rebalanceDayFleet(deliveryDate);
 
-  const warnCount = entryData.filter((row) => {
-    try {
-      return (JSON.parse(row.warningsJson) as string[]).some((line) => /물류/.test(line));
-    } catch {
-      return false;
-    }
-  }).length;
+  const warnCount = createdRows.filter(({ logisticsFallback }) => logisticsFallback).length;
 
   const parts = [
-    `${deliveryDate} 엑셀 ${entryData.length}건 등록`,
-    removeIds.length ? `기존 ${removeIds.length}건 덮어씀` : null,
+    `${deliveryDate} 엑셀 ${createdRows.length}건 등록`,
+    removedCount ? `기존 ${removedCount}건 덮어씀` : null,
+    matchedPreservedCount ? `같은 완료·취소 ${matchedPreservedCount}건 유지` : null,
     addedProducts ? `신규 품명 ${addedProducts}` : null,
     addedRegions ? `신규 지역 ${addedRegions}` : null,
     warnCount ? `물류 미인식 ${warnCount}건(추천 대체)` : null,
@@ -340,13 +348,11 @@ export async function previewExcelDay(formData: FormData): Promise<ExcelDayPrevi
   if (!deliveryDate || !/^\d{4}-\d{2}-\d{2}$/.test(deliveryDate)) {
     return { error: "납품일을 확인하세요." };
   }
-  if (!(file instanceof File) || file.size === 0) {
+  if (!(file instanceof File)) {
     return { error: "엑셀 파일을 선택하세요." };
   }
   try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(Buffer.from(await file.arrayBuffer()) as unknown as ExcelJS.Buffer);
-    const rows = parseExcelDayRegisterRows(workbook, deliveryDate);
+    const rows = await readExcelDayRows(file, deliveryDate);
     if (!rows.length) {
       return { error: `${deliveryDate} 일정이 엑셀에 없습니다.` };
     }

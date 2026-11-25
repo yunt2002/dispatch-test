@@ -12,6 +12,7 @@ import { ProductCombobox } from "@/components/product-combobox";
 import { findCustomProduct, type CustomProductInfo } from "@/lib/custom-product";
 import { EXTERNAL_TRANSPORTS } from "@/lib/external-transport";
 import type { ExcelDayRegisterSummary } from "@/lib/excel-day-register";
+import { EXCEL_UPLOAD_SIZE_LABEL, excelUploadError } from "@/lib/excel-upload";
 import { resolveRegistrationProductFields } from "@/lib/registration-product-defaults";
 import {
   DELIVERY_CUSTOMERS,
@@ -39,10 +40,6 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isExcelFile(file: File) {
-  return /\.(xlsx|xls)$/i.test(file.name);
 }
 
 export function ScheduleRegisterDialog({
@@ -113,18 +110,10 @@ export function ScheduleRegisterDialog({
   }, [open]);
 
   useEffect(() => {
-    if (open) setExcelDate(date);
-  }, [open, date]);
-
-  useEffect(() => {
-    if (!excelFile || !excelDate) {
-      setExcelPreview(null);
-      setExcelError("");
-      return;
-    }
+    if (!open || !excelFile || !excelDate) return;
     let cancelled = false;
-    startPreview(() => {
-      void (async () => {
+    startPreview(async () => {
+      try {
         const form = new FormData();
         form.set("deliveryDate", excelDate);
         form.set("file", excelFile);
@@ -141,12 +130,14 @@ export function ScheduleRegisterDialog({
           newLocations: result.newLocations,
         });
         setExcelError("");
-      })();
+      } catch {
+        if (!cancelled) setExcelError("엑셀 미리보기를 불러오지 못했습니다. 파일을 다시 선택해 주세요.");
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [excelFile, excelDate]);
+  }, [open, excelFile, excelDate]);
 
   function resetFields() {
     setProductName("");
@@ -169,17 +160,11 @@ export function ScheduleRegisterDialog({
   }
 
   function applyExcelFile(file: File | null, syncInput = false) {
-    if (!file) {
+    const error = file ? excelUploadError(file) : null;
+    setExcelPreview(null);
+    setExcelError(error ?? "");
+    if (!file || error) {
       setExcelFile(null);
-      setExcelPreview(null);
-      setExcelError("");
-      if (excelInputRef.current) excelInputRef.current.value = "";
-      return;
-    }
-    if (!isExcelFile(file)) {
-      setExcelFile(null);
-      setExcelPreview(null);
-      setExcelError("엑셀 파일(.xlsx, .xls)만 올릴 수 있습니다.");
       if (excelInputRef.current) excelInputRef.current.value = "";
       return;
     }
@@ -192,7 +177,6 @@ export function ScheduleRegisterDialog({
         // DataTransfer 미지원 환경에서는 상태만 갱신
       }
     }
-    setExcelError("");
     setExcelFile(file);
   }
 
@@ -454,7 +438,11 @@ export function ScheduleRegisterDialog({
                     className="dispatch-input"
                     id="excelDeliveryDate"
                     name="deliveryDate"
-                    onChange={(event) => setExcelDate(event.target.value)}
+                    onChange={(event) => {
+                      setExcelDate(event.target.value);
+                      setExcelPreview(null);
+                      if (excelFile) setExcelError("");
+                    }}
                     required
                     type="date"
                     value={excelDate}
@@ -464,7 +452,7 @@ export function ScheduleRegisterDialog({
                   <label htmlFor="excelFile">납품예상 일정표 (.xlsx) *</label>
                   <input
                     ref={excelInputRef}
-                    accept=".xlsx,.xls"
+                    accept=".xlsx"
                     className="dispatch-file-hidden"
                     id="excelFile"
                     name="file"
@@ -545,14 +533,14 @@ export function ScheduleRegisterDialog({
                             ? "여기에 파일을 놓으세요"
                             : "엑셀 파일을 여기에 끌어다 놓거나 클릭해 선택하세요"}
                         </strong>
-                        <span>납품예상 일정표 (.xlsx, .xls)</span>
+                        <span>납품예상 일정표 (.xlsx) · {EXCEL_UPLOAD_SIZE_LABEL}</span>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
               <p className="dispatch-form-note dispatch-route-note-warn">
-                선택한 납품일의 신청·확정 일정을 전부 지우고 엑셀 행으로 다시 등록합니다. 완료·취소 건만 남습니다. 차량은 엑셀 물류 열을 그대로 씁니다(AI 재배정 없음).
+                선택한 납품일의 신청·확정 일정을 엑셀 행으로 교체합니다. 완료·취소 건은 그대로 두고 같은 엑셀 행은 다시 등록하지 않습니다. 차량은 엑셀 물류 열을 그대로 씁니다(AI 재배정 없음).
               </p>
               {previewPending ? <p className="dispatch-form-note">미리보기 읽는 중…</p> : null}
               {excelError ? <p className="dispatch-form-note dispatch-route-note-warn" role="alert">{excelError}</p> : null}
@@ -589,7 +577,7 @@ export function ScheduleRegisterDialog({
                   취소
                 </button>
                 <ExcelSubmitButton
-                  disabled={!excelFile || !!excelError || !excelPreview?.summary.count}
+                  disabled={previewPending || !excelFile || !!excelError || !excelPreview?.summary.count}
                 />
               </div>
             </form>

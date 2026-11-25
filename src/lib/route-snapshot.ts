@@ -4,7 +4,12 @@ import { prisma } from "@/lib/prisma";
 import type { RouteSolveResult } from "@/lib/route-solve";
 import { resolveRouteScope } from "@/lib/dispatch-batches";
 
-export type RouteSnapshot = { result: RouteSolveResult; signature: string; savedAt: string };
+export type RouteSnapshot = {
+  result: RouteSolveResult;
+  signature: string;
+  savedAt: string;
+  charterGroupingVersion?: number;
+};
 
 export async function routeInputSignature(date: string, batchId?: string | null): Promise<string> {
   const scope = await resolveRouteScope(date, batchId);

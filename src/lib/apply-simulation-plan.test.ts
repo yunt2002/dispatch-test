@@ -95,4 +95,10 @@ test("일정과 AI 행을 키로 맞춘다", () => {
       boxes: 2,
     }),
   );
+
+  const protectedRows = ["CONFIRMED", "DONE", "CANCELLED"].map((status) => ({ ...entries[0], id: status, status }));
+  const withProtectedRows = matchSimulationToSchedule([...protectedRows, ...entries], assignments);
+  assert.deepEqual(withProtectedRows.matched.map(({ entry }) => entry.id), ["e1"]);
+  assert.deepEqual(withProtectedRows.skippedStatus.map(({ status }) => status), ["CONFIRMED", "DONE", "CANCELLED"]);
+  assert.equal(matchSimulationToSchedule(protectedRows, assignments).unmatchedAssignments.length, 1);
 });

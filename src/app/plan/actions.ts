@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import {
   customerCodeFromName,
   extractShipments,
@@ -14,6 +15,7 @@ import { optionalText, text } from "@/lib/form";
 import { replaceExcelSchedule } from "@/lib/import-schedule";
 import { prisma } from "@/lib/prisma";
 import { getDispatchSettings } from "@/lib/settings";
+import { excelUploadError } from "@/lib/excel-upload";
 
 function planRedirect(path: string, params: Record<string, string | undefined>): never {
   const q = new URLSearchParams();
@@ -39,9 +41,11 @@ async function loadRegionLookup(): Promise<RegionLookup> {
 
 export async function uploadPlanExcel(formData: FormData) {
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
+  if (!(file instanceof File)) {
     planRedirect("/plan", { error: "납품관리 Excel 파일을 선택하세요." });
   }
+  const fileError = excelUploadError(file);
+  if (fileError) planRedirect("/plan", { error: fileError });
 
   const preferredSheet = optionalText(formData, "sheetName") ?? undefined;
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -60,10 +64,8 @@ export async function uploadPlanExcel(formData: FormData) {
     });
   }
 
-  const sheetName = preferredSheet && workbook.getWorksheet(preferredSheet)
-    ? preferredSheet
-    : monthSheets[0];
-  const sheet = workbook.getWorksheet(sheetName!);
+  const sheetName = preferredSheet ?? monthSheets[0];
+  const sheet = workbook.getWorksheet(sheetName);
   if (!sheet) {
     planRedirect("/plan", { error: `시트 '${sheetName}'를 열 수 없습니다.` });
   }
@@ -86,6 +88,7 @@ export async function uploadPlanExcel(formData: FormData) {
     },
   });
 
+  let imported: number;
   try {
     const regions = await loadRegionLookup();
     const routeByCode = Object.fromEntries(
@@ -175,15 +178,18 @@ export async function uploadPlanExcel(formData: FormData) {
         },
       });
     }
+    imported = await replaceExcelSchedule(parsed.rows);
   } catch (error) {
     await prisma.shipment.deleteMany({ where: { planSessionId: session.id } });
     await prisma.planSession.delete({ where: { id: session.id } }).catch(() => undefined);
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+      planRedirect("/plan", { error: "다른 작업과 동시에 일정이 변경되었습니다. 현재 일정을 확인한 뒤 다시 가져와 주세요." });
+    }
     const message =
       error instanceof Error ? error.message.slice(0, 180) : "업로드 중 오류가 발생했습니다.";
     planRedirect("/plan", { error: `데이터 저장 실패: ${message}` });
   }
 
-  const imported = await replaceExcelSchedule(parsed.rows);
   const defaultDate = parsed.dates[parsed.dates.length - 1]?.date;
   if (defaultDate) {
     await ensureDispatchGroups(session.id, defaultDate);

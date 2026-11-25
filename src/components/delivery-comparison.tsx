@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { applySimulationToSchedule } from "@/app/schedule/apply-simulation";
+import { EXCEL_UPLOAD_SIZE_LABEL, excelUploadError } from "@/lib/excel-upload";
 import type { PackingMode, SimulationItem, SimulationResult, SimulationRoute } from "@/lib/simulation";
 import { simulationChanges } from "@/lib/simulation-changes";
 import { isPackingMode } from "@/lib/simulation-packing";
@@ -334,7 +335,7 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
       !window.confirm(
         over
           ? `${date} AI안이 적재 한도를 초과합니다. 그래도 배차 신청에 등록할까요? 홈에서 다시 확인할 수 있습니다.`
-          : `${date} AI 배차안을 배차 신청 일정에 등록할까요? 같은 날 기존 차량 선택은 덮어씁니다.`,
+          : `${date} 배차 신청 일정의 차량을 AI 배차안으로 바꿀까요? 확정·완료·취소 일정은 유지됩니다.`,
       )
     ) {
       return;
@@ -344,7 +345,12 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
     try {
       const outcome = await applySimulationToSchedule({
         date,
-        result,
+        result: {
+          proposed: result.proposed.map(({ vehicle, items, over }) => ({ vehicle, items, over })),
+          remaining: result.remaining,
+          charterGroups: result.charterGroups,
+          planSource: result.planSource,
+        },
         allowOverLimit: over,
       });
       setApplyMessage("error" in outcome ? outcome.error : outcome.ok);
@@ -460,7 +466,19 @@ export function DeliveryComparison({ initialDate }: { initialDate: string }) {
   return <section className="comparison-section" aria-labelledby="simulation-title"><h1 id="simulation-title">AI 배차 시뮬레이션</h1>
     <p>기존 계획과 AI 배차안을 비교합니다. 결과는 실제 일정에 반영되지 않습니다.</p>
     <p><a href="/simulation/history" className="dispatch-secondary-button">분석 기록 보기</a></p>
-    <div className="comparison-controls"><label>일정표 파일 <input type="file" accept=".xlsx" disabled={loading} onChange={(e) => { const selected = e.target.files?.[0] ?? null; setFile(selected); setResult(null); restorePreferences(selected, date); setPackingDirty(false); }} /></label>
+    <div className="comparison-controls"><label>일정표 파일 (.xlsx · {EXCEL_UPLOAD_SIZE_LABEL})
+      <input type="file" accept=".xlsx" disabled={loading} onChange={(event) => {
+        const input = event.currentTarget;
+        const selected = input.files?.[0] ?? null;
+        const validationError = selected ? excelUploadError(selected) : null;
+        const next = validationError ? null : selected;
+        if (validationError) input.value = "";
+        setFile(next);
+        setResult(null);
+        setError(validationError ?? "");
+        restorePreferences(next, date);
+        setPackingDirty(false);
+      }} /></label>
       <label>납품일 <input type="date" value={date} disabled={loading} onChange={(e) => { const selected = e.target.value; setDate(selected); setResult(null); restorePreferences(file, selected); setPackingDirty(false); }} /></label>
       <label>경유 가격 (원/L) <input type="number" min="1" value={price} disabled={loading} onChange={(e) => { const value = e.target.value; setPrice(value); setPriceSource("직접 입력한 경유 가격 · 수정 가능"); setResult(null); savePreferences(file, date, { packing, price: value }); }} placeholder="직접 입력" /></label>
       <button type="button" className="dispatch-secondary-button" disabled={loading || (!!file && (!!date && (preview?.key !== previewKey || !!preview.error || addressCheck?.key !== addressCheckKey || !!addressCheck?.error)))} onClick={() => void run("load")}>{loading ? "처리 중…" : "배차안 불러오기 / 만들기"}</button>

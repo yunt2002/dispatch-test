@@ -10,6 +10,7 @@ import { getDispatchSettings } from "@/lib/settings";
 import { externalTransport } from "@/lib/external-transport";
 import { findCustomProduct } from "@/lib/custom-product";
 import { loadCustomProducts } from "@/lib/custom-product-server";
+import { explicitScheduleVehicleReason } from "@/lib/schedule-vehicle-source";
 
 async function loadRegions(): Promise<RegionLookup> {
   const regions = await prisma.regionMaster.findMany();
@@ -27,7 +28,7 @@ async function loadRegions(): Promise<RegionLookup> {
 /**
  * 당일 PLANNED 일정을 다시 보며 1·2호 잔여가 없으면 3호·스타리아로 넘긴다.
  * 큰 PLT 건을 먼저 1·2호에 앉히고, 남는 작은 건이 긴급차로 넘어가게 한다.
- * CONFIRMED·수동 선택·합차 그룹은 차량을 유지하고 잔여만 차감한다.
+ * 확정·수동 선택·엑셀/AI 지정·합차 그룹은 차량을 유지하고 잔여만 차감한다.
  */
 export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
   const [vehicles, regions, settings, entriesRaw, customProducts] = await Promise.all([
@@ -91,8 +92,7 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
       continue;
     }
 
-    // 확정·수동 선택: 담당자가 고정한 차를 건드리지 않음
-    if ((confirmed || manual) && oldSel) {
+    if ((confirmed || manual || explicitScheduleVehicleReason(entry)) && oldSel) {
       const used = capacityUnits(entry.palletCount, entry.boxCount);
       if (used > 0) {
         remaining[oldSel.vehicleTypeId] = Math.max(
@@ -133,18 +133,20 @@ export async function rebalanceDayFleet(deliveryDate: string): Promise<number> {
     const samePallet = entry.palletCount === nextPallet;
     if (sameVehicle && sameRecCount && samePallet) continue;
 
-    await prisma.scheduleEntry.update({
-      where: { id: entry.id },
+    const logisticsWarnings = parseJson<string[]>(entry.warningsJson, [])
+      .filter((warning) => warning.startsWith("물류 「"));
+    const update = await prisma.scheduleEntry.updateMany({
+      where: { id: entry.id, status: entry.status, updatedAt: entry.updatedAt },
       data: {
         palletCount: nextPallet,
         recommendedVehicleJson: nextRec ? JSON.stringify(nextRec) : null,
         selectedVehicleJson: nextRec ? JSON.stringify(nextRec) : null,
         recommendationReason: result.reasonLines.join("\n"),
-        warningsJson: JSON.stringify(result.warnings),
+        warningsJson: JSON.stringify([...result.warnings, ...logisticsWarnings]),
         logistics: nextRec?.vehicleName ?? entry.logistics,
       },
     });
-    changed += 1;
+    changed += update.count;
   }
 
   return changed;

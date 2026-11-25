@@ -6,6 +6,7 @@ import {
   type ComparisonShipment,
 } from "@/lib/comparison-workbook";
 import { simulationVehicleName } from "@/lib/simulation-vehicles";
+import { recommendForQuantity } from "@/lib/dispatch-group";
 
 export type LogisticsVehicleHint = "1호차" | "2호차" | "스타리아" | "용차" | "택배" | null;
 
@@ -109,6 +110,22 @@ export function summarizeExcelDayRegisterRows(
 
 /** 엑셀 당일 등록 시 유지하는 일정 상태 (덮어쓰지 않음). */
 export const EXCEL_DAY_PRESERVED_STATUSES = ["DONE", "CANCELLED"] as const;
+
+export function recommendExcelDayRow(
+  row: ExcelDayRegisterRow,
+  options: Pick<Parameters<typeof recommendForQuantity>[0], "customProduct" | "vehicles" | "regions" | "kgPerPallet">,
+) {
+  const boxCount = row.boxCount != null && row.boxCount > 0 ? row.boxCount : null;
+  const result = recommendForQuantity({
+    ...options,
+    locationName: row.locationName || "미확인",
+    customerName: row.customerName || null,
+    productCode: row.productCode || null,
+    productName: row.productName || null,
+    boxCount,
+  });
+  return { quantity: row.quantity, boxCount, palletCount: result.palletCount, result };
+}
 
 export function notesWithWorkbookAddress(address: string | null, existingNotes?: string | null) {
   const base = existingNotes?.trim() || "";

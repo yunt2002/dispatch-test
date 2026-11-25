@@ -15,7 +15,10 @@ export default async function PlanUploadPage({
   searchParams: Promise<{ error?: string; ok?: string; notice?: string }>;
 }) {
   const params = await searchParams;
-  const excelCount = await prisma.scheduleEntry.count({ where: { source: "EXCEL" } });
+  const hasExcelDrafts = Boolean(await prisma.scheduleEntry.findFirst({
+    where: { source: "EXCEL", status: "PLANNED" },
+    select: { id: true },
+  }));
 
   return (
     <div>
@@ -31,13 +34,13 @@ export default async function PlanUploadPage({
       <Alert variant="info" title="쓰는 방법">
         1) 기존 Excel을 여기로 가져오기 → 2) 홈에서 지역·수량 등록 → 3) Excel 내보내기
       </Alert>
-      {excelCount > 0 ? (
+      {hasExcelDrafts ? (
         <Alert variant="warn" title="다시 가져오면 엑셀 일정이 교체됩니다">
-          모든 날짜의 기존 엑셀 일정 {excelCount}건이 선택한 시트의 내용으로 교체됩니다. 새 시트에 없는 날짜의 엑셀 일정도 삭제됩니다. 홈에서 직접 등록한 일정은 남습니다.
+          선택한 시트에 포함된 날짜의 엑셀 신청 일정이 교체됩니다. 확정·완료·취소 일정과 홈에서 수기로 등록한 일정은 남습니다.
         </Alert>
       ) : null}
 
-      <ExcelImportForm excelCount={excelCount} />
+      <ExcelImportForm hasExcelDrafts={hasExcelDrafts} />
     </div>
   );
 }
