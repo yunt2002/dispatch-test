@@ -49,6 +49,74 @@ test("선택한 납품일 행만 추출한다", () => {
   assert.deepEqual([withBox.quantity, withBox.boxCount, withBox.palletCount], [10, 2, 0]);
 });
 
+test("개정안 PLT·용차비용 헤더에서 PLT만 읽고 수량합계는 PLT로 쓰지 않는다", () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("26년 11월");
+  sheet.addRow([
+    "일자",
+    "업체명",
+    "업체위치",
+    "품번",
+    "품명",
+    "거래명세서",
+    "FCL",
+    "상세 Lot, 수량",
+    "수량 합계",
+    "박스수량",
+    "박스/개입",
+    "PLT",
+    "물류",
+    "납품직원",
+    "용차비용",
+    "비고 / 개별화물 도착지",
+  ]);
+  sheet.addRow(["11/26", "DY AUTO", "창원", "P1", "AY/QY", null, null, null, 704700, 243, null, 5, "용차 (동해화물)", null, 500000, null]);
+  sheet.addRow(["11/26", "현담산업", "아산", "P2", "DM 4545", null, null, null, 4800, 48, null, null, "2호 차량(3.5t)", null, null, null]);
+  sheet.addRow(["11/26", "만도 평택공장", "평택", "P3", "MPS", null, null, null, 6912, 144, null, 1.5, "2호 차량(3.5t)", null, null, null]);
+  const rows = parseExcelDayRegisterRows(workbook, "2026-11-26");
+  assert.equal(rows.length, 3);
+  assert.deepEqual(
+    rows.map((row) => [row.quantity, row.boxCount, row.palletCount, row.vehicleHint]),
+    [
+      [704700, 243, 5, "용차"],
+      [4800, 48, null, "2호차"],
+      [6912, 144, 1.5, "2호차"],
+    ],
+  );
+  const options = { vehicles: [], regions: new Map() };
+  assert.deepEqual(
+    rows.map((row) => {
+      const { quantity, boxCount, palletCount } = recommendExcelDayRow(row, options);
+      return [quantity, boxCount, palletCount];
+    }),
+    [
+      [704700, 243, 5],
+      [4800, 48, null],
+      [6912, 144, 1.5],
+    ],
+  );
+});
+
+test("음수 수량·박스 조정행은 PLT를 적재 합산에 넣지 않는다", () => {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("26년 11월");
+  sheet.addRow(["일자", "업체명", "업체위치", "품명", "수량 합계", "박스수량", "PLT", "물류"]);
+  sheet.addRow(["11/27", "현대엘리베이터", "충주", "GA160-N극", 2400, 50, 2, "1호 차량(4t)"]);
+  sheet.addRow(["11/27", "현대엘리베이터", "충주", "GA160-N극", -2400, -50, 2, "1호 차량(4t)"]);
+  const rows = parseExcelDayRegisterRows(workbook, "2026-11-27");
+  const options = { vehicles: [], regions: new Map() };
+  assert.deepEqual(
+    rows.map((row) => {
+      const { quantity, boxCount, palletCount } = recommendExcelDayRow(row, options);
+      return [quantity, boxCount, palletCount];
+    }),
+    [
+      [2400, 50, 2],
+      [-2400, null, null],
+    ],
+  );
+});
+
 test("요약·신규 품명·지역·주소 건수를 집계한다", () => {
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet("26년 11월");

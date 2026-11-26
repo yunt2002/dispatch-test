@@ -113,11 +113,21 @@ export function summarizeExcelDayRegisterRows(
 /** 엑셀 당일 등록 시 유지하는 일정 상태 (덮어쓰지 않음). */
 export const EXCEL_DAY_PRESERVED_STATUSES = ["DONE", "CANCELLED"] as const;
 
+/** 취소·조정(음수) 행은 적재 합산에 넣지 않는다. */
+export function isExcelDayAdjustmentRow(row: Pick<ExcelDayRegisterRow, "quantity" | "boxCount">) {
+  return (row.quantity != null && row.quantity < 0) || (row.boxCount != null && row.boxCount < 0);
+}
+
 export function recommendExcelDayRow(
   row: ExcelDayRegisterRow,
   options: Pick<Parameters<typeof recommendForQuantity>[0], "customProduct" | "vehicles" | "regions" | "kgPerPallet">,
 ) {
-  const boxCount = row.boxCount != null && row.boxCount >= 0 ? row.boxCount : null;
+  const adjustment = isExcelDayAdjustmentRow(row);
+  const boxCount = !adjustment && row.boxCount != null && row.boxCount >= 0 ? row.boxCount : null;
+  // null=PLT열 빈칸 유지, undefined=PLT열 없음(기존처럼 추천값), 음수·조정행은 합산 제외
+  const excelPallet = adjustment || (row.palletCount != null && row.palletCount < 0)
+    ? null
+    : row.palletCount;
   const result = recommendForQuantity({
     ...options,
     locationName: row.locationName || "미확인",
@@ -125,9 +135,14 @@ export function recommendExcelDayRow(
     productCode: row.productCode || null,
     productName: row.productName || null,
     boxCount,
-    palletCount: row.palletCount,
+    palletCount: excelPallet,
   });
-  return { quantity: row.quantity, boxCount, palletCount: row.palletCount === null ? null : result.palletCount, result };
+  return {
+    quantity: row.quantity,
+    boxCount,
+    palletCount: excelPallet === null ? null : result.palletCount,
+    result,
+  };
 }
 
 export function notesWithWorkbookAddress(address: string | null, existingNotes?: string | null) {

@@ -335,9 +335,7 @@ export async function registerExcelDay(formData: FormData) {
     });
     const preserved = existing.filter((row) => EXCEL_DAY_PRESERVED_STATUSES.some((status) => status === row.status));
     const preservedIds = new Set(preserved.map((row) => row.id));
-    const toCreate = excludePreservedImportRows(entryData, preserved, ({ schedule }, index) => ({
-      ...schedule, palletCount: rows[index].palletCount,
-    }));
+    const toCreate = excludePreservedImportRows(entryData, preserved, ({ schedule }) => schedule);
     const { count } = await tx.scheduleEntry.deleteMany({
       where: { deliveryDate, status: { notIn: [...EXCEL_DAY_PRESERVED_STATUSES] } },
     });
