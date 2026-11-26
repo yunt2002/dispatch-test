@@ -109,6 +109,20 @@ export function readDeliveryPalletCount(value: ExcelJS.CellValue): number | null
   return count != null && count >= 0 ? count : null;
 }
 
+export function isCharterFareHeader(label: string): boolean {
+  const key = label.replace(/\s/g, "");
+  return key === "용차비용" || key === "용차비" || key === "용차운임";
+}
+
+/** 숫자 운임만 인정. 품번 등이 섞인 칸은 무시한다. */
+export function readCharterFare(value: ExcelJS.CellValue): number | null {
+  if (typeof value === "string" && /[A-Za-z가-힣]/.test(value) && !/^[\d,.\s]+원?$/.test(value.trim())) {
+    return null;
+  }
+  const amount = cellNumber(value);
+  return amount != null && amount >= 0 ? amount : null;
+}
+
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }

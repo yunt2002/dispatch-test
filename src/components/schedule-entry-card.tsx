@@ -47,6 +47,7 @@ export function ScheduleEntryCard({
   returnTo = "request",
   allowConfirm = true,
   transportFee = null,
+  charterFare = null,
   boxLoadingMode,
   boxPallets,
   boxLoadingTarget,
@@ -75,6 +76,8 @@ export function ScheduleEntryCard({
   returnTo?: "request" | "confirm";
   allowConfirm?: boolean;
   transportFee?: string | null;
+  /** 엑셀에서 읽은 용차 운임(원). 운행 1회 기준이며 품목 행에 반복될 수 있다. */
+  charterFare?: number | null;
   boxLoadingMode: BoxLoadingMode | null;
   boxPallets: number | null;
   boxLoadingTarget: string;
@@ -227,6 +230,11 @@ export function ScheduleEntryCard({
           )}
           {changed && recommendedName ? <span>원래 추천 {recommendedName}</span> : null}
           {reason ? <span title={reason}>{reason}</span> : null}
+          {charterFare != null ? (
+            <span title="엑셀 용차비용 · 같은 운행에 품목 행마다 같은 금액이 반복될 수 있음">
+              용차비 {Math.round(charterFare).toLocaleString("ko-KR")}원
+            </span>
+          ) : null}
         </div>
       </div>
 

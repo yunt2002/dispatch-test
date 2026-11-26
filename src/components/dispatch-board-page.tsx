@@ -23,6 +23,7 @@ import { summarizeVehicleWeight } from "@/lib/vehicle-weight-summary";
 import { groupScheduleCards } from "@/lib/schedule-card-groups";
 import MapRoutePage from "@/components/map-route-page";
 import { EXTERNAL_TRANSPORTS, externalTransport, transportFeeKey } from "@/lib/external-transport";
+import { extractNoteCharterFare } from "@/lib/excel-day-register";
 import { boxLoadingKey, boxLoadingTargetKey, currentLoadingWarning, isBoxLoadingMode } from "@/lib/schedule-box-loading";
 
 type ScheduleEntry = Awaited<ReturnType<typeof loadEntries>>[number];
@@ -205,6 +206,7 @@ export default async function HomePage({
         selectedVehicleTypeId={selected?.vehicleTypeId ?? null}
         status={entry.status}
         transportFee={selected ? fees.get(transportFeeKey(entry.id, selected.vehicleTypeId)) ?? null : null}
+        charterFare={extractNoteCharterFare(entry.notes)}
         vehicles={vehicleOptions}
         warnings={[...new Set([...parseJson<string[]>(entry.warningsJson, []).map(currentLoadingWarning), ...(entry.boxCount != null && !boxModes.get(boxLoadingKey(entry.id)) ? ["기존 박스 납품의 PLT·적재 방식 확인 필요"] : entry.boxCount != null && boxModes.get(boxLoadingKey(entry.id)) === "unknown" ? ["박스 적재 공간·방식 확인 필요"] : [])])]}
         returnTo={view}

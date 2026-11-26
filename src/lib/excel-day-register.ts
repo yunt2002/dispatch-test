@@ -20,6 +20,8 @@ export type ExcelDayRegisterRow = {
   quantity: number | null;
   boxCount: number | null;
   palletCount?: number | null;
+  /** 엑셀 용차비용(원). 용차 행만 의미가 있다. */
+  charterFare?: number | null;
   logistics: string;
   address: string | null;
   vehicleHint: LogisticsVehicleHint;
@@ -61,6 +63,7 @@ function fromComparison(row: ComparisonShipment): ExcelDayRegisterRow {
     quantity: row.quantity,
     boxCount: row.boxes,
     palletCount: row.palletCount,
+    charterFare: row.charterFare,
     logistics: row.transport.trim(),
     address: row.workbookAddress?.trim() || null,
     vehicleHint: logisticsVehicleHint(row.transport),
@@ -152,6 +155,24 @@ export function notesWithWorkbookAddress(address: string | null, existingNotes?:
   return base ? `${base}\n주소: ${address.trim()}` : `주소: ${address.trim()}`;
 }
 
+/** 용차 행의 엑셀 운임을 메모에 남긴다. 같은 금액이 여러 품목 행에 반복될 수 있다. */
+export function notesWithCharterFare(fare: number | null | undefined, existingNotes?: string | null) {
+  const base = existingNotes?.trim() || "";
+  if (fare == null || !Number.isFinite(fare) || fare < 0) return base || null;
+  const line = `용차비: ${Math.round(fare)}`;
+  if (/용차비\s*:/.test(base)) return base;
+  return base ? `${base}\n${line}` : line;
+}
+
+export function notesWithExcelDayMeta(input: {
+  address?: string | null;
+  charterFare?: number | null;
+  existingNotes?: string | null;
+}) {
+  const withAddress = notesWithWorkbookAddress(input.address ?? null, input.existingNotes);
+  return notesWithCharterFare(input.charterFare, withAddress);
+}
+
 /** 메모(비고)에 `주소: ...` 또는 도로명 주소가 있으면 추출한다. */
 export function extractNoteAddress(notes: string | null | undefined): string | null {
   if (!notes?.trim()) return null;
@@ -160,6 +181,14 @@ export function extractNoteAddress(notes: string | null | undefined): string | n
   const tagged = notes.match(/주소\s*:\s*([^\n\r]+)/);
   const value = tagged?.[1]?.trim();
   return value && value.length >= 5 ? value : null;
+}
+
+export function extractNoteCharterFare(notes: string | null | undefined): number | null {
+  if (!notes?.trim()) return null;
+  const match = notes.match(/용차비\s*:\s*([\d,]+)/);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 
 export function normalizeProductKey(name: string) {

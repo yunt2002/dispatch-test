@@ -18,6 +18,7 @@ import {
   restoreEditedCharterTrips,
   simulationCostIssues,
   splitCharterTrip,
+  sharedExcelCharterFare,
   syncOriginalCharterTrips,
   tripLabel,
   tripsFromCharterGroups,
@@ -51,6 +52,18 @@ test("AI 용차를 목적지별로 분리하고 회수를 추가해도 저장된
   assert.equal(estimatedTripsCost(saved.filter((trip) => trip.id !== returnTrip.id)), 400000);
   const invalid = [...parts, { ...returnTrip, rowNumbers: [99] }];
   assert.equal(restoreEditedCharterTrips(groups, invalid, charterGroupsSignature(groups)).length, 1);
+});
+
+test("엑셀 용차비가 같으면 운행 기본 운임으로 채우고 다르면 비운다", () => {
+  const a = { rowNumber: 1, customer: "현대엘리베이터", location: "충주", charterFare: 250000 };
+  const b = { rowNumber: 2, customer: "현대엘리베이터", location: "충주", charterFare: 250000 };
+  const c = { rowNumber: 3, customer: "DY AUTO", location: "창원", charterFare: 500000 };
+  const d = { rowNumber: 4, customer: "DY AUTO", location: "창원", charterFare: 200000 };
+  assert.equal(sharedExcelCharterFare([a, b]), "250000");
+  assert.equal(sharedExcelCharterFare([c, d]), "");
+  assert.equal(defaultOriginalCharterTrips([a, b])[0].fare, "250000");
+  assert.equal(defaultOriginalCharterTrips([c, d])[0].fare, "");
+  assert.equal(tripsFromCharterGroups([{ items: [a, b] }], "proposed")[0].fare, "250000");
 });
 
 test("기존 운행 비용 제외는 저장 후 유지되며 다시 포함할 수 있다", () => {

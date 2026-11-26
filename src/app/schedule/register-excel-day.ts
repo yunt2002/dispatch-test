@@ -16,7 +16,7 @@ import {
   extractNoteAddress,
   missingLocationNames,
   missingProductNames,
-  notesWithWorkbookAddress,
+  notesWithExcelDayMeta,
   normalizeProductKey,
   parseExcelDayRegisterRows,
   recommendExcelDayRow,
@@ -320,7 +320,11 @@ export async function registerExcelDay(formData: FormData) {
         warningsJson: JSON.stringify(warnings),
         logistics: selected?.vehicleName || row.logistics || null,
         staff: null,
-        notes: notesWithWorkbookAddress(address),
+        notes: notesWithExcelDayMeta({
+          address,
+          charterFare:
+            row.vehicleHint === "용차" || /용차/.test(row.logistics) ? row.charterFare : null,
+        }),
         status: "PLANNED" as const,
         source: "EXCEL" as const,
         visitOrder: index,

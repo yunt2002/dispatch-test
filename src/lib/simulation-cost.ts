@@ -4,7 +4,21 @@ export function estimateCharterTrips(items: { rowNumber: number; customer: strin
   return new Set(charter.map((item) => item.customer.trim() ? `${item.customer.trim().replace(/\s+/g, " ")}|${item.location.trim().replace(/\s+/g, " ")}` : `미확인:${item.rowNumber}`)).size;
 }
 
-type Destination = { rowNumber: number; customer: string; location: string };
+type Destination = { rowNumber: number; customer: string; location: string; charterFare?: number | null };
+
+/** 운행에 묶인 행의 엑셀 용차비가 모두 같으면 그 금액을 기본 운임으로 쓴다. */
+export function sharedExcelCharterFare(items: { charterFare?: number | null }[]): string {
+  const fares = [
+    ...new Set(
+      items
+        .map((item) => item.charterFare)
+        .filter((value): value is number => value != null && Number.isFinite(value) && value >= 0)
+        .map((value) => Math.round(value)),
+    ),
+  ];
+  return fares.length === 1 ? String(fares[0]) : "";
+}
+
 /** 계산 방식이 분류되지 않은 외부 운송은 비용에 포함되지 않는다. */
 export function unpricedTransportItems<T extends { vehicle: string | null; transport: string }>(items: T[]): T[] {
   return items.filter((item) => !item.vehicle && !/용차|택배|경동/.test(item.transport));
@@ -61,19 +75,22 @@ export function charterItemsFromPlan<T extends { rowNumber: number; customer: st
 
 /** 기존 계획: 거래처·지역별 기본 편도 운행. */
 export function defaultOriginalCharterTrips<T extends Destination>(items: T[]): CharterTrip[] {
-  const groups = new Map<string, number[]>();
+  const groups = new Map<string, T[]>();
   for (const item of items) {
     const key = charterDestinationKey(item);
     const list = groups.get(key) ?? [];
-    list.push(item.rowNumber);
+    list.push(item);
     groups.set(key, list);
   }
-  return [...groups.entries()].map(([key, rowNumbers]) => ({
-    id: `original:${key}`,
-    leg: "one_way" as const,
-    rowNumbers: [...new Set(rowNumbers)].sort((a, b) => a - b),
-    fare: "",
-  }));
+  return [...groups.entries()].map(([key, groupItems]) => {
+    const rowNumbers = [...new Set(groupItems.map((item) => item.rowNumber))].sort((a, b) => a - b);
+    return {
+      id: `original:${key}`,
+      leg: "one_way" as const,
+      rowNumbers,
+      fare: sharedExcelCharterFare(groupItems),
+    };
+  });
 }
 
 /** 저장된 운행이 현재 용차 품목을 모두 포함하면 복원, 아니면 기본 운행. */
@@ -125,7 +142,7 @@ export function tripsFromCharterGroups<T extends Destination>(
       id,
       leg: prev?.leg ?? "one_way",
       rowNumbers,
-      fare: prev?.fare ?? "",
+      fare: prev?.fare || sharedExcelCharterFare(group.items),
     };
   });
 }

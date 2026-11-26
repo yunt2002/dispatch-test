@@ -7,6 +7,9 @@ import {
   logisticsVehicleHint,
   missingLocationNames,
   missingProductNames,
+  extractNoteCharterFare,
+  notesWithCharterFare,
+  notesWithExcelDayMeta,
   notesWithWorkbookAddress,
   parseExcelDayRegisterRows,
   recommendExcelDayRow,
@@ -72,15 +75,15 @@ test("개정안 PLT·용차비용 헤더에서 PLT만 읽고 수량합계는 PLT
   ]);
   sheet.addRow(["11/26", "DY AUTO", "창원", "P1", "AY/QY", null, null, null, 704700, 243, null, 5, "용차 (동해화물)", null, 500000, null]);
   sheet.addRow(["11/26", "현담산업", "아산", "P2", "DM 4545", null, null, null, 4800, 48, null, null, "2호 차량(3.5t)", null, null, null]);
-  sheet.addRow(["11/26", "만도 평택공장", "평택", "P3", "MPS", null, null, null, 6912, 144, null, 1.5, "2호 차량(3.5t)", null, null, null]);
+  sheet.addRow(["11/26", "만도 평택공장", "평택", "P3", "MPS", null, null, null, 6912, 144, null, 1.5, "2호 차량(3.5t)", null, "MR438A0100", null]);
   const rows = parseExcelDayRegisterRows(workbook, "2026-11-26");
   assert.equal(rows.length, 3);
   assert.deepEqual(
-    rows.map((row) => [row.quantity, row.boxCount, row.palletCount, row.vehicleHint]),
+    rows.map((row) => [row.quantity, row.boxCount, row.palletCount, row.charterFare, row.vehicleHint]),
     [
-      [704700, 243, 5, "용차"],
-      [4800, 48, null, "2호차"],
-      [6912, 144, 1.5, "2호차"],
+      [704700, 243, 5, 500000, "용차"],
+      [4800, 48, null, null, "2호차"],
+      [6912, 144, 1.5, null, "2호차"],
     ],
   );
   const options = { vehicles: [], regions: new Map() };
@@ -94,6 +97,10 @@ test("개정안 PLT·용차비용 헤더에서 PLT만 읽고 수량합계는 PLT
       [4800, 48, null],
       [6912, 144, 1.5],
     ],
+  );
+  assert.equal(
+    notesWithExcelDayMeta({ address: "창원시 진해구 신항10로 12", charterFare: rows[0].charterFare }),
+    "주소: 창원시 진해구 신항10로 12\n용차비: 500000",
   );
 });
 
@@ -160,4 +167,13 @@ test("비고 도로명을 notes 주소 형식으로 붙인다", () => {
   assert.equal(extractNoteAddress("주소: 경상남도 창원시 진해구 신항10로 12"), "경상남도 창원시 진해구 신항10로 12");
   assert.equal(extractNoteAddress("긴급\n주소: 세종특별자치시 연서면 공단로 117"), "세종특별자치시 연서면 공단로 117");
   assert.equal(extractNoteAddress("일반 메모"), null);
+});
+
+test("용차비 메모를 붙이고 읽는다", () => {
+  assert.equal(notesWithCharterFare(250000), "용차비: 250000");
+  assert.equal(notesWithCharterFare(250000, "주소: 충주시 용탄동"), "주소: 충주시 용탄동\n용차비: 250000");
+  assert.equal(notesWithCharterFare(null, "메모"), "메모");
+  assert.equal(extractNoteCharterFare("용차비: 250000"), 250000);
+  assert.equal(extractNoteCharterFare("주소: A\n용차비: 500,000"), 500000);
+  assert.equal(extractNoteCharterFare("일반 메모"), null);
 });

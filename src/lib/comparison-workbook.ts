@@ -1,5 +1,14 @@
 import ExcelJS from "exceljs";
-import { cellNumber, cellText, isDeliveryPalletHeader, normalizeDate, readDeliveryPalletCount, yearFromSheetName } from "@/lib/delivery-excel";
+import {
+  cellNumber,
+  cellText,
+  isCharterFareHeader,
+  isDeliveryPalletHeader,
+  normalizeDate,
+  readCharterFare,
+  readDeliveryPalletCount,
+  yearFromSheetName,
+} from "@/lib/delivery-excel";
 
 export type ComparisonShipment = {
   rowNumber: number;
@@ -11,6 +20,8 @@ export type ComparisonShipment = {
   quantity: number | null;
   boxes: number | null;
   palletCount?: number | null;
+  /** 엑셀 용차비용(원). 운행 1회 금액이며 행마다 반복될 수 있다. */
+  charterFare?: number | null;
   transport: string;
   workbookAddress?: string | null;
 };
@@ -49,6 +60,7 @@ export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: strin
       for (const name of ["일자", "업체명", "업체위치", "품번", "품명", "수량합계", "박스수량", "물류"]) columns[name] = labels.get(name) ?? 0;
       if (!columns.물류) columns.물류 = labels.get("분류") ?? 0;
       columns.파렛트 = [...labels].find(([name]) => isDeliveryPalletHeader(name))?.[1] ?? 0;
+      columns.용차비용 = [...labels].find(([name]) => isCharterFareHeader(name))?.[1] ?? 0;
       columns.주소 = ["납품주소", "납품지주소", "도착지주소", "주소"].map((name) => labels.get(name) ?? 0).find(Boolean) ?? 0;
       columns.비고 = [...labels].find(([name]) => name.includes("비고") && name.includes("도착지"))?.[1] ?? labels.get("비고") ?? 0;
       break;
@@ -67,6 +79,7 @@ export function extractComparisonShipments(sheet: ExcelJS.Worksheet, date: strin
     shipments.push({ rowNumber: n, date: rowDate, customer, location: cellText(value(row, columns.업체위치)), product, productCode: cellText(value(row, columns.품번)),
       quantity: cellNumber(value(row, columns.수량합계)), boxes: cellNumber(value(row, columns.박스수량)), transport: cellText(value(row, columns.물류)),
       ...(columns.파렛트 ? { palletCount: readDeliveryPalletCount(value(row, columns.파렛트)) } : {}),
+      ...(columns.용차비용 ? { charterFare: readCharterFare(value(row, columns.용차비용)) } : {}),
       workbookAddress: extractWorkbookAddress(cellText(value(row, columns.주소))) ?? extractWorkbookAddress(cellText(value(row, columns.비고))) });
   }
   return shipments;
